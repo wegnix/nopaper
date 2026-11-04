@@ -8,6 +8,13 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.0.1] - 2026-11-04
+
+### Segurança
+- Os cabeçalhos de segurança (HSTS, Referrer-Policy, Permissions-Policy) agora saem em todas as
+  páginas e arquivos da interface — antes o nginx os descartava nas rotas com cabeçalhos próprios.
+  Nas respostas da API eles não saem mais duplicados.
+
 ## [1.0.0] - 2026-11-04
 
 Primeira versão pública.
