@@ -1,0 +1,35 @@
+# Traefik mínimo para servidores que ainda não têm um proxy reverso.
+# Publica as portas 80/443, redireciona HTTP → HTTPS e emite certificados Let's Encrypt sozinho.
+# Certificados guardados em DATA_PATH (padrão /storage/traefik). Portas configuráveis no .env.
+# Uso (ver docs/publicacao-com-traefik.md):
+#   cd deploy/traefik && cp .env.example .env && editar ACME_EMAIL && docker compose up -d
+name: traefik
+services:
+  traefik:
+    image: traefik:v3.3
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false        # só publica containers com traefik.enable=true
+      - --providers.docker.network=traefik
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:?defina ACME_EMAIL no .env}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --log.level=INFO
+    ports:
+      # porta do servidor : porta do Traefik. A 80 precisa ser a 80 pública para a Let's Encrypt
+      # validar o domínio (veja "Portas" no guia se ela já estiver em uso).
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DATA_PATH:-/storage/traefik}/letsencrypt:/letsencrypt
+    networks: [traefik]
+
+networks:
+  traefik:
+    name: traefik

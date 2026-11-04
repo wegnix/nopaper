@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "prev2_refresh_hash" varchar(128);

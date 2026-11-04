@@ -1,0 +1,215 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import '@fontsource-variable/bricolage-grotesque';
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/*
+ * nopaper — "tinta carbono"
+ * Violeta de papel-carbono é o único acento. Verde/coral/âmbar só significam status.
+ */
+:root, [data-theme='light'] {
+  --np-bg: #eef0f6;
+  --np-surface: #ffffff;
+  --np-surface-2: #f6f7fb;
+  --np-raised: #ffffff;
+  --np-line: #dfe3ee;
+  --np-line-strong: #c9cfde;
+  --np-ink: #141a29;
+  --np-muted: #5b6478;
+  --np-faint: #8a93a8;
+  --np-accent: #5b4be8;
+  --np-accent-soft: #ece9ff;
+  --np-accent-ink: #ffffff;
+  --np-ok: #0f9d68;
+  --np-warn: #b7791f;
+  --np-danger: #d9483b;
+  --np-shadow: 0 1px 2px rgb(20 26 41 / .06), 0 8px 24px -12px rgb(20 26 41 / .18);
+  --np-chip-text-mix: 72%;
+  /* gráficos: passo forte (pago) e passo fraco (em aberto) do violeta — validados p/ daltonismo */
+  --np-chart-1: #5b4be8;
+  --np-chart-2: #d99a2b; /* "A pagar/receber": âmbar (status pendente), bem distinto do violeta de "Pago" */
+  color-scheme: light;
+}
+[data-theme='dark'] {
+  --np-bg: #0b0f19;
+  --np-surface: #121827;
+  --np-surface-2: #182033;
+  --np-raised: #1b2438;
+  --np-line: #232d44;
+  --np-line-strong: #33405e;
+  --np-ink: #e8ebf4;
+  --np-muted: #9aa3b9;
+  --np-faint: #69728a;
+  --np-accent: #8b7dff;
+  --np-accent-soft: #241f4d;
+  --np-accent-ink: #0b0f19;
+  --np-ok: #3ddc97;
+  --np-warn: #f4b740;
+  --np-danger: #ff6b5e;
+  --np-shadow: 0 1px 0 rgb(255 255 255 / .03) inset, 0 12px 32px -16px rgb(0 0 0 / .7);
+  --np-chip-text-mix: 0%;
+  --np-chart-1: #8b7dff;
+  --np-chart-2: #f4b740;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--np-bg);
+  --color-surface: var(--np-surface);
+  --color-surface-2: var(--np-surface-2);
+  --color-raised: var(--np-raised);
+  --color-line: var(--np-line);
+  --color-line-strong: var(--np-line-strong);
+  --color-ink: var(--np-ink);
+  --color-muted: var(--np-muted);
+  --color-faint: var(--np-faint);
+  --color-accent: var(--np-accent);
+  --color-accent-soft: var(--np-accent-soft);
+  --color-accent-ink: var(--np-accent-ink);
+  --color-ok: var(--np-ok);
+  --color-warn: var(--np-warn);
+  --color-danger: var(--np-danger);
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Geist Variable', ui-sans-serif, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --shadow-card: var(--np-shadow);
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--np-bg);
+  color: var(--np-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: 'ss01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+}
+/* Lista nativa do <select>: alguns sistemas (GTK/Linux, Windows) desenham o popup com fundo
+   claro fixo e herdam a cor de texto do select — no tema escuro o texto some. Cores explícitas. */
+select option, select optgroup { background-color: var(--np-raised); color: var(--np-ink); }
+select option:disabled { color: var(--np-faint); }
+select option:checked { background-color: var(--np-accent-soft); color: var(--np-ink); }
+.tnum { font-variant-numeric: tabular-nums; }
+.font-display { font-optical-sizing: auto; letter-spacing: -0.02em; }
+
+/* Chip de cor (categoria/pasta): --c base, --cl claro, --cd escuro */
+.chip {
+  --c: #64748b; --cl: #cbd5e1; --cd: #334155;
+  background: color-mix(in oklab, var(--c) 16%, transparent);
+  border: 1px solid color-mix(in oklab, var(--c) 38%, transparent);
+  color: color-mix(in oklab, var(--cd) var(--np-chip-text-mix), var(--cl));
+}
+[data-theme='light'] .chip { color: var(--cd); }
+
+:focus-visible { outline: 2px solid var(--np-accent); outline-offset: 2px; border-radius: 6px; }
+
+::selection { background: color-mix(in oklab, var(--np-accent) 35%, transparent); }
+
+/* rolagem discreta */
+* { scrollbar-width: thin; scrollbar-color: var(--np-line-strong) transparent; }
+
+/* ------------------------------------------------------------------ menu lateral
+ * Degradê de baixo para cima: o violeta nasce no rodapé e some no topo, com um brilho que
+ * "respira" devagar (parado quando o sistema pede menos movimento). Cores dos dois temas.
+ */
+.sidebar-glow {
+  --sb-base: var(--np-surface);
+  --sb-1: #cbc1ff;   /* rodapé */
+  --sb-2: #e8e3ff;   /* meio */
+  --sb-glow: rgb(91 75 232 / .42);
+  --sb-glow-2: rgb(217 70 239 / .22);
+  /* sem `position` aqui: CSS fora de camada venceria o `fixed` do Tailwind no menu do celular */
+  isolation: isolate;
+  background: linear-gradient(to top, var(--sb-1) 0%, var(--sb-2) 32%, var(--sb-base) 68%);
+}
+[data-theme='dark'] .sidebar-glow {
+  --sb-1: #2a1d78;
+  --sb-2: #19163d;
+  --sb-glow: rgb(139 125 255 / .42);
+  --sb-glow-2: rgb(217 70 239 / .20);
+  /* textos discretos do rodapé ficam legíveis sobre o violeta */
+  --np-faint: #9a9fc4;
+}
+.sidebar-glow::before {
+  content: '';
+  position: absolute;
+  inset: auto -40% -12% -40%;
+  height: 55%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(50% 60% at 30% 100%, var(--sb-glow), transparent 70%),
+    radial-gradient(45% 55% at 75% 100%, var(--sb-glow-2), transparent 70%);
+  filter: blur(8px);
+  animation: sidebar-breathe 9s ease-in-out infinite alternate;
+}
+/* fio de luz na borda direita, mais forte embaixo */
+.sidebar-glow::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; right: -1px;
+  width: 1px;
+  pointer-events: none;
+  background: linear-gradient(to top, var(--np-accent), transparent 60%);
+  opacity: .55;
+}
+@keyframes sidebar-breathe {
+  from { transform: translateX(-6%) scaleY(.92); opacity: .8; }
+  to   { transform: translateX(6%) scaleY(1.08); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .sidebar-glow::before { animation: none; } }
+
+/* papel picotado: borda inferior do recibo no login */
+.perforated {
+  -webkit-mask: radial-gradient(circle 6px at 12px 100%, transparent 98%, #000) -6px 0 / 24px 100% repeat-x;
+          mask: radial-gradient(circle 6px at 12px 100%, transparent 98%, #000) -6px 0 / 24px 100% repeat-x;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ------------------------------------------------------------------ impressão
+ * Páginas com versão própria de impressão (ex.: Relatórios) montam um `.print-doc`
+ * direto no body; ao imprimir, só ele aparece. Cores fixas (claro), independente do tema.
+ */
+.print-doc { display: none; }
+@media print {
+  @page { size: A4; margin: 14mm 12mm 16mm; }
+  html:has(body > .print-doc), body:has(> .print-doc) { background: #fff !important; }
+  body:has(> .print-doc) > *:not(.print-doc) { display: none !important; }
+  .print-doc {
+    display: block; color: #141a29; font: 9.5pt/1.4 'Geist Variable', system-ui, sans-serif;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .print-doc h1, .print-doc h2 { font-family: 'Bricolage Grotesque Variable', 'Geist Variable', sans-serif; font-weight: 600; margin: 0; }
+  .print-doc h1 { font-size: 17pt; letter-spacing: -.01em; }
+  .print-doc h2 { font-size: 11.5pt; margin-bottom: 5pt; break-after: avoid; }
+  .pd-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16pt; padding-bottom: 8pt; border-bottom: 2px solid #5b4be8; }
+  .pd-kicker { margin: 0 0 2pt; font-size: 8pt; text-transform: uppercase; letter-spacing: .08em; color: #5b4be8; font-weight: 600; }
+  .pd-meta { margin: 0; text-align: right; font-size: 8pt; color: #5b6478; }
+  .pd-kpis { display: grid; grid-template-columns: repeat(4, 1fr); margin: 12pt 0 4pt; border: 1px solid #d6dae4; border-radius: 6pt; break-inside: avoid; }
+  .pd-kpis > div { padding: 7pt 9pt; display: flex; flex-direction: column; gap: 1pt; }
+  .pd-kpis > div + div { border-left: 1px solid #d6dae4; }
+  .pd-kpis span { font-size: 8pt; color: #5b6478; }
+  .pd-kpis b { font-size: 13pt; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pd-kpis small { font-size: 7.5pt; color: #6b7386; }
+  .pd-block { margin-top: 14pt; }
+  .pd-chart { margin: 0 0 6pt; break-inside: avoid; }
+  .pd-chart figcaption { display: flex; align-items: center; gap: 4pt; font-size: 8pt; color: #5b6478; }
+  .pd-chart figcaption i { display: inline-block; width: 7pt; height: 7pt; border-radius: 1.5pt; margin-left: 8pt; }
+  .pd-chart figcaption i:first-child { margin-left: 0; }
+  .print-doc table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .print-doc th { text-align: left; font-size: 7.5pt; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #5b6478; padding: 4pt 6pt; border-bottom: 1px solid #b9c0d0; }
+  .print-doc td { padding: 3pt 6pt; border-bottom: 1px solid #e6e9f0; }
+  .print-doc tr { break-inside: avoid; }
+  .print-doc tbody tr:nth-child(even) td { background: #f6f7fb; }
+  .print-doc tfoot td { font-weight: 600; border-top: 1.5px solid #141a29; border-bottom: 0; }
+  .print-doc .num { text-align: right; white-space: nowrap; }
+  .print-doc .pd-rank { width: 18pt; text-align: right; color: #8a93a8; }
+  .pd-neg { color: #c0392b; }
+  .pd-dot { display: inline-block; width: 6pt; height: 6pt; border-radius: 50%; margin-right: 5pt; vertical-align: 0.5pt; }
+  .pd-note, .pd-empty { margin: 0 0 5pt; font-size: 8pt; color: #6b7386; }
+  .pd-foot { margin-top: 16pt; padding-top: 5pt; border-top: 1px solid #d6dae4; font-size: 7.5pt; color: #8a93a8; }
+}

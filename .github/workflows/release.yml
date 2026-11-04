@@ -1,0 +1,45 @@
+# Ao enviar uma tag vX.Y.Z, cria a Release no GitHub com as notas da seção dessa versão no
+# CHANGELOG.md. São essas Releases que as instalações mostram em Configurações → Atualizações.
+name: release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir a versão nos package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for f in package.json packages/shared/package.json apps/api/package.json apps/web/package.json; do
+            v=$(node -p "require('./$f').version")
+            [ "$v" = "$tag" ] || { echo "::error::$f está na versão $v, mas a tag é $GITHUB_REF_NAME"; exit 1; }
+          done
+
+      - name: Extrair as notas do CHANGELOG
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          awk -v v="$tag" '
+            $0 ~ "^## \\[" v "\\]" { on=1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::CHANGELOG.md não tem a seção [$tag]"; exit 1; }
+
+      - name: Criar a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # se a release já existe (tag reenviada), só atualiza título e notas
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --title "NoPaper $GITHUB_REF_NAME" --notes-file notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" --title "NoPaper $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+          fi

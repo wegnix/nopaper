@@ -1,0 +1,180 @@
+import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { DropdownMenu } from 'radix-ui';
+import { toast } from 'sonner';
+import { ArrowLeftRight, Check, ChevronLeft, ChevronRight, CreditCard, MoreHorizontal, Pencil, Plus, Receipt, Trash2 } from 'lucide-react';
+import { addMonthsRef, formatBRL, formatDateBR, toCents, type AttachmentSlot } from '@nopaper/shared';
+import { Button, Card, Empty, PageHeader, Spinner } from '@/components/ui/base';
+import { CategoryChip, StatusChip } from '@/components/ui/chips';
+import { useConfirm } from '@/components/ui/dialog';
+import { api, get, post, errMsg } from '@/lib/api';
+import { useCategories } from '@/lib/queries';
+import { useCan, useSession } from '@/lib/session';
+import { cn } from '@/lib/utils';
+import type { Bill, Card as CardT, CardTx, StatementView } from '@/lib/types';
+import { CountUp } from '@/features/bills/KpiRibbon';
+import { PayDialog } from '@/features/bills/dialogs';
+import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
+import { CardVisual } from './CardVisual';
+import { CardFormDialog, TxFormDialog, refLabel } from './CardForms';
+
+const STATUS = { open: { status: 'pending' as const, label: 'Aberta' }, closed: { status: 'today' as const, label: 'Fechada · a pagar' }, paid: { status: 'paid' as const, label: 'Paga' } };
+
+export function CardsPage() {
+  const can = useCan();
+  const canEdit = can('cards.edit');
+  const canManage = can('cards.manage');
+  const canPay = can('payable.pay');
+  const orgId = useSession((s) => s.orgId);
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const [sp, setSp] = useSearchParams();
+  const { data: cats = [] } = useCategories();
+  const catMap = useMemo(() => new Map(cats.map((c) => [c.id, c])), [cats]);
+
+  const cardsQ = useQuery({ queryKey: ['bills', orgId, 'cards'], queryFn: () => get<{ items: CardT[] }>('/api/cards').then((r) => r.items) });
+  const cards = cardsQ.data ?? [];
+  const selId = sp.get('cartao') && cards.some((c) => c.id === sp.get('cartao')) ? sp.get('cartao')! : cards.find((c) => c.active)?.id ?? cards[0]?.id;
+  const card = cards.find((c) => c.id === selId);
+  const ref = sp.get('fatura') ?? card?.currentRef;
+  const set = (patch: Record<string, string | null>) => { const n = new URLSearchParams(sp); for (const [k, v] of Object.entries(patch)) v === null ? n.delete(k) : n.set(k, v); setSp(n, { replace: true }); };
+
+  const stQ = useQuery({
+    enabled: !!card && !!ref, queryKey: ['bills', orgId, 'statement', card?.id, ref],
+    queryFn: () => get<StatementView>(`/api/cards/${card!.id}/statement?ref=${ref}`), placeholderData: (p) => p,
+  });
+  const st = stQ.data;
+
+  const [cardForm, setCardForm] = useState<{ open: boolean; card: CardT | null }>({ open: false, card: null });
+  const [txForm, setTxForm] = useState<{ open: boolean; tx: CardTx | null }>({ open: false, tx: null });
+  const [pay, setPay] = useState<{ bill: Bill; proofOnly: boolean } | null>(null);
+  const [viewer, setViewer] = useState<FileViewerTarget | null>(null);
+
+  const byCat = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of st?.items ?? []) m.set(t.categoryId, (m.get(t.categoryId) ?? 0) + toCents(t.amount));
+    return [...m.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  }, [st]);
+
+  const removeTx = async (t: CardTx) => {
+    const multi = t.totalInstallments > 1;
+    const ok = await confirm({
+      title: `Apagar "${t.description}"?`, tone: 'danger', confirmLabel: multi ? 'Apagar todas as parcelas' : 'Apagar',
+      body: multi ? `Esta compra tem ${t.totalInstallments} parcelas. Todas serão removidas das faturas (as faturas já pagas são recalculadas).` : 'O lançamento sai da fatura.',
+    });
+    if (!ok) return;
+    try { await api('DELETE', `/api/card-transactions/${t.id}?scope=group`); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Lançamento apagado'); } catch (e) { toast.error(errMsg(e)); }
+  };
+  const moveTx = async (t: CardTx, to: string) => {
+    try { await post(`/api/card-transactions/${t.id}/move`, { ref: to }); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success(`Movido para a fatura de ${refLabel(to)}`); } catch (e) { toast.error(errMsg(e)); }
+  };
+  const view = (b: Bill, slot: AttachmentSlot) => { const a = b.attachments[slot]; if (a) setViewer({ attachmentId: a.id, slot, title: b.description }); };
+
+  if (cardsQ.isLoading) return <div className="grid place-items-center py-24"><Spinner /></div>;
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Cartões de crédito" description="Lance as compras no cartão; cada fatura vira uma conta a pagar automaticamente."
+        actions={canManage && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCardForm({ open: true, card: null })}>Novo cartão</Button>} />
+
+      {!cards.length ? (
+        <Card><Empty icon={<CreditCard className="size-5" />} title="Nenhum cartão cadastrado" action={canManage && <Button variant="primary" onClick={() => setCardForm({ open: true, card: null })}>Cadastrar cartão</Button>}>
+          Informe o dia de fechamento e de vencimento para o NoPaper saber em qual fatura cada compra cai.
+        </Empty></Card>
+      ) : (
+        <>
+          <div className="-mx-4 md:-mx-5 lg:-mx-6 overflow-x-auto px-4 md:px-5 lg:px-6 pb-3 pt-3">
+            <div className="flex gap-6">
+              {/* clique num cartão o seleciona; no já selecionado, abre a edição */}
+              {cards.map((c) => <CardVisual key={c.id} card={c} selected={c.id === selId} editable={canManage}
+                onClick={() => (c.id === selId && canManage ? setCardForm({ open: true, card: c }) : set({ cartao: c.id, fatura: null }))} />)}
+            </div>
+          </div>
+
+          {card && ref && (
+            <Card className="overflow-hidden">
+              <div className="flex flex-wrap items-center gap-4 border-b border-line p-4 md:p-5">
+                <div className="flex items-center rounded-lg border border-line bg-surface-2">
+                  <button className="grid size-10 place-items-center text-muted hover:text-ink" onClick={() => set({ fatura: addMonthsRef(ref, -1) })} aria-label="Fatura anterior"><ChevronLeft className="size-4" /></button>
+                  <span className="min-w-[110px] text-center font-display font-semibold">{refLabel(ref)}</span>
+                  <button className="grid size-10 place-items-center text-muted hover:text-ink" onClick={() => set({ fatura: addMonthsRef(ref, 1) })} aria-label="Próxima fatura"><ChevronRight className="size-4" /></button>
+                </div>
+                {ref !== card.currentRef && <button className="text-xs text-accent hover:underline" onClick={() => set({ fatura: null })}>ir para a fatura atual</button>}
+                {st && <StatusChip {...STATUS[st.status]} />}
+                <div className="ml-auto flex flex-wrap gap-2">
+                  {canManage && <Button variant="ghost" icon={<Pencil className="size-4" />} onClick={() => setCardForm({ open: true, card })}>Editar cartão</Button>}
+                  {st?.bill && st.bill.status === 'pending' && canPay && <Button variant="ok" icon={<Check className="size-4" />} onClick={() => setPay({ bill: st.bill!, proofOnly: false })}>Pagar fatura</Button>}
+                  {st?.bill && st.bill.status === 'paid' && canPay && <Button variant="ghost" icon={<Receipt className="size-4" />} onClick={() => setPay({ bill: st.bill!, proofOnly: true })}>Comprovante</Button>}
+                  {canEdit && card.active && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setTxForm({ open: true, tx: null })}>Lançar compra</Button>}
+                </div>
+              </div>
+
+              <div className="grid lg:grid-cols-[1fr_300px]">
+                <div className="min-w-0">
+                  <div className="grid grid-cols-3 border-b border-line">
+                    <div className="p-4 md:p-5"><p className="text-xs text-muted">Total da fatura</p><CountUp value={st?.total ?? '0'} className="mt-1 block font-display text-2xl font-semibold" /></div>
+                    <div className="border-l border-line p-4 md:p-5"><p className="text-xs text-muted">Fecha em</p><p className="mt-1 font-display text-lg font-semibold tnum">{st ? formatDateBR(st.statement.closingDate) : '—'}</p></div>
+                    <div className="border-l border-line p-4 md:p-5"><p className="text-xs text-muted">Vence em</p><p className="mt-1 font-display text-lg font-semibold tnum">{st ? formatDateBR(st.statement.dueDate) : '—'}</p></div>
+                  </div>
+                  {stQ.isLoading ? <div className="grid place-items-center py-16"><Spinner /></div> : !st?.items.length ? (
+                    <p className="px-5 py-14 text-center text-sm text-muted">Nenhum lançamento nesta fatura.</p>
+                  ) : (
+                    <ul className="divide-y divide-line">
+                      {st.items.map((t) => (
+                        <li key={t.id} className="group flex items-center gap-3 px-4 md:px-5 py-3">
+                          <span className="w-12 shrink-0 text-xs text-faint tnum">{formatDateBR(t.purchaseDate).slice(0, 5)}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{t.description}</p>
+                            <p className="text-xs text-faint">
+                              {t.totalInstallments > 1 ? `parcela ${t.installmentNumber}/${t.totalInstallments} · total ${formatBRL(t.totalAmount)}` : 'à vista'}
+                              {t.notes && ` · ${t.notes}`}
+                            </p>
+                          </div>
+                          <CategoryChip category={catMap.get(t.categoryId)} className="hidden sm:inline-flex" />
+                          <span className={cn('w-28 text-right tnum text-sm font-medium', t.amount.startsWith('-') && 'text-ok')}>{formatBRL(t.amount)}</span>
+                          {canEdit && (
+                            <DropdownMenu.Root>
+                              <DropdownMenu.Trigger className="grid size-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" aria-label="Ações"><MoreHorizontal className="size-4" /></DropdownMenu.Trigger>
+                              <DropdownMenu.Portal>
+                                <DropdownMenu.Content align="end" sideOffset={4} className="z-[6000] w-60 rounded-xl border border-line bg-raised p-1.5 shadow-2xl text-sm">
+                                  <DropdownMenu.Item onSelect={() => setTxForm({ open: true, tx: t })} className="flex items-center gap-2 rounded-lg px-2 py-2 outline-none data-[highlighted]:bg-surface-2 cursor-pointer"><Pencil className="size-4 text-faint" /> Editar</DropdownMenu.Item>
+                                  <DropdownMenu.Item onSelect={() => moveTx(t, addMonthsRef(ref, 1))} className="flex items-center gap-2 rounded-lg px-2 py-2 outline-none data-[highlighted]:bg-surface-2 cursor-pointer"><ArrowLeftRight className="size-4 text-faint" /> Mover para {refLabel(addMonthsRef(ref, 1))}</DropdownMenu.Item>
+                                  <DropdownMenu.Item onSelect={() => moveTx(t, addMonthsRef(ref, -1))} className="flex items-center gap-2 rounded-lg px-2 py-2 outline-none data-[highlighted]:bg-surface-2 cursor-pointer"><ArrowLeftRight className="size-4 text-faint" /> Mover para {refLabel(addMonthsRef(ref, -1))}</DropdownMenu.Item>
+                                  <DropdownMenu.Separator className="my-1 h-px bg-line" />
+                                  <DropdownMenu.Item onSelect={() => removeTx(t)} className="flex items-center gap-2 rounded-lg px-2 py-2 text-danger outline-none data-[highlighted]:bg-surface-2 cursor-pointer"><Trash2 className="size-4" /> Apagar</DropdownMenu.Item>
+                                </DropdownMenu.Content>
+                              </DropdownMenu.Portal>
+                            </DropdownMenu.Root>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <aside className="border-t lg:border-t-0 lg:border-l border-line p-5">
+                  <h3 className="font-display font-semibold">Por categoria</h3>
+                  <ul className="mt-4 flex flex-col gap-3">
+                    {byCat.map(([id, cents]) => (
+                      <li key={id}>
+                        <div className="flex justify-between gap-2 text-sm"><span className="truncate">{catMap.get(id)?.label ?? '—'}</span><span className="tnum text-muted">{formatBRL(cents / 100)}</span></div>
+                        <div className="mt-1.5 h-1.5 rounded-full bg-surface-2 overflow-hidden"><div className="h-full rounded-full bg-accent transition-[width] duration-700" style={{ width: `${(cents / byCat[0][1]) * 100}%` }} /></div>
+                      </li>
+                    ))}
+                    {!byCat.length && <li className="text-sm text-faint">Sem gastos nesta fatura.</li>}
+                  </ul>
+                  {st?.bill && <p className="mt-6 text-xs text-faint">Conta a pagar vinculada: “{st.bill.description}”, {st.bill.status === 'paid' ? `paga em ${formatDateBR(st.bill.paidAt)}` : 'pendente'}.</p>}
+                </aside>
+              </div>
+            </Card>
+          )}
+        </>
+      )}
+
+      <CardFormDialog open={cardForm.open} card={cardForm.card} onClose={() => setCardForm({ open: false, card: null })} onSaved={(id) => set({ cartao: id, fatura: null })} onDeleted={() => set({ cartao: null, fatura: null })} />
+      {card && <TxFormDialog card={card} open={txForm.open} tx={txForm.tx} onClose={() => setTxForm({ open: false, tx: null })} />}
+      {pay && <PayDialog bill={pay.bill} proofOnly={pay.proofOnly} onClose={() => setPay(null)} onView={view} />}
+      <FileViewer target={viewer} onClose={() => setViewer(null)} />
+    </div>
+  );
+}

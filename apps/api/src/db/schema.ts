@@ -1,0 +1,297 @@
+import { sql } from 'drizzle-orm';
+import {
+  pgTable, uuid, text, varchar, boolean, timestamp, date, numeric, integer, smallint,
+  jsonb, bigserial, bigint, primaryKey, uniqueIndex, index, type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
+
+const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
+const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date());
+const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
+
+// ------------------------------------------------------------------ identidade
+export const users = pgTable('users', {
+  id: id(),
+  email: varchar('email', { length: 255 }).notNull(),
+  /** Nome de usuário para login (minúsculo, único). */
+  username: varchar('username', { length: 32 }).notNull(),
+  name: varchar('name', { length: 120 }).notNull(),
+  passwordHash: text('password_hash').notNull(),
+  /** Senha provisória (definida pelo .env ou por um administrador): obriga a trocar no próximo login. */
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
+  isSuperadmin: boolean('is_superadmin').notNull().default(false),
+  /** Pode criar espaços novos (superadmin sempre pode). Definido em Plataforma → Usuários. */
+  canCreateOrgs: boolean('can_create_orgs').notNull().default(false),
+  active: boolean('active').notNull().default(true),
+  telegramChatId: varchar('telegram_chat_id', { length: 64 }),
+  preferences: jsonb('preferences').$type<Record<string, unknown>>().notNull().default({}),
+  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex('users_email_uq').on(sql`lower(${t.email})`), uniqueIndex('users_username_uq').on(sql`lower(${t.username})`)]);
+
+export const sessions = pgTable('sessions', {
+  id: id(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  refreshHash: varchar('refresh_hash', { length: 128 }).notNull(),
+  /** Hash anterior, aceito por alguns segundos após a rotação (duas abas / resposta perdida). */
+  prevRefreshHash: varchar('prev_refresh_hash', { length: 128 }),
+  prev2RefreshHash: varchar('prev2_refresh_hash', { length: 128 }),
+  rotatedAt: timestamp('rotated_at', { withTimezone: true }),
+  /** Última interação real da pessoa (heartbeat do front); base do logoff por inatividade. */
+  lastActivityAt: timestamp('last_activity_at', { withTimezone: true }).notNull().defaultNow(),
+  userAgent: varchar('user_agent', { length: 255 }),
+  ip: varchar('ip', { length: 64 }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('sessions_user_idx').on(t.userId)]);
+
+// ------------------------------------------------------------------ organizações (multi-tenant)
+export const organizations = pgTable('organizations', {
+  id: id(),
+  name: varchar('name', { length: 120 }).notNull(),
+  kind: varchar('kind', { length: 16 }).notNull().default('company'), // personal | company
+  document: varchar('document', { length: 32 }),
+  timezone: varchar('timezone', { length: 64 }).notNull().default('America/Sao_Paulo'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const memberships = pgTable('memberships', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  isOwner: boolean('is_owner').notNull().default(false),
+  active: boolean('active').notNull().default(true),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('memberships_org_user_uq').on(t.orgId, t.userId), index('memberships_user_idx').on(t.userId)]);
+
+export const groups = pgTable('groups', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 64 }).notNull(),
+  description: varchar('description', { length: 255 }),
+  isAdmin: boolean('is_admin').notNull().default(false),
+  permissions: text('permissions').array().notNull().default(sql`'{}'::text[]`),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex('groups_org_name_uq').on(t.orgId, t.name)]);
+
+export const membershipGroups = pgTable('membership_groups', {
+  membershipId: uuid('membership_id').notNull().references(() => memberships.id, { onDelete: 'cascade' }),
+  groupId: uuid('group_id').notNull().references(() => groups.id, { onDelete: 'cascade' }),
+}, (t) => [primaryKey({ columns: [t.membershipId, t.groupId] })]);
+
+/** Configurações chave/valor por organização (alertas, preferências, etc). */
+export const orgSettings = pgTable('org_settings', {
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  key: varchar('key', { length: 64 }).notNull(),
+  value: jsonb('value').notNull(),
+  updatedAt: updatedAt(),
+}, (t) => [primaryKey({ columns: [t.orgId, t.key] })]);
+
+/** Configurações globais da instalação (SMTP, Telegram bot, backups). */
+export const systemSettings = pgTable('system_settings', {
+  key: varchar('key', { length: 64 }).primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: updatedAt(),
+});
+
+// ------------------------------------------------------------------ financeiro
+export const categories = pgTable('categories', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  label: varchar('label', { length: 64 }).notNull(),
+  color: varchar('color', { length: 16 }).notNull().default('slate'),
+  kind: varchar('kind', { length: 16 }).notNull().default('both'), // payable | receivable | both
+  isRestricted: boolean('is_restricted').notNull().default(false),
+  isSystem: boolean('is_system').notNull().default(false),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex('categories_org_label_uq').on(t.orgId, sql`lower(${t.label})`)]);
+
+export const folders = pgTable('folders', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 64 }).notNull(),
+  label: varchar('label', { length: 32 }).notNull(),
+  color: varchar('color', { length: 16 }).notNull().default('slate'),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex('folders_org_name_uq').on(t.orgId, sql`lower(${t.name})`)]);
+
+export const bills = pgTable('bills', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  type: varchar('type', { length: 16 }).notNull(), // payable | receivable
+  parentId: uuid('parent_id').references((): AnyPgColumn => bills.id, { onDelete: 'set null' }),
+  description: varchar('description', { length: 255 }).notNull(),
+  categoryId: uuid('category_id').notNull().references(() => categories.id, { onDelete: 'restrict' }),
+  folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'set null' }),
+  cardId: uuid('card_id'),
+  statementId: uuid('statement_id'),
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  dueDate: date('due_date').notNull(),
+  status: varchar('status', { length: 16 }).notNull().default('pending'), // pending | paid
+  paidAt: date('paid_at'),
+  paidAmount: numeric('paid_amount', { precision: 14, scale: 2 }),
+  recurrenceType: varchar('recurrence_type', { length: 16 }).notNull().default('once'),
+  installmentNumber: smallint('installment_number'),
+  totalInstallments: smallint('total_installments'),
+  isIndefinite: boolean('is_indefinite').notNull().default(false),
+  /** Dia original da série (preserva o dia mesmo se uma ocorrência for editada). */
+  recurrenceDay: smallint('recurrence_day'),
+  relatedPerson: varchar('related_person', { length: 128 }),
+  notes: text('notes'),
+  barcode: varchar('barcode', { length: 120 }),
+  pixKey: text('pix_key'),
+  paymentMethod: varchar('payment_method', { length: 64 }),
+  importBatchId: uuid('import_batch_id'),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('bills_org_type_due_idx').on(t.orgId, t.type, t.dueDate),
+  index('bills_org_status_idx').on(t.orgId, t.status),
+  index('bills_parent_idx').on(t.parentId),
+  index('bills_category_idx').on(t.categoryId),
+  index('bills_folder_idx').on(t.folderId),
+  index('bills_indefinite_idx').on(t.isIndefinite).where(sql`${t.isIndefinite} = true`),
+]);
+
+export const attachments = pgTable('attachments', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  billId: uuid('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  slot: varchar('slot', { length: 16 }).notNull(), // boleto | invoice | payment_proof
+  originalName: varchar('original_name', { length: 255 }).notNull(),
+  mime: varchar('mime', { length: 100 }).notNull(),
+  size: integer('size').notNull(),
+  storageKey: varchar('storage_key', { length: 255 }).notNull(),
+  sha256: varchar('sha256', { length: 64 }).notNull(),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('attachments_bill_slot_uq').on(t.billId, t.slot)]);
+
+// ------------------------------------------------------------------ auditoria
+export const auditLogs = pgTable('audit_logs', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  orgId: uuid('org_id'),
+  userId: uuid('user_id'),
+  userName: varchar('user_name', { length: 120 }),
+  action: varchar('action', { length: 80 }).notNull(),
+  entityType: varchar('entity_type', { length: 40 }),
+  entityId: varchar('entity_id', { length: 120 }),
+  description: text('description'),
+  details: jsonb('details'),
+  ip: varchar('ip', { length: 64 }),
+  userAgent: varchar('user_agent', { length: 255 }),
+  createdAt: createdAt(),
+}, (t) => [index('audit_org_created_idx').on(t.orgId, t.createdAt), index('audit_org_id_idx').on(t.orgId, t.id)]);
+
+// ------------------------------------------------------------------ cartões de crédito
+export const cards = pgTable('cards', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 64 }).notNull(),
+  brand: varchar('brand', { length: 16 }).notNull().default('other'),
+  last4: varchar('last4', { length: 4 }),
+  color: varchar('color', { length: 16 }).notNull().default('indigo'),
+  limitAmount: numeric('limit_amount', { precision: 14, scale: 2 }),
+  closingDay: smallint('closing_day').notNull(),
+  dueDay: smallint('due_day').notNull(),
+  /** Categoria/pasta usadas na conta a pagar gerada para cada fatura. */
+  billCategoryId: uuid('bill_category_id').notNull().references(() => categories.id, { onDelete: 'restrict' }),
+  billFolderId: uuid('bill_folder_id').references(() => folders.id, { onDelete: 'set null' }),
+  holder: varchar('holder', { length: 64 }),
+  active: boolean('active').notNull().default(true),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index('cards_org_idx').on(t.orgId)]);
+
+export const cardStatements = pgTable('card_statements', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  cardId: uuid('card_id').notNull().references(() => cards.id, { onDelete: 'cascade' }),
+  /** Mês de referência = mês do vencimento (YYYY-MM). */
+  ref: varchar('ref', { length: 7 }).notNull(),
+  closingDate: date('closing_date').notNull(),
+  dueDate: date('due_date').notNull(),
+  billId: uuid('bill_id').references(() => bills.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('card_statements_card_ref_uq').on(t.cardId, t.ref)]);
+
+export const cardTransactions = pgTable('card_transactions', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  cardId: uuid('card_id').notNull().references(() => cards.id, { onDelete: 'cascade' }),
+  statementId: uuid('statement_id').notNull().references(() => cardStatements.id, { onDelete: 'cascade' }),
+  /** Agrupa as parcelas de uma mesma compra. */
+  groupId: uuid('group_id').notNull(),
+  description: varchar('description', { length: 255 }).notNull(),
+  categoryId: uuid('category_id').notNull().references(() => categories.id, { onDelete: 'restrict' }),
+  /** Positivo = compra; negativo = estorno/crédito. */
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  /** Valor total da compra (todas as parcelas). */
+  totalAmount: numeric('total_amount', { precision: 14, scale: 2 }).notNull(),
+  purchaseDate: date('purchase_date').notNull(),
+  installmentNumber: smallint('installment_number').notNull().default(1),
+  totalInstallments: smallint('total_installments').notNull().default(1),
+  notes: text('notes'),
+  importBatchId: uuid('import_batch_id'),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('card_tx_statement_idx').on(t.statementId),
+  index('card_tx_group_idx').on(t.groupId),
+  index('card_tx_org_date_idx').on(t.orgId, t.purchaseDate),
+]);
+
+// ------------------------------------------------------------------ importações
+export const importBatches = pgTable('import_batches', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  /** payable | receivable */
+  type: varchar('type', { length: 16 }).notNull(),
+  fileName: varchar('file_name', { length: 200 }).notNull(),
+  rowCount: integer('row_count').notNull(),
+  totalAmount: numeric('total_amount', { precision: 14, scale: 2 }).notNull(),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  undoneAt: timestamp('undone_at', { withTimezone: true }),
+}, (t) => [index('import_batches_org_idx').on(t.orgId, t.createdAt)]);
+
+// ------------------------------------------------------------------ alertas e backups
+export const alertDeliveries = pgTable('alert_deliveries', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  /** telegram | email */
+  channel: varchar('channel', { length: 16 }).notNull(),
+  target: varchar('target', { length: 200 }).notNull(),
+  /** ok | error */
+  status: varchar('status', { length: 8 }).notNull(),
+  items: integer('items').notNull().default(0),
+  test: boolean('test').notNull().default(false),
+  error: text('error'),
+  createdAt: createdAt(),
+}, (t) => [index('alert_deliveries_org_idx').on(t.orgId, t.createdAt)]);
+
+export const backupRuns = pgTable('backup_runs', {
+  id: id(),
+  /** schedule | manual */
+  trigger: varchar('trigger', { length: 16 }).notNull(),
+  /** running | ok | error */
+  status: varchar('status', { length: 8 }).notNull(),
+  fileName: varchar('file_name', { length: 200 }),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }),
+  /** none | ok | error */
+  remoteStatus: varchar('remote_status', { length: 8 }).notNull().default('none'),
+  error: text('error'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+});

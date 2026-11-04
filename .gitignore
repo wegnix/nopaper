@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.*
+!/.env.example
+!/deploy/traefik/.env.example
+data/
+*.log
+.DS_Store
+coverage/
+*.tsbuildinfo
+# planilhas (podem conter dados reais)
+*.xlsx
+*.csv
+pre-restore-*.dump

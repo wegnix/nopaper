@@ -1,0 +1,16 @@
+# NoPaper SEM Traefik: publica a interface numa porta do servidor, para outro proxy reverso
+# (nginx, Caddy, Apache, Nginx Proxy Manager…) que já cuida do HTTPS encaminhar para ela.
+# Ative no .env do NoPaper:
+#   COMPOSE_FILE=docker-compose.yml:deploy/porta-direta.yml
+#   WEB_PORT=8080          # porta livre no servidor
+#   WEB_BIND=127.0.0.1     # só o próprio servidor acessa (o proxy roda nele); 0.0.0.0 = rede toda
+# Guia: docs/publicacao-com-traefik.md, seção "Portas".
+services:
+  web:
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:80"
+    networks: !override [internal]
+    labels: !reset []
+
+networks:
+  traefik: !reset null

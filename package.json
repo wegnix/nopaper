@@ -1,0 +1,21 @@
+{
+  "name": "nopaper",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @nopaper/api",
+    "dev:web": "npm run dev -w @nopaper/web",
+    "build": "npm run build -w @nopaper/shared && npm run build -w @nopaper/api && npm run build -w @nopaper/web",
+    "typecheck": "npm run build -w @nopaper/shared && npm run typecheck --workspaces --if-present",
+    "db:generate": "npm run db:generate -w @nopaper/api",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

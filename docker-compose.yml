@@ -1,0 +1,86 @@
+# NoPaper em produção, atrás de um Traefik (proxy reverso com HTTPS automático).
+# Passo a passo completo: docs/publicacao-com-traefik.md
+# Resumo: cp .env.example .env && editar && docker compose up -d --build
+#
+# Dados permanentes: tudo em DATA_PATH (padrão /storage/nopaper), uma subpasta por tipo —
+# banco/, anexos/, backups/ e atualizador/. Apagar ou recriar os containers não perde nada.
+name: nopaper
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nopaper}
+      POSTGRES_USER: ${POSTGRES_USER:-nopaper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      TZ: ${TZ:-America/Sao_Paulo}
+    volumes: ['${DATA_PATH:-/storage/nopaper}/banco:/var/lib/postgresql/data']
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nopaper}"]
+      interval: 10s
+      retries: 10
+
+  api:
+    build: { context: ., dockerfile: docker/api.Dockerfile }
+    image: nopaper-api:latest
+    restart: unless-stopped
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-nopaper}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-nopaper}
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+      # cifra segredos guardados no banco (SMTP, bot, backup); se vazio, deriva do JWT_SECRET
+      SECRETS_KEY: ${SECRETS_KEY:-}
+      APP_URL: ${APP_URL:-https://${APP_DOMAIN}}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrador}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_ORG_NAME: ${ADMIN_ORG_NAME:-Principal}
+      TZ: ${TZ:-America/Sao_Paulo}
+      TZ_DEFAULT: ${TZ:-America/Sao_Paulo}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-15}
+      # atualização pela interface: de onde vêm as versões (dono/repositório no GitHub)
+      UPDATE_REPO: ${UPDATE_REPO:-wegnix/nopaper}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ${DATA_PATH:-/storage/nopaper}/anexos:/data/uploads      # boletos, notas e comprovantes
+      - ${DATA_PATH:-/storage/nopaper}/backups:/data/backups
+    networks: [internal]
+
+  web:
+    build: { context: ., dockerfile: docker/web.Dockerfile }
+    image: nopaper-web:latest
+    restart: unless-stopped
+    depends_on: [api]
+    networks: [internal, traefik]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik}
+      - traefik.http.routers.nopaper.rule=Host(`${APP_DOMAIN:?defina APP_DOMAIN no .env}`)
+      - traefik.http.routers.nopaper.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.nopaper.tls=true
+      - traefik.http.routers.nopaper.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.services.nopaper.loadbalancer.server.port=80
+
+  # Atualização pela interface (Configurações → Plataforma → Atualizações). Tem acesso ao Docker
+  # deste servidor para reconstruir e reiniciar api/web; só fala com a API, pela rede interna, com
+  # token derivado do JWT_SECRET. Sem ele, atualize pela linha de comando (guia, seção 12).
+  updater:
+    build: { context: ., dockerfile: docker/updater.Dockerfile }
+    image: nopaper-updater:latest
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+    volumes:
+      - .:/project
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DATA_PATH:-/storage/nopaper}/atualizador:/state
+    networks: [internal]
+
+networks:
+  internal:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}
