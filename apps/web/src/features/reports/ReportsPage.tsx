@@ -51,9 +51,9 @@ export function ReportsPage() {
   const delta = prev ? ((total - prev) / prev) * 100 : null;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="mr-auto">
+    <div className="flex flex-col gap-4 sm:gap-6">
+      <div className="flex flex-wrap items-end gap-3 sm:gap-4">
+        <div className="mr-auto min-w-0 max-sm:w-full">
           <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight">Relatórios</h1>
           <p className="mt-1 text-sm text-muted">Para onde foi (e de onde veio) o dinheiro em {year}.</p>
         </div>
@@ -73,26 +73,26 @@ export function ReportsPage() {
         <>
           {/* ------------------------------------------------------------ totais */}
           <Card className="grid grid-cols-2 lg:grid-cols-4 divide-line [&>*]:border-line max-lg:[&>*:nth-child(n+3)]:border-t lg:divide-x max-lg:[&>*:nth-child(even)]:border-l">
-            <div className="p-5">
+            <div className="min-w-0 p-3.5 sm:p-5">
               <p className="text-xs text-muted">Total no ano</p>
-              <CountUp value={r.totals.total} className="mt-1 block font-display text-2xl font-semibold" />
+              <CountUp value={r.totals.total} className="mt-1 block font-display text-lg sm:text-2xl font-semibold" />
               <p className="mt-1 flex items-center gap-1 text-xs text-faint">
                 {delta === null ? `${r.totals.count} contas` : <>{delta >= 0 ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}{delta >= 0 ? '+' : ''}{delta.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% vs {year - 1}</>}
               </p>
             </div>
-            <div className="p-5">
+            <div className="min-w-0 p-3.5 sm:p-5">
               <p className="text-xs text-muted">{word.done}</p>
-              <CountUp value={r.totals.paid} className="mt-1 block font-display text-2xl font-semibold" />
+              <CountUp value={r.totals.paid} className="mt-1 block font-display text-lg sm:text-2xl font-semibold" />
               <p className="mt-1 text-xs text-faint">{pct(toCents(r.totals.paid), total)}% do total</p>
             </div>
-            <div className="p-5">
+            <div className="min-w-0 p-3.5 sm:p-5">
               <p className="text-xs text-muted">{word.open}</p>
-              <CountUp value={r.totals.pending} className="mt-1 block font-display text-2xl font-semibold" />
+              <CountUp value={r.totals.pending} className="mt-1 block font-display text-lg sm:text-2xl font-semibold" />
               <p className="mt-1 text-xs text-faint">vencimentos até dez/{year}</p>
             </div>
-            <div className="p-5">
+            <div className="min-w-0 p-3.5 sm:p-5">
               <p className="text-xs text-muted">Vencido sem baixa</p>
-              <CountUp value={r.totals.overdue} className={cn('mt-1 block font-display text-2xl font-semibold', toCents(r.totals.overdue) > 0 && 'text-danger')} />
+              <CountUp value={r.totals.overdue} className={cn('mt-1 block font-display text-lg sm:text-2xl font-semibold', toCents(r.totals.overdue) > 0 && 'text-danger')} />
               {toCents(r.olderOverdue.total) > 0
                 ? <p className="mt-1 flex items-center gap-1 text-xs text-danger"><AlertTriangle className="size-3.5" />+ {formatBRL(r.olderOverdue.total)} de anos anteriores</p>
                 : <p className="mt-1 text-xs text-faint">{toCents(r.totals.overdue) > 0 ? 'confira em Situação: vencidas' : 'nada atrasado'}</p>}
@@ -100,7 +100,7 @@ export function ReportsPage() {
           </Card>
 
           {/* ------------------------------------------------------------ mês a mês */}
-          <Card className="p-5">
+          <Card className="p-4 sm:p-5">
             <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2">
               <h2 className="mr-auto font-display font-semibold">Mês a mês</h2>
               <span className="flex items-center gap-1.5 text-xs text-muted"><span className="size-2.5 rounded-sm bg-[var(--np-chart-1)]" />{word.done}</span>
@@ -113,9 +113,9 @@ export function ReportsPage() {
             </details>
           </Card>
 
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-4 sm:gap-6 xl:grid-cols-2">
             {/* -------------------------------------------------------- categorias */}
-            <Card className="p-5">
+            <Card className="p-4 sm:p-5">
               <h2 className="font-display font-semibold">Por categoria</h2>
               <BarList className="mt-4" total={total}
                 rows={r.byCategory.map((c) => ({
@@ -125,8 +125,8 @@ export function ReportsPage() {
                 }))} />
             </Card>
 
-            <div className="flex flex-col gap-6">
-              <Card className="p-5">
+            <div className="flex min-w-0 flex-col gap-4 sm:gap-6">
+              <Card className="p-4 sm:p-5">
                 <h2 className="font-display font-semibold">Maiores contas do ano</h2>
                 <ol className="mt-3 divide-y divide-line">
                   {r.top.map((t, i) => (
@@ -134,14 +134,14 @@ export function ReportsPage() {
                       <span className="w-5 text-right text-xs text-faint tnum">{i + 1}</span>
                       <Link to={`${listPath}?ano=${r.year}&busca=${encodeURIComponent(t.description)}`} className="min-w-0 flex-1 truncate hover:text-accent">{t.description}</Link>
                       <span className="text-xs text-faint">{t.count}×</span>
-                      <span className="w-28 text-right tnum font-medium">{formatBRL(t.total)}</span>
+                      <span className="shrink-0 text-right tnum font-medium sm:w-28">{formatBRL(t.total)}</span>
                     </li>
                   ))}
                   {!r.top.length && <li className="py-6 text-center text-sm text-faint">Sem contas em {year}.</li>}
                 </ol>
               </Card>
               {r.byFolder.length > 1 && (
-                <Card className="p-5">
+                <Card className="p-4 sm:p-5">
                   <h2 className="font-display font-semibold">Por pasta</h2>
                   <BarList className="mt-4" total={total}
                     rows={r.byFolder.map((f) => ({
@@ -155,7 +155,7 @@ export function ReportsPage() {
           </div>
 
           {r.cards && r.cards.length > 0 && (
-            <Card className="p-5">
+            <Card className="p-4 sm:p-5">
               <div className="flex flex-wrap items-baseline gap-x-3">
                 <h2 className="font-display font-semibold">Dentro das faturas de cartão</h2>
                 <p className="text-xs text-faint">Compras por categoria nas faturas que vencem em {year}. Já estão somadas acima como “Fatura”.</p>
@@ -191,7 +191,10 @@ export function MonthlyChart({ months, year, today, labels, onPick, height = 240
   const [ref, width] = useWidth<HTMLDivElement>();
   const nav = useNavigate();
   const [hover, setHover] = useState<number | null>(null);
-  const H = height, padL = 64, padB = 26, padT = 8;
+  const narrow = width > 0 && width < 480;
+  const H = height, padL = narrow ? 46 : 64, padB = 26, padT = 8;
+  // toque: o 1º mostra o resumo do mês, o 2º abre a lista (no mouse, o hover já mostra)
+  const touch = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
   const max = niceMax(Math.max(...months.map((m) => toCents(m.total))));
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max);
   const plotW = Math.max(0, width - padL);
@@ -208,7 +211,7 @@ export function MonthlyChart({ months, year, today, labels, onPick, height = 240
           {ticks.map((t) => (
             <g key={t}>
               <line x1={padL} x2={width} y1={y(t)} y2={y(t)} stroke="var(--np-line)" strokeDasharray={t ? '2 4' : undefined} />
-              <text x={padL - 10} y={y(t)} dy="0.32em" textAnchor="end" className="fill-[var(--np-faint)] text-[11px] tnum">{compact(t)}</text>
+              <text x={padL - (narrow ? 6 : 10)} y={y(t)} dy="0.32em" textAnchor="end" className={cn('fill-[var(--np-faint)] tnum', narrow ? 'text-[10px]' : 'text-[11px]')}>{compact(t)}</text>
             </g>
           ))}
           {months.map((m, i) => {
@@ -222,10 +225,10 @@ export function MonthlyChart({ months, year, today, labels, onPick, height = 240
               <g key={m.month} opacity={dim ? 0.45 : 1} className="transition-opacity">
                 {paid > 0 && <path d={roundTop(cx - barW / 2, yPaid, barW, base - yPaid, pend > 0 ? 0 : 4)} fill="var(--np-chart-1)" />}
                 {pend > 0 && <path d={roundTop(cx - barW / 2, yTop, barW, Math.max(0, yPaid - yTop - gap), 4)} fill="var(--np-chart-2)" />}
-                <text x={cx} y={H - 6} textAnchor="middle" className={cn('text-[11px]', curMonth === m.month ? 'fill-[var(--np-ink)] font-semibold' : 'fill-[var(--np-faint)]')}>{MONTHS_PT_SHORT[i]}</text>
+                <text x={cx} y={H - 6} textAnchor="middle" className={cn('text-[11px]', curMonth === m.month ? 'fill-[var(--np-ink)] font-semibold' : 'fill-[var(--np-faint)]')}>{slot < 30 ? MONTHS_PT_SHORT[i].slice(0, 1) : MONTHS_PT_SHORT[i]}</text>
                 {/* área de hover maior que a barra */}
                 <rect x={padL + slot * i} y={0} width={slot} height={H} fill="transparent" className="cursor-pointer"
-                  onMouseEnter={() => setHover(i)} onClick={() => nav(onPick(m.month))} />
+                  onMouseEnter={() => !touch && setHover(i)} onClick={() => (touch && hover !== i ? setHover(i) : nav(onPick(m.month)))} />
               </g>
             );
           })}
@@ -242,7 +245,7 @@ export function MonthlyChart({ months, year, today, labels, onPick, height = 240
             <Row label="Total" value={formatBRL(h.total)} strong />
             {toCents(h.overdue) > 0 && <p className="flex items-center gap-1 text-danger"><AlertTriangle className="size-3" />{formatBRL(h.overdue)} vencido</p>}
           </div>
-          <p className="mt-2 text-faint">{h.count} {h.count === 1 ? 'conta' : 'contas'} · clique para abrir</p>
+          <p className="mt-2 text-faint">{h.count} {h.count === 1 ? 'conta' : 'contas'} · {touch ? 'toque de novo para abrir' : 'clique para abrir'}</p>
         </div>
       )}
     </div>
@@ -316,7 +319,7 @@ function BarList({ rows, total, className, columns }: { rows: BarRow[]; total: n
   const max = Math.max(1, ...rows.map((r) => r.cents));
   if (!rows.length) return <p className={cn('text-sm text-faint', className)}>Nada no período.</p>;
   return (
-    <ul className={cn('grid gap-x-8 gap-y-3.5', columns && 'md:grid-cols-2', className)}>
+    <ul className={cn('grid gap-x-8 gap-y-3.5 [&>li]:min-w-0', columns && 'md:grid-cols-2', className)}>
       {rows.map((r) => {
         const inner = (
           <>
@@ -324,7 +327,7 @@ function BarList({ rows, total, className, columns }: { rows: BarRow[]; total: n
               {r.color && <span className="size-2.5 shrink-0 self-center rounded-full" style={{ background: COLOR_PRESETS[isColorKey(r.color) ? r.color : 'slate'].base }} />}
               <span className="min-w-0 flex-1 truncate">{r.label}</span>
               <span className="text-xs text-faint tnum">{pct(r.cents, total)}%</span>
-              <span className="w-28 text-right font-medium tnum">{formatBRL(r.cents / 100)}</span>
+              <span className="shrink-0 text-right font-medium tnum sm:w-28">{formatBRL(r.cents / 100)}</span>
             </div>
             <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
               <div className="h-full rounded-full bg-[var(--np-chart-1)] transition-[width] duration-700" style={{ width: `${(r.cents / max) * 100}%` }} />

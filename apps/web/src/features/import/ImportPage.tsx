@@ -15,7 +15,7 @@ import { useConfirm } from '@/components/ui/dialog';
 import { api, errMsg, get, post } from '@/lib/api';
 import { useCategories, useFolders } from '@/lib/queries';
 import { useCan, useSession } from '@/lib/session';
-import { cn, plural } from '@/lib/utils';
+import { cn, isTouch, plural } from '@/lib/utils';
 
 interface ReadResult { fileName: string; sheets: ImportSheet[] }
 interface Batch { id: string; type: BillType; fileName: string; rowCount: number; totalAmount: string; createdAt: string; undoneAt: string | null; createdBy: string | null; remaining: number }
@@ -391,7 +391,7 @@ function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }
         {busy ? <Loader2 className="size-6 animate-spin" /> : <FileSpreadsheet className="size-6" />}
       </span>
       <div>
-        <p className="font-display text-lg font-semibold">{busy ? 'Lendo a planilha…' : 'Arraste a planilha aqui ou clique para escolher'}</p>
+        <p className="font-display text-lg font-semibold">{busy ? 'Lendo a planilha…' : isTouch() ? 'Toque para escolher a planilha' : 'Arraste a planilha aqui ou clique para escolher'}</p>
         <p className="mt-1 text-sm text-muted">.xlsx ou .csv · uma aba por mês funciona bem (Jan, Fev, Mar…)</p>
       </div>
       <input ref={ref} type="file" hidden accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"

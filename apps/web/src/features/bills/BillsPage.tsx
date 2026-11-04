@@ -3,7 +3,7 @@ import { useSearchParams, Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Archive, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen, Plus, RefreshCw, Search, Tag, Wallet, X, FileSpreadsheet } from 'lucide-react';
+import { Archive, CalendarDays, ChevronLeft, ChevronRight, Filter, Folder, FolderOpen, Plus, RefreshCw, Search, Tag, Wallet, X, FileSpreadsheet } from 'lucide-react';
 import { MONTHS_PT, formatBRL, sumMoney, todayISO, type AttachmentSlot, type BillType } from '@nopaper/shared';
 import { Button, Card, Empty, Input, PageHeader, Segmented, Select, Spinner } from '@/components/ui/base';
 import { ColorChip } from '@/components/ui/chips';
@@ -141,17 +141,21 @@ export function BillsPage({ type }: { type: BillType }) {
   };
 
   const activeFilters = !!(categoryId || folderId || search || days.size);
+  // no celular os filtros de dia/pasta/categoria ficam recolhidos (abrem sozinhos se houver algum ativo)
+  const chipFilters = (categoryId ? 1 : 0) + (folderId ? 1 : 0) + (days.size ? 1 : 0);
+  const [showFilters, setShowFilters] = useState(false);
+  const narrow = typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches;
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title={l.title}
         actions={<>
-          {can('bills.folders') && <Button size="sm" variant="ghost" icon={<FolderOpen className="size-4" />} onClick={() => setMgr('folder')}>Pastas</Button>}
-          {can('bills.categories') && <Button size="sm" variant="ghost" icon={<Tag className="size-4" />} onClick={() => setMgr('cat')}>Categorias</Button>}
-          {can('bills.import') && perm.create && <Link to={type === 'receivable' ? '/importar?tipo=receber' : '/importar'} className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-ink"><FileSpreadsheet className="size-4" />Importar</Link>}
-          {can('bills.export') && <Button size="sm" variant="ghost" icon={<Archive className="size-4" />} onClick={() => setMgr('export')}>Exportar</Button>}
-          {perm.create && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setForm({ open: true, bill: null })}>{l.new}</Button>}
+          {can('bills.folders') && <Button size="sm" variant="ghost" icon={<FolderOpen className="size-4" />} onClick={() => setMgr('folder')} title="Pastas" className="max-sm:size-9 max-sm:px-0"><span className="max-sm:sr-only">Pastas</span></Button>}
+          {can('bills.categories') && <Button size="sm" variant="ghost" icon={<Tag className="size-4" />} onClick={() => setMgr('cat')} title="Categorias" className="max-sm:size-9 max-sm:px-0"><span className="max-sm:sr-only">Categorias</span></Button>}
+          {can('bills.import') && perm.create && <Link to={type === 'receivable' ? '/importar?tipo=receber' : '/importar'} title="Importar" className="inline-flex h-8 max-sm:size-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 max-sm:px-0 text-[13px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-ink"><FileSpreadsheet className="size-4" /><span className="max-sm:sr-only">Importar</span></Link>}
+          {can('bills.export') && <Button size="sm" variant="ghost" icon={<Archive className="size-4" />} onClick={() => setMgr('export')} title="Exportar" className="max-sm:size-9 max-sm:px-0"><span className="max-sm:sr-only">Exportar</span></Button>}
+          {perm.create && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setForm({ open: true, bill: null })} className="max-sm:ml-auto">{l.new}</Button>}
         </>}
       />
 
@@ -160,27 +164,31 @@ export function BillsPage({ type }: { type: BillType }) {
       <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-line p-3 md:p-4">
           <div className="flex flex-wrap items-center gap-2">
-            <div className={cn('flex items-center rounded-lg border border-line bg-surface-2', status === 'overdue' && 'opacity-50')}>
-              <button className="grid size-10 place-items-center text-muted hover:text-ink" onClick={() => shiftMonth(-1)} aria-label="Mês anterior"><ChevronLeft className="size-4" /></button>
-              <Select aria-label="Mês" className="h-10 w-[130px] border-0 bg-transparent hover:border-0 focus:ring-0 font-medium" value={month} onChange={(e) => setParam({ mes: e.target.value })}>
+            <div className={cn('flex items-center rounded-lg border border-line bg-surface-2 max-sm:w-full', status === 'overdue' && 'opacity-50')}>
+              <button className="grid size-10 shrink-0 place-items-center text-muted hover:text-ink" onClick={() => shiftMonth(-1)} aria-label="Mês anterior"><ChevronLeft className="size-4" /></button>
+              <Select aria-label="Mês" className="h-10 w-[130px] max-sm:flex-1 max-sm:w-auto border-0 bg-transparent hover:border-0 focus:ring-0 font-medium" value={month} onChange={(e) => setParam({ mes: e.target.value })}>
                 {MONTHS_PT.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
               </Select>
-              <Input aria-label="Ano" type="number" className="h-10 w-[76px] border-0 bg-transparent px-1 focus:ring-0 font-medium tnum" value={year} onChange={(e) => setParam({ ano: Number(e.target.value) || year })} />
-              <button className="grid size-10 place-items-center text-muted hover:text-ink" onClick={() => shiftMonth(1)} aria-label="Próximo mês"><ChevronRight className="size-4" /></button>
+              <Input aria-label="Ano" type="number" inputMode="numeric" className="h-10 w-[76px] border-0 bg-transparent px-1 focus:ring-0 font-medium tnum" value={year} onChange={(e) => setParam({ ano: Number(e.target.value) || year })} />
+              <button className="grid size-10 shrink-0 place-items-center text-muted hover:text-ink" onClick={() => shiftMonth(1)} aria-label="Próximo mês"><ChevronRight className="size-4" /></button>
             </div>
-            <Segmented<Status> value={status} onChange={(s) => setParam({ situacao: s })} options={[
+            <Segmented<Status> className="max-sm:w-full" value={status} onChange={(s) => setParam({ situacao: s })} options={[
               { value: '', label: 'Todas' }, { value: 'pending', label: 'Pendentes' }, { value: 'overdue', label: l.overduePl }, { value: 'paid', label: l.paidPl },
             ]} />
-            <div className="relative flex-1 min-w-[200px]">
+            <div className="relative flex-1 min-w-[200px] max-sm:min-w-0">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-              <Input className="pl-9" placeholder="Buscar por descrição, pessoa, observação…" value={searchText} onChange={(e) => setSearchText(e.target.value)} />
+              <Input type="search" enterKeyHint="search" className="pl-9" placeholder={narrow ? 'Buscar…' : 'Buscar por descrição, pessoa, observação…'} value={searchText} onChange={(e) => setSearchText(e.target.value)} />
             </div>
+            <Button variant="secondary" size="sm" className={cn('relative h-10 md:hidden', (showFilters || chipFilters > 0) && 'border-accent text-accent')} icon={<Filter className="size-4" />} aria-expanded={showFilters} onClick={() => setShowFilters((v) => !v)}>
+              Filtros{chipFilters > 0 && <span className="grid min-w-5 h-5 place-items-center rounded-full bg-accent px-1 text-[11px] text-accent-ink">{chipFilters}</span>}
+            </Button>
             <Button variant="ghost" size="sm" className="size-10 p-0" aria-label="Atualizar" onClick={() => qc.invalidateQueries({ queryKey: ['bills'] })}>
               <RefreshCw className={cn('size-4', (listQ.isFetching || sumQ.isFetching) && 'animate-spin')} />
             </Button>
           </div>
           {status === 'overdue' && <p className="text-xs text-danger">Mostrando tudo o que está em atraso, de qualquer mês.</p>}
 
+          <div className={cn('flex-col gap-3', showFilters ? 'flex' : 'hidden md:flex')}>
           {dayChips.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="mr-1 inline-flex items-center gap-1 text-xs text-faint"><CalendarDays className="size-3.5" /> Dia</span>
@@ -188,7 +196,7 @@ export function BillsPage({ type }: { type: BillType }) {
               {dayChips.map(([d, info]) => (
                 <button key={d} type="button" onClick={() => toggleDay(d)}
                   title={`${plural(info.count, 'conta', 'contas')} com vencimento no dia ${d}${info.overdue ? ' · há conta atrasada' : ''}${d === todayDay ? ' · hoje' : ''}`}
-                  className={cn('relative inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium tnum transition-colors',
+                  className={cn('relative inline-flex items-center gap-1 rounded-md border px-2 py-0.5 pointer-coarse:py-1.5 text-xs font-medium tnum transition-colors',
                     days.has(d) ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink',
                     d === todayDay && !days.has(d) && 'border-accent/50 text-ink')}>
                   {String(d).padStart(2, '0')}
@@ -207,7 +215,7 @@ export function BillsPage({ type }: { type: BillType }) {
             {folders.map((f) => (
               <ColorChip key={f.id} color={folderId === f.id ? f.color : 'slate'} active={folderId === f.id} title={f.name} onClick={() => setParam({ pasta: folderId === f.id ? null : f.id })} className={cn(folderId !== f.id && 'opacity-70')}>{f.label}</ColorChip>
             ))}
-            <span className="mx-2 h-5 w-px bg-line" />
+            <span className="mx-2 h-5 w-px bg-line max-md:basis-full max-md:mx-0 max-md:h-0" />
             <span className="mr-1 inline-flex items-center gap-1 text-xs text-faint"><Tag className="size-3.5" /> Categoria</span>
             <ChipToggle active={!categoryId} onClick={() => setParam({ categoria: null })}>Todas</ChipToggle>
             {typeCats.map((c) => (
@@ -215,7 +223,8 @@ export function BillsPage({ type }: { type: BillType }) {
                 {c.label}{c.isRestricted ? ' 🔒' : ''}
               </ColorChip>
             ))}
-            {activeFilters && <button className="ml-2 inline-flex items-center gap-1 text-xs text-muted hover:text-ink" onClick={() => setParam({ pasta: null, categoria: null, busca: null, dia: null })}><X className="size-3.5" /> limpar filtros</button>}
+            {activeFilters && <button className="ml-2 inline-flex items-center gap-1 text-xs text-muted hover:text-ink pointer-coarse:py-1.5" onClick={() => setParam({ pasta: null, categoria: null, busca: null, dia: null })}><X className="size-3.5" /> limpar filtros</button>}
+          </div>
           </div>
         </div>
 
@@ -247,9 +256,9 @@ export function BillsPage({ type }: { type: BillType }) {
         {selected.size > 0 && (
           <motion.div
             initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-            className="fixed bottom-5 left-1/2 z-[4000] -translate-x-1/2 flex items-center gap-4 rounded-2xl border border-line bg-raised px-4 py-3 shadow-2xl max-w-[95vw]"
+            className="fixed bottom-[calc(1.25rem+env(safe-area-inset-bottom))] left-1/2 z-[4000] -translate-x-1/2 flex items-center gap-2 sm:gap-4 rounded-2xl border border-line bg-raised px-3 sm:px-4 py-3 shadow-2xl w-max max-w-[calc(100vw-24px)]"
           >
-            <span className="text-sm"><b>{selected.size}</b> selecionada(s) · <span className="tnum">{formatBRL(sumMoney(selectedBills.map((b) => b.amount)))}</span></span>
+            <span className="min-w-0 text-sm"><b>{selected.size}</b> <span className="max-sm:hidden">selecionada(s) </span>· <span className="tnum">{formatBRL(sumMoney(selectedBills.map((b) => b.amount)))}</span></span>
             <Button size="sm" variant="ok" onClick={() => setBulk(true)}>{l.bulk}</Button>
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Limpar</Button>
           </motion.div>
@@ -275,7 +284,7 @@ export function BillsPage({ type }: { type: BillType }) {
 function ChipToggle({ active, onClick, children, dashed }: { active: boolean; onClick: () => void; children: React.ReactNode; dashed?: boolean }) {
   return (
     <button type="button" onClick={onClick}
-      className={cn('rounded-md border px-2 py-0.5 text-xs font-medium transition-colors', dashed && 'border-dashed',
+      className={cn('rounded-md border px-2 py-0.5 pointer-coarse:py-1.5 text-xs font-medium transition-colors', dashed && 'border-dashed',
         active ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink')}>
       {children}
     </button>

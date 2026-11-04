@@ -108,6 +108,22 @@ select option:checked { background-color: var(--np-accent-soft); color: var(--np
 
 /* rolagem discreta */
 * { scrollbar-width: thin; scrollbar-color: var(--np-line-strong) transparent; }
+/* faixa que rola na horizontal sem barra (filtros, abas e indicadores no celular) */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ------------------------------------------------------------------ celular / tablet
+ * Áreas seguras (notch, barra de status, indicador de início) — o viewport usa `viewport-fit=cover`,
+ * então quem encosta nas bordas da tela reserva o espaço que o sistema ocupa.
+ */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-x { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+/* No iOS, campo com fonte menor que 16px faz o Safari dar zoom ao tocar (e não volta sozinho). */
+@media (pointer: coarse) {
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea { font-size: 16px; }
+}
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
 
 /* ------------------------------------------------------------------ menu lateral
  * Degradê de baixo para cima: o violeta nasce no rodapé e some no topo, com um brilho que

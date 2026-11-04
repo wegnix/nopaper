@@ -27,23 +27,23 @@ export function Dialog({
             <div className="fixed inset-0 z-[5001] grid place-items-end sm:place-items-center p-0 sm:p-4 pointer-events-none">
               <RDialog.Content asChild forceMount aria-describedby={description ? undefined : undefined}>
                 <motion.div
-                  className={cn('pointer-events-auto w-full flex flex-col max-h-[92dvh] rounded-t-2xl sm:rounded-2xl border border-line bg-surface shadow-2xl', sizes[size], className)}
+                  className={cn('pointer-events-auto w-full flex flex-col max-h-[calc(100dvh-env(safe-area-inset-top)-12px)] sm:max-h-[92dvh] rounded-t-2xl sm:rounded-2xl border border-line bg-surface shadow-2xl max-sm:pb-[env(safe-area-inset-bottom)]', sizes[size], className)}
                   initial={{ opacity: 0, y: 24, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 16, scale: 0.98 }}
                   transition={{ type: 'spring', stiffness: 420, damping: 34 }}
                 >
-                  <div className="flex items-start justify-between gap-4 px-5 pt-5 pb-3">
+                  <div className="flex items-start justify-between gap-4 px-4 sm:px-5 pt-4 sm:pt-5 pb-3">
                     <div className="min-w-0">
                       <RDialog.Title className="font-display text-xl font-semibold leading-tight">{title}</RDialog.Title>
                       {description ? <RDialog.Description className="mt-1 text-sm text-muted">{description}</RDialog.Description> : <RDialog.Description className="sr-only">{typeof title === 'string' ? title : 'Diálogo'}</RDialog.Description>}
                     </div>
-                    <RDialog.Close className="-mr-1 -mt-1 grid size-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" aria-label="Fechar">
-                      <X className="size-4" />
+                    <RDialog.Close className="-mr-2 -mt-2 sm:-mr-1 sm:-mt-1 grid size-10 sm:size-8 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" aria-label="Fechar">
+                      <X className="size-5 sm:size-4" />
                     </RDialog.Close>
                   </div>
-                  <div className="px-5 pb-5 overflow-y-auto min-h-0">{children}</div>
-                  {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-3.5 bg-surface-2/50 rounded-b-2xl">{footer}</div>}
+                  <div className="px-4 sm:px-5 pb-5 overflow-y-auto overscroll-contain min-h-0">{children}</div>
+                  {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-4 sm:px-5 py-3.5 bg-surface-2/50 sm:rounded-b-2xl">{footer}</div>}
                 </motion.div>
               </RDialog.Content>
             </div>

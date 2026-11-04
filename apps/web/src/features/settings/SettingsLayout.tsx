@@ -1,5 +1,5 @@
-import { NavLink, Outlet, Navigate } from 'react-router';
-import { ArrowUpCircle, Bell, Building2, DatabaseBackup, History, LockKeyhole, Mail, ScrollText, Shield, User, UserCog, Users } from 'lucide-react';
+import { NavLink, Outlet, Navigate, useLocation, useNavigate } from 'react-router';
+import { ArrowUpCircle, Bell, ChevronDown, Building2, DatabaseBackup, History, LockKeyhole, Mail, ScrollText, Shield, User, UserCog, Users } from 'lucide-react';
 import { useCan, useSession } from '@/lib/session';
 import { PageHeader } from '@/components/ui/base';
 import { cn } from '@/lib/utils';
@@ -35,11 +35,31 @@ export function SettingsLayout() {
   const sections = SECTIONS.filter((s) => !s.superadmin || isSuper)
     .map((s) => ({ ...s, items: s.items.filter((i) => !i.perm || can(i.perm)) }))
     .filter((s) => s.items.length);
+  const loc = useLocation();
+  const nav = useNavigate();
+  const current = sections.flatMap((s) => s.items).find((i) => loc.pathname.startsWith(`/config/${i.to}`));
+  const CurIcon = current?.icon ?? User;
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
       <PageHeader title="Configurações" />
-      <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
-        <nav className="flex lg:flex-col gap-1 overflow-x-auto -mx-1 px-1 lg:gap-5">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-[220px_1fr]">
+        {/* celular/tablet: lista suspensa com as seções (a fileira de abas não cabia e escondia itens) */}
+        <label className="relative lg:hidden">
+          <span className="sr-only">Seção das configurações</span>
+          <CurIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-accent" />
+          <select
+            value={current?.to ?? ''} onChange={(e) => nav(e.target.value)}
+            className="h-11 w-full appearance-none rounded-lg border border-line bg-surface pl-9 pr-9 text-sm font-medium text-ink shadow-card focus:border-accent focus:outline-none"
+          >
+            {sections.map((s) => (
+              <optgroup key={s.title} label={s.title}>
+                {s.items.map((i) => <option key={i.to} value={i.to}>{i.label}</option>)}
+              </optgroup>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
+        </label>
+        <nav className="hidden lg:flex lg:flex-col gap-1 lg:gap-5">
           {sections.map((s) => (
             <div key={s.title} className="flex lg:flex-col gap-1 shrink-0">
               <p className="hidden lg:block px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">{s.title}</p>

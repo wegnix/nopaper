@@ -78,7 +78,7 @@ export function CardsPage() {
   if (cardsQ.isLoading) return <div className="grid place-items-center py-24"><Spinner /></div>;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
       <PageHeader title="Cartões de crédito" description="Lance as compras no cartão; cada fatura vira uma conta a pagar automaticamente."
         actions={canManage && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCardForm({ open: true, card: null })}>Novo cartão</Button>} />
 
@@ -88,8 +88,8 @@ export function CardsPage() {
         </Empty></Card>
       ) : (
         <>
-          <div className="-mx-4 md:-mx-5 lg:-mx-6 overflow-x-auto px-4 md:px-5 lg:px-6 pb-3 pt-3">
-            <div className="flex gap-6">
+          <div className="-mx-3 sm:-mx-4 md:-mx-5 lg:-mx-6 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-px-3 sm:scroll-px-4 px-3 sm:px-4 md:px-5 lg:px-6 pb-3 pt-3">
+            <div className="flex gap-4 sm:gap-6 [&>*]:snap-start">
               {/* clique num cartão o seleciona; no já selecionado, abre a edição */}
               {cards.map((c) => <CardVisual key={c.id} card={c} selected={c.id === selId} editable={canManage}
                 onClick={() => (c.id === selId && canManage ? setCardForm({ open: true, card: c }) : set({ cartao: c.id, fatura: null }))} />)}
@@ -98,7 +98,7 @@ export function CardsPage() {
 
           {card && ref && (
             <Card className="overflow-hidden">
-              <div className="flex flex-wrap items-center gap-4 border-b border-line p-4 md:p-5">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4 border-b border-line p-3 sm:p-4 md:p-5">
                 <div className="flex items-center rounded-lg border border-line bg-surface-2">
                   <button className="grid size-10 place-items-center text-muted hover:text-ink" onClick={() => set({ fatura: addMonthsRef(ref, -1) })} aria-label="Fatura anterior"><ChevronLeft className="size-4" /></button>
                   <span className="min-w-[110px] text-center font-display font-semibold">{refLabel(ref)}</span>
@@ -106,7 +106,7 @@ export function CardsPage() {
                 </div>
                 {ref !== card.currentRef && <button className="text-xs text-accent hover:underline" onClick={() => set({ fatura: null })}>ir para a fatura atual</button>}
                 {st && <StatusChip {...STATUS[st.status]} />}
-                <div className="ml-auto flex flex-wrap gap-2">
+                <div className="ml-auto flex flex-wrap gap-2 max-sm:ml-0 max-sm:w-full max-sm:[&>button]:flex-1">
                   {canManage && <Button variant="ghost" icon={<Pencil className="size-4" />} onClick={() => setCardForm({ open: true, card })}>Editar cartão</Button>}
                   {st?.bill && st.bill.status === 'pending' && canPay && <Button variant="ok" icon={<Check className="size-4" />} onClick={() => setPay({ bill: st.bill!, proofOnly: false })}>Pagar fatura</Button>}
                   {st?.bill && st.bill.status === 'paid' && canPay && <Button variant="ghost" icon={<RotateCcw className="size-4" />} onClick={() => unpay(st.bill!)}>Reverter pagamento</Button>}
@@ -117,10 +117,10 @@ export function CardsPage() {
 
               <div className="grid lg:grid-cols-[1fr_300px]">
                 <div className="min-w-0">
-                  <div className="grid grid-cols-3 border-b border-line">
-                    <div className="p-4 md:p-5"><p className="text-xs text-muted">Total da fatura</p><CountUp value={st?.total ?? '0'} className="mt-1 block font-display text-2xl font-semibold" /></div>
-                    <div className="border-l border-line p-4 md:p-5"><p className="text-xs text-muted">Fecha em</p><p className="mt-1 font-display text-lg font-semibold tnum">{st ? formatDateBR(st.statement.closingDate) : '—'}</p></div>
-                    <div className="border-l border-line p-4 md:p-5"><p className="text-xs text-muted">Vence em</p><p className="mt-1 font-display text-lg font-semibold tnum">{st ? formatDateBR(st.statement.dueDate) : '—'}</p></div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 border-b border-line">
+                    <div className="p-3.5 sm:p-4 md:p-5 max-sm:col-span-2 max-sm:border-b max-sm:border-line"><p className="text-xs text-muted">Total da fatura</p><CountUp value={st?.total ?? '0'} className="mt-1 block font-display text-2xl font-semibold" /></div>
+                    <div className="sm:border-l border-line p-3.5 sm:p-4 md:p-5"><p className="text-xs text-muted">Fecha em</p><p className="mt-1 font-display text-lg font-semibold tnum">{st ? formatDateBR(st.statement.closingDate) : '—'}</p></div>
+                    <div className="border-l border-line p-3.5 sm:p-4 md:p-5"><p className="text-xs text-muted">Vence em</p><p className="mt-1 font-display text-lg font-semibold tnum">{st ? formatDateBR(st.statement.dueDate) : '—'}</p></div>
                   </div>
                   {st && (
                     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-surface-2/40 px-4 py-2.5 text-xs text-muted md:px-5">
@@ -148,10 +148,10 @@ export function CardsPage() {
                             </p>
                           </div>
                           <CategoryChip category={catMap.get(t.categoryId)} className="hidden sm:inline-flex" />
-                          <span className={cn('w-28 text-right tnum text-sm font-medium', t.amount.startsWith('-') && 'text-ok')}>{formatBRL(t.amount)}</span>
+                          <span className={cn('shrink-0 text-right tnum text-sm font-medium sm:w-28', t.amount.startsWith('-') && 'text-ok')}>{formatBRL(t.amount)}</span>
                           {canEdit && (
                             <DropdownMenu.Root>
-                              <DropdownMenu.Trigger className="grid size-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" aria-label="Ações"><MoreHorizontal className="size-4" /></DropdownMenu.Trigger>
+                              <DropdownMenu.Trigger className="grid size-8 pointer-coarse:size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" aria-label="Ações"><MoreHorizontal className="size-4" /></DropdownMenu.Trigger>
                               <DropdownMenu.Portal>
                                 <DropdownMenu.Content align="end" sideOffset={4} className="z-[6000] w-60 rounded-xl border border-line bg-raised p-1.5 shadow-2xl text-sm">
                                   <DropdownMenu.Item onSelect={() => setTxForm({ open: true, tx: t })} className="flex items-center gap-2 rounded-lg px-2 py-2 outline-none data-[highlighted]:bg-surface-2 cursor-pointer"><Pencil className="size-4 text-faint" /> Editar</DropdownMenu.Item>
@@ -168,12 +168,12 @@ export function CardsPage() {
                     </ul>
                   )}
                 </div>
-                <aside className="border-t lg:border-t-0 lg:border-l border-line p-5">
+                <aside className="min-w-0 border-t lg:border-t-0 lg:border-l border-line p-4 sm:p-5">
                   <h3 className="font-display font-semibold">Por categoria</h3>
                   <ul className="mt-4 flex flex-col gap-3">
                     {byCat.map(([id, cents]) => (
                       <li key={id}>
-                        <div className="flex justify-between gap-2 text-sm"><span className="truncate">{catMap.get(id)?.label ?? '—'}</span><span className="tnum text-muted">{formatBRL(cents / 100)}</span></div>
+                        <div className="flex justify-between gap-2 text-sm"><span className="truncate">{catMap.get(id)?.label ?? '—'}</span><span className="shrink-0 tnum text-muted">{formatBRL(cents / 100)}</span></div>
                         <div className="mt-1.5 h-1.5 rounded-full bg-surface-2 overflow-hidden"><div className="h-full rounded-full bg-accent transition-[width] duration-700" style={{ width: `${(cents / byCat[0][1]) * 100}%` }} /></div>
                       </li>
                     ))}

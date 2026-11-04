@@ -45,7 +45,7 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
           ref={ref}
           aria-label={label}
           className={cn(
-            'inline-grid place-items-center size-8 rounded-md text-muted transition-colors hover:bg-surface-2 disabled:opacity-40',
+            'inline-grid place-items-center size-8 pointer-coarse:size-10 rounded-md text-muted transition-colors hover:bg-surface-2 disabled:opacity-40',
             tone === 'danger' && 'hover:text-danger', tone === 'ok' && 'hover:text-ok', tone === 'default' && 'hover:text-ink',
             className,
           )}
@@ -132,11 +132,11 @@ export function Spinner({ className }: { className?: string }) {
 
 export function Segmented<T extends string>({ value, onChange, options, className }: { value: T; onChange: (v: T) => void; options: Array<{ value: T; label: ReactNode }>; className?: string }) {
   return (
-    <div role="radiogroup" className={cn('inline-flex rounded-lg bg-surface-2 border border-line p-0.5', className)}>
+    <div role="radiogroup" className={cn('inline-flex max-w-full overflow-x-auto no-scrollbar rounded-lg bg-surface-2 border border-line p-0.5', className)}>
       {options.map((o) => (
         <button
           type="button" role="radio" aria-checked={value === o.value} key={o.value} onClick={() => onChange(o.value)}
-          className={cn('h-8 px-3 rounded-md text-[13px] font-medium whitespace-nowrap transition-colors flex-1', value === o.value ? 'bg-raised text-ink shadow-card' : 'text-muted hover:text-ink')}
+          className={cn('h-8 pointer-coarse:h-9 px-3 rounded-md text-[13px] font-medium whitespace-nowrap transition-colors flex-1', value === o.value ? 'bg-raised text-ink shadow-card' : 'text-muted hover:text-ink')}
         >
           {o.label}
         </button>
@@ -146,17 +146,17 @@ export function Segmented<T extends string>({ value, onChange, options, classNam
 }
 
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn('rounded-xl border border-line bg-surface shadow-card', className)}>{children}</div>;
+  return <div className={cn('min-w-0 rounded-xl border border-line bg-surface shadow-card', className)}>{children}</div>;
 }
 
 export function PageHeader({ title, description, actions }: { title: ReactNode; description?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
       <div className="min-w-0">
-        <h1 className="font-display text-[28px] leading-tight font-semibold">{title}</h1>
+        <h1 className="font-display text-[24px] sm:text-[28px] leading-tight font-semibold">{title}</h1>
         {description && <p className="mt-1 text-sm text-muted max-w-prose">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2 max-sm:gap-1 max-sm:w-full">{actions}</div>}
     </div>
   );
 }

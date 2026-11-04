@@ -12,7 +12,7 @@ import { Button, Checkbox, Field, IconButton, Input, Segmented, Select } from '@
 import { api, post, put, errMsg, ApiError } from '@/lib/api';
 import { useCategories, useFolders } from '@/lib/queries';
 import { Combobox } from '@/components/ui/combobox';
-import { cn } from '@/lib/utils';
+import { cn, isTouch } from '@/lib/utils';
 import type { Bill, Classification } from '@/lib/types';
 import { MoneyInput } from './MoneyInput';
 import { RecurrenceEditor, initialRec, needsRows, recPayload, type RecState } from './RecurrenceEditor';
@@ -191,7 +191,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
     <Dialog
       open={open} onClose={onClose} size="lg"
       title={isEdit ? 'Editar conta' : l.new}
-      description={isEdit && current ? <span className="inline-flex items-center gap-2">{RECURRENCE_LABEL[current.recurrenceType]}{current.installmentNumber && ` · parcela ${current.installmentNumber}/${current.totalInstallments}`}{current.isIndefinite && <span className="inline-flex items-center gap-1 text-accent"><InfinityIcon className="size-3.5" /> sem data para acabar</span>}</span> : 'Arraste o boleto ou a nota para preencher automaticamente.'}
+      description={isEdit && current ? <span className="inline-flex items-center gap-2">{RECURRENCE_LABEL[current.recurrenceType]}{current.installmentNumber && ` · parcela ${current.installmentNumber}/${current.totalInstallments}`}{current.isIndefinite && <span className="inline-flex items-center gap-1 text-accent"><InfinityIcon className="size-3.5" /> sem data para acabar</span>}</span> : (isTouch() ? 'Envie' : 'Arraste') + ' o boleto ou a nota para preencher automaticamente.'}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
         <Button variant="primary" loading={busy} disabled={!valid} onClick={submit}>{isEdit ? 'Salvar alterações' : 'Criar conta'}</Button>
@@ -225,7 +225,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
                 <IconButton label="Remover arquivo" onClick={() => setPending(null)}><X className="size-4" /></IconButton>
               </div>
             </div>
-          ) : <DocDrop onFile={analyze} busy={analyzing} label="Arraste aqui o boleto, PIX ou nota fiscal" hint="PDF ou imagem até 15 MB. Lemos o código de barras, valor e vencimento." />
+          ) : <DocDrop onFile={analyze} busy={analyzing} label={isTouch() ? 'Toque para enviar o boleto, PIX ou nota fiscal' : 'Arraste aqui o boleto, PIX ou nota fiscal'} hint="PDF ou imagem até 15 MB. Lemos o código de barras, valor e vencimento." />
         )}
 
         <Field label="Descrição" required>

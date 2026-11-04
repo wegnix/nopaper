@@ -90,7 +90,7 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
   );
 
   const notesLine = (b: Bill, wrap = false) => b.notes?.trim() && (
-    <p className={cn('mt-0.5 flex items-start gap-1 text-xs italic text-muted', !wrap && 'max-w-[340px]')} title={b.notes}>
+    <p className={cn('mt-0.5 flex items-start gap-1 text-xs italic text-muted', !wrap && 'max-w-[230px] 2xl:max-w-[340px]')} title={b.notes}>
       <StickyNote className="mt-px size-3 shrink-0 text-accent/70" aria-label="Observação" />
       <span className={wrap ? 'line-clamp-2' : 'truncate'}>{b.notes.trim()}</span>
     </p>
@@ -99,7 +99,7 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
   const descCell = (b: Bill) => (
     <div className="min-w-0">
       <div className="flex items-center gap-1">
-        <button type="button" onClick={() => perm.edit && actions.onEdit(b)} className="truncate max-w-[300px] text-left font-medium hover:text-accent" title={b.description}>{b.description}</button>
+        <button type="button" onClick={() => perm.edit && actions.onEdit(b)} className="truncate max-w-[200px] 2xl:max-w-[300px] text-left font-medium hover:text-accent" title={b.description}>{b.description}</button>
         {b.isIndefinite && <span title="Repete sem data para acabar" className="grid size-5 place-items-center rounded bg-accent-soft text-accent"><InfinityIcon className="size-3.5" /></span>}
         <CopyButton text={copyDescriptionText(b.description, b.amount)} label="Copiar descrição + valor (para transferência)" className="opacity-0 group-hover:opacity-100 focus:opacity-100" />
       </div>
@@ -114,20 +114,20 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
 
   return (
     <>
-      {/* desktop */}
-      <div className="hidden md:block overflow-x-auto">
+      {/* desktop (telas largas): tabela */}
+      <div className="hidden xl:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-muted border-b border-line">
             <tr>
               {canSelect && <th className="w-10 pl-4 pr-1"><Checkbox checked={allSel} indeterminate={!allSel && someSel} disabled={!pendingIds.length} onChange={(v) => setSelected(v ? new Set(pendingIds) : new Set())} /></th>}
               <Th k="dueDate">Vencimento</Th>
               <Th k="description">Descrição</Th>
-              <Th k="folder">Pasta</Th>
+              <Th k="folder" className="hidden 2xl:table-cell">Pasta</Th>
               <Th k="category">Categoria</Th>
               <Th k="amount" className="text-right">Valor</Th>
               <Th k="status">Situação</Th>
               <Th k="attachments">Anexos</Th>
-              <Th k="paidAt">{l.paidAt}</Th>
+              <Th k="paidAt" className="hidden 2xl:table-cell">{l.paidAt}</Th>
               <th className="px-3 py-2.5" />
             </tr>
           </thead>
@@ -143,16 +143,23 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
                   >
                     {canSelect && <td className="pl-4 pr-1"><Checkbox checked={sel} disabled={b.status === 'paid'} onChange={() => toggle(b.id)} /></td>}
                     <td className={cn('px-3 py-3 tnum whitespace-nowrap text-[13px]', st.status === 'overdue' && 'text-danger font-medium')}>{formatDateBR(b.dueDate)}</td>
-                    <td className="px-3 py-3 max-w-[360px]">{descCell(b)}</td>
-                    <td className="px-3 py-3"><FolderChip folder={b.folderId ? folders.get(b.folderId) : null} /></td>
+                    <td className="px-3 py-3 max-w-[250px] 2xl:max-w-[360px]">
+                      {descCell(b)}
+                      {/* sem a coluna Pasta (telas menores que 2xl), a pasta aparece aqui */}
+                      {b.folderId && <div className="mt-1 2xl:hidden"><FolderChip folder={folders.get(b.folderId)} /></div>}
+                    </td>
+                    <td className="hidden 2xl:table-cell px-3 py-3"><FolderChip folder={b.folderId ? folders.get(b.folderId) : null} /></td>
                     <td className="px-3 py-3"><CategoryChip category={categories.get(b.categoryId)} /></td>
                     <td className="px-3 py-3 text-right whitespace-nowrap">
                       <span className="tnum font-medium">{formatBRL(b.amount)}</span>
                       {b.paidAmount && b.paidAmount !== b.amount && <span className="block text-[11px] text-faint tnum">{type === 'payable' ? 'pago' : 'recebido'} {formatBRL(b.paidAmount)}</span>}
                     </td>
-                    <td className="px-3 py-3"><StatusChip {...st} /></td>
+                    <td className="px-3 py-3">
+                      <StatusChip {...st} />
+                      {b.paidAt && <span className="mt-1 block 2xl:hidden text-[11px] text-faint tnum whitespace-nowrap">em {formatDateBR(b.paidAt)}</span>}
+                    </td>
                     <td className="px-3 py-3"><AttachmentChips bill={b} onOpen={(s) => actions.onView(b, s)} /></td>
-                    <td className="px-3 py-3 tnum text-[13px] text-muted whitespace-nowrap">{b.paidAt ? formatDateBR(b.paidAt) : '—'}</td>
+                    <td className="hidden 2xl:table-cell px-3 py-3 tnum text-[13px] text-muted whitespace-nowrap">{b.paidAt ? formatDateBR(b.paidAt) : '—'}</td>
                     <td className="px-3 py-3 pr-4">{rowActions(b)}</td>
                   </motion.tr>
                 );
@@ -162,39 +169,70 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
         </table>
       </div>
 
-      {/* mobile */}
-      <ul className="md:hidden divide-y divide-line">
-        {sorted.map((b) => {
-          const st = displayStatus(b, today);
-          return (
-            <li key={b.id} className={cn('flex gap-3 px-4 py-3', st.status === 'overdue' && 'bg-danger/[.04]')}>
-              {canSelect && <div className="pt-0.5"><Checkbox checked={selected.has(b.id)} disabled={b.status === 'paid'} onChange={() => toggle(b.id)} /></div>}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-3">
-                  <button type="button" onClick={() => perm.edit && actions.onEdit(b)} className="text-left font-medium leading-snug">{b.description}</button>
-                  <span className="tnum font-semibold whitespace-nowrap">{formatBRL(b.amount)}</span>
+      {/* celular e tablet: cartões (1 coluna no celular, 2 no tablet) */}
+      <div className="xl:hidden">
+        <div className="flex items-center gap-3 border-b border-line px-4 py-2 text-xs text-muted">
+          {canSelect && <Checkbox checked={allSel} indeterminate={!allSel && someSel} disabled={!pendingIds.length} onChange={(v) => setSelected(v ? new Set(pendingIds) : new Set())} label={<span className="text-xs text-muted">Pendentes</span>} className="items-center" />}
+          <label className="ml-auto flex items-center gap-1.5">
+            <span>Ordenar</span>
+            <select
+              aria-label="Ordenar por" className="h-8 rounded-md border border-line bg-surface-2 px-2 text-xs text-ink pointer-coarse:h-9"
+              value={`${sort.key}:${sort.dir}`} onChange={(e) => { const [k, d] = e.target.value.split(':'); setSort({ key: k as SortKey, dir: Number(d) as 1 | -1 }); }}
+            >
+              <option value="dueDate:1">Vencimento ↑</option>
+              <option value="dueDate:-1">Vencimento ↓</option>
+              <option value="description:1">Descrição A–Z</option>
+              <option value="amount:-1">Maior valor</option>
+              <option value="amount:1">Menor valor</option>
+              <option value="status:1">Situação</option>
+              <option value="category:1">Categoria</option>
+              <option value="folder:1">Pasta</option>
+            </select>
+          </label>
+        </div>
+        <ul className="grid md:grid-cols-2 [&>li]:border-line [&>li]:border-b md:[&>li:nth-child(odd)]:border-r">
+          {sorted.map((b) => {
+            const st = displayStatus(b, today);
+            const hasAtt = attachmentCount(b) > 0;
+            return (
+              <li key={b.id} className={cn('flex min-w-0 gap-3 px-4 py-3', st.status === 'overdue' && 'bg-danger/[.04]', selected.has(b.id) && 'bg-accent-soft/60')}>
+                {canSelect && <div className="pt-0.5"><Checkbox checked={selected.has(b.id)} disabled={b.status === 'paid'} onChange={() => toggle(b.id)} /></div>}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex items-start justify-between gap-3">
+                    <button type="button" onClick={() => perm.edit && actions.onEdit(b)} className="min-w-0 break-words text-left font-medium leading-snug">
+                      {b.description}
+                      {b.isIndefinite && <InfinityIcon className="ml-1 inline size-3.5 -translate-y-px text-accent" aria-label="Repete sem data para acabar" />}
+                    </button>
+                    <span className="text-right">
+                      <span className="block tnum font-semibold whitespace-nowrap">{formatBRL(b.amount)}</span>
+                      {b.paidAmount && b.paidAmount !== b.amount && <span className="block text-[11px] text-faint tnum whitespace-nowrap">{type === 'payable' ? 'pago' : 'recebido'} {formatBRL(b.paidAmount)}</span>}
+                    </span>
+                  </div>
+                  {(b.installmentNumber || b.relatedPerson || b.paymentMethod) && (
+                    <p className="mt-0.5 text-xs text-faint">
+                      {[b.installmentNumber && `parcela ${b.installmentNumber}/${b.totalInstallments}`, b.relatedPerson, b.paymentMethod].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                  {notesLine(b, true)}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className={cn('tnum', st.status === 'overdue' ? 'text-danger font-medium' : 'text-muted')}>{formatDateBR(b.dueDate)}</span>
+                    <StatusChip {...st} />
+                    <CategoryChip category={categories.get(b.categoryId)} />
+                    {b.folderId && <FolderChip folder={folders.get(b.folderId)} />}
+                  </div>
+                  <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+                    <div className="min-w-0">{hasAtt && <AttachmentChips bill={b} onOpen={(s) => actions.onView(b, s)} />}</div>
+                    <div className="flex items-center gap-0.5">
+                      <CopyButton text={copyDescriptionText(b.description, b.amount)} label="Copiar descrição + valor (para transferência)" toastMsg="Descrição e valor copiados" className="size-8 pointer-coarse:size-10 rounded-md" />
+                      {rowActions(b)}
+                    </div>
+                  </div>
                 </div>
-                {(b.installmentNumber || b.relatedPerson || b.paymentMethod) && (
-                  <p className="mt-0.5 text-xs text-faint">
-                    {[b.installmentNumber && `parcela ${b.installmentNumber}/${b.totalInstallments}`, b.relatedPerson, b.paymentMethod].filter(Boolean).join(' · ')}
-                  </p>
-                )}
-                {notesLine(b, true)}
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className={cn('tnum', st.status === 'overdue' ? 'text-danger' : 'text-muted')}>{formatDateBR(b.dueDate)}</span>
-                  <StatusChip {...st} />
-                  <CategoryChip category={categories.get(b.categoryId)} />
-                  {b.folderId && <FolderChip folder={folders.get(b.folderId)} />}
-                </div>
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <AttachmentChips bill={b} onOpen={(s) => actions.onView(b, s)} />
-                  {rowActions(b)}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </>
   );
 }

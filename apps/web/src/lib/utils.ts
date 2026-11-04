@@ -30,3 +30,6 @@ export function downloadBlob(blob: Blob, name: string) {
 }
 
 export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Tela de toque (celular/tablet): troca textos como "arraste" e "clique" por "toque". */
+export const isTouch = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;

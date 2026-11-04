@@ -21,7 +21,7 @@ export function CopyButton({ text, label = 'Copiar', className, toastMsg }: { te
             setTimeout(() => setDone(false), 1500);
           }
         }}
-        className={cn('inline-grid place-items-center size-6 rounded text-faint hover:text-ink hover:bg-surface-2 transition-colors', className)}
+        className={cn('inline-grid place-items-center size-6 pointer-coarse:size-8 rounded text-faint hover:text-ink hover:bg-surface-2 transition-colors', className)}
       >
         {done ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
       </button>

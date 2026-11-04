@@ -12,7 +12,7 @@ import { useSession, type SessionPayload } from '@/lib/session';
 function AuthLayout({ children, title, subtitle }: { children: React.ReactNode; title: string; subtitle: string }) {
   const scene = useAuthScene();
   return (
-    <div className="min-h-dvh grid lg:grid-cols-[1.1fr_1fr]">
+    <div className="safe-top safe-bottom safe-x min-h-dvh grid lg:grid-cols-[1.1fr_1fr]">
       <div className="relative hidden lg:flex flex-col justify-between overflow-hidden bg-[#141029] p-10 text-white">
         <div className="absolute inset-0 opacity-[.35] [background:radial-gradient(60%_50%_at_30%_30%,#5b4be8_0%,transparent_70%),radial-gradient(40%_40%_at_80%_80%,#2a1f7a_0%,transparent_70%)]" />
         <div className="relative"><Logo className="[&_span]:text-white" /></div>
@@ -27,7 +27,7 @@ function AuthLayout({ children, title, subtitle }: { children: React.ReactNode; 
       </div>
       <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
-          <div className="lg:hidden mb-10"><Logo /></div>
+          <div className="lg:hidden mb-8 sm:mb-10"><Logo /></div>
           <h1 className="font-display text-3xl font-semibold">{title}</h1>
           <p className="mt-2 text-sm text-muted">{subtitle}</p>
           <div className="mt-8">{children}</div>

@@ -14,7 +14,7 @@ export function ColorChip({ color, children, className, title, onClick, active, 
       title={title}
       onClick={onClick}
       style={{ ['--c' as string]: p.base, ['--cl' as string]: p.light, ['--cd' as string]: p.dark }}
-      className={cn('chip inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap max-w-full', active && 'ring-2 ring-[var(--c)]/50', onClick && 'cursor-pointer hover:brightness-110', className)}
+      className={cn('chip inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap max-w-full', active && 'ring-2 ring-[var(--c)]/50', onClick && 'cursor-pointer hover:brightness-110 pointer-coarse:py-1.5', className)}
     >
       {icon}
       <span className="truncate">{children}</span>

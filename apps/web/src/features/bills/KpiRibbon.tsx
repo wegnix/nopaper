@@ -39,7 +39,8 @@ export function KpiRibbon({ type, s, onFilter, active }: { type: BillType; s?: S
     { key: '', label: 'Total do mês', value: s?.forecast.total ?? '0', sub: `${plural(s?.forecast.count ?? 0, 'conta', 'contas')} · ${plural(s?.categoriesActive ?? 0, 'categoria', 'categorias')}`, icon: Sigma, tone: 'plain', onClick: () => onFilter('') },
   ];
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 rounded-xl border border-line bg-surface shadow-card overflow-hidden">
+    // celular: faixa que rola para o lado (economiza a altura da tela); tablet/desktop: grade
+    <div className="flex max-sm:snap-x max-sm:snap-mandatory max-sm:overflow-x-auto no-scrollbar sm:grid sm:grid-cols-3 xl:grid-cols-5 rounded-xl border border-line bg-surface shadow-card sm:overflow-hidden">
       {kpis.map((k, i) => {
         const Comp = k.onClick ? 'button' : 'div';
         const isActive = active === k.key;
@@ -47,15 +48,15 @@ export function KpiRibbon({ type, s, onFilter, active }: { type: BillType; s?: S
           <Comp
             key={k.label} type={k.onClick ? 'button' : undefined} onClick={k.onClick}
             className={cn(
-              'relative text-left p-4 md:p-5 border-line transition-colors',
-              i > 0 && 'border-l', i >= 2 && 'max-md:border-t', i === 4 && 'max-xl:col-span-2 max-md:col-span-2 md:max-xl:col-span-1', i >= 3 && 'md:max-xl:border-t',
+              'relative text-left p-3.5 sm:p-4 md:p-5 border-line transition-colors max-sm:w-[44%] max-sm:min-w-[150px] max-sm:shrink-0 max-sm:snap-start',
+              i > 0 && 'border-l', i >= 3 && 'sm:max-xl:border-t', i === 3 && 'sm:max-xl:border-l-0', i === 4 && 'sm:max-xl:col-span-2',
               k.onClick && 'hover:bg-surface-2/70 cursor-pointer',
               isActive && 'bg-surface-2',
             )}
           >
             {isActive && <span className="absolute inset-x-0 bottom-0 h-[3px] bg-accent" />}
             <span className="flex items-center gap-2 text-[13px] text-muted"><k.icon className={cn('size-4', tones[k.tone])} />{k.label}</span>
-            <CountUp value={k.value} className={cn('mt-2 block font-display text-[22px] md:text-[26px] font-semibold leading-none', k.tone === 'danger' && 'text-danger')} />
+            <CountUp value={k.value} className={cn('mt-2 block font-display text-[19px] sm:text-[22px] md:text-[26px] font-semibold leading-none whitespace-nowrap', k.tone === 'danger' && 'text-danger')} />
             <span className="mt-1.5 block text-xs text-faint truncate">{k.sub}</span>
           </Comp>
         );

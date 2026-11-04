@@ -8,6 +8,30 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.2.0] - 2026-11-04
+
+### Corrigido
+- **iPhone (app instalado na tela de início):** o topo ficava por baixo do relógio/notch e o menu não
+  respondia ao toque. O app agora respeita as áreas seguras da tela (topo, laterais e indicador de
+  início) e a barra de status segue a cor do tema. *Para valer no app já instalado, remova o ícone e
+  adicione de novo pelo Safari (Compartilhar → Adicionar à Tela de Início).*
+- No iOS, tocar num campo de texto dava zoom na página e ela não voltava.
+- Início e Relatórios: no celular, quadros como "Precisa de atenção", "Por categoria" e "Maiores contas"
+  passavam da largura da tela e cortavam os valores.
+- Contas a pagar/receber em telas de notebook (até ~1500 px): a coluna de ações da tabela ficava cortada.
+  Pasta e data de pagamento passam para dentro das colunas Descrição e Situação nessas telas.
+
+### Alterado
+- Celular e tablet repensados:
+  - Contas a pagar/receber viram cartões (1 coluna no celular, 2 no tablet), com **Ordenar**,
+    **selecionar pendentes** e botão de copiar descrição + valor. Os filtros de dia, pasta e categoria
+    ficam recolhidos no botão **Filtros** no celular, e os indicadores do mês rolam para o lado.
+  - Configurações: no lugar da fileira de abas que escondia itens, uma lista com todas as seções.
+  - Cabeçalho, menu lateral, diálogos (abrem por baixo, como folha) e botões de ação com áreas de
+    toque maiores; avisos (toasts) não ficam sob a barra de status.
+  - Gráfico mês a mês: no toque, o 1º toque mostra o resumo do mês e o 2º abre a lista.
+  - Início em 2 colunas no tablet; carrossel de cartões com encaixe ao deslizar.
+
 ## [1.1.1] - 2026-11-04
 
 ### Adicionado
