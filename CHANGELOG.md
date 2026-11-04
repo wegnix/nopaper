@@ -8,6 +8,18 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.0.2] - 2026-11-04
+
+### Adicionado
+- Cartões: botão **Reverter pagamento** na fatura paga, e uma linha mostrando em que mês a fatura está em
+  Contas a pagar (paga ou pendente), com link direto.
+- Atualizações: quando há arquivos do projeto alterados no servidor, a tela mostra quais são e como
+  desfazer; o motivo do bloqueio aparece ao lado do botão de atualizar.
+
+### Alterado
+- Contas a pagar e a receber abrem em **Todas** (pagas e pendentes do mês), não mais só nas pendentes:
+  faturas de cartão e contas já pagas aparecem sem precisar trocar o filtro.
+
 ## [1.0.1] - 2026-11-04
 
 ### Segurança

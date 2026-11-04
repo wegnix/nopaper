@@ -16,9 +16,11 @@ interface UpdaterStatus { state: 'idle' | 'running' | 'done' | 'failed'; from: s
 interface PreBackup { id: string; status: 'running' | 'ok' | 'error'; fileName: string | null; sizeBytes: number | null; remoteStatus: string; error: string | null; finishedAt: string | null; usable: boolean; validUntil: string | null }
 interface View {
   current: string; repo: string; releases: Release[]; checkedAt: string; checkError: string | null;
-  updater: { git: boolean; ref?: string; origin?: string; dirty?: boolean; error?: string; originMatches: boolean } | null;
+  updater: { git: boolean; ref?: string; origin?: string; dirty?: boolean; changes?: Array<{ code: string; file: string }>; error?: string; originMatches: boolean } | null;
   status: UpdaterStatus | null; backup: PreBackup | null; busy: string | null;
 }
+
+const CHANGE_LABEL: Record<string, string> = { M: 'alterado', D: 'apagado', A: 'novo', R: 'renomeado', T: 'tipo mudou' };
 
 const mb = (n: number | null) => (n == null ? '' : n > 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(0.1, n / 1e6).toFixed(1)} MB`);
 
@@ -35,6 +37,12 @@ export function UpdatesPage() {
   if (!q.data) return <div className="grid place-items-center py-16"><Spinner /></div>;
   const v = q.data;
   const running = v.status?.state === 'running';
+  // por que o botão está desativado (o detalhe aparece no aviso do topo)
+  const blocked = running ? 'Há uma atualização em andamento.'
+    : !v.updater ? 'O serviço de atualização não está rodando (veja o aviso acima).'
+    : !v.updater.git ? 'A instalação não é um clone git (veja o aviso acima).'
+    : v.updater.dirty ? 'Há arquivos do projeto alterados no servidor (veja o aviso acima).'
+    : null;
 
   const check = async () => {
     setChecking(true);
@@ -85,9 +93,12 @@ export function UpdatesPage() {
                   <p className="mt-0.5 text-xs text-faint">publicada em {when(r.publishedAt)} · <a href={r.url} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-0.5 hover:text-ink">ver no GitHub <ExternalLink className="size-3" /></a></p>
                 </div>
                 {i === 0 && (
-                  <Button variant="primary" icon={<ArrowUpCircle className="size-4" />} disabled={running || !v.updater?.git || !!v.updater?.dirty} onClick={() => setTarget(r)}>
-                    Atualizar para {r.version}
-                  </Button>
+                  <div className="flex flex-col items-end gap-1">
+                    <Button variant="primary" icon={<ArrowUpCircle className="size-4" />} disabled={!!blocked} onClick={() => setTarget(r)}>
+                      Atualizar para {r.version}
+                    </Button>
+                    {blocked && <p className="max-w-[260px] text-right text-xs text-warn">{blocked}</p>}
+                  </div>
                 )}
               </div>
               <div className="mt-4 max-h-80 overflow-y-auto rounded-lg border border-line bg-surface-2/50 p-4">
@@ -114,7 +125,19 @@ function UpdaterNotice({ v }: { v: View }) {
     </div>
   );
   if (!u.git) return <div className={cn(box, 'border-warn/40 bg-warn/10 text-ink')}><AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" /><span>{u.error}</span></div>;
-  if (u.dirty) return <div className={cn(box, 'border-warn/40 bg-warn/10 text-ink')}><AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" /><span>Há arquivos do projeto alterados no servidor (<code>git status</code>). Desfaça as alterações locais para poder atualizar.</span></div>;
+  if (u.dirty) return (
+    <div className={cn(box, 'border-warn/40 bg-warn/10 text-ink')}>
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />
+      <div className="min-w-0">
+        <p>Há arquivos do projeto alterados no servidor, então a atualização está bloqueada. Na pasta do NoPaper, desfaça com <code>git restore &lt;arquivo&gt;</code> (o seu <code>.env</code> não é afetado):</p>
+        {!!u.changes?.length && (
+          <ul className="mt-2 flex flex-col gap-0.5 font-mono text-xs">
+            {u.changes.map((c) => <li key={c.file}><span className="inline-block w-20 text-faint">{CHANGE_LABEL[c.code] ?? c.code}</span>{c.file}</li>)}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
   if (!u.originMatches) return <div className={cn(box, 'border-warn/40 bg-warn/10 text-ink')}><AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" /><span>A instalação foi baixada de <code>{u.origin}</code>, mas as versões são consultadas em <code>{v.repo}</code>. Ajuste <code>UPDATE_REPO</code> no <code>.env</code> se você usa um fork.</span></div>;
   return <p className="mt-4 text-xs text-faint">Atualizador pronto · código em <code>{u.ref}</code></p>;
 }

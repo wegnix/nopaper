@@ -101,7 +101,9 @@ async function info() {
     const [ref, origin, dirty] = await Promise.all([
       currentRef(), git('remote', 'get-url', 'origin').catch(() => ''), git('status', '--porcelain', '--untracked-files=no'),
     ]);
-    return { git: true, ref, origin, dirty: dirty.length > 0, project: projectName };
+    // lista curta do que está alterado (a tela mostra para a pessoa saber o que desfazer)
+    const changes = dirty ? dirty.split('\n').slice(0, 20).map((l) => ({ code: l.slice(0, 2).trim(), file: l.slice(3) })) : [];
+    return { git: true, ref, origin, dirty: dirty.length > 0, changes, project: projectName };
   } catch (e) {
     return { git: false, error: `A pasta do projeto não é um clone git utilizável: ${e.message}`, project: projectName };
   }

@@ -212,6 +212,9 @@ cp .env.example .env
 chmod 600 .env               # só o seu usuário lê (tem senhas)
 ```
 
+Use **`cp`**, não `mv`: o `.env.example` faz parte do projeto, e apagá-lo bloqueia a atualização
+pela interface (seção 12).
+
 Gere os segredos e cole no `.env`:
 
 ```sh
@@ -364,7 +367,7 @@ Um backup só pode ser restaurado numa versão do NoPaper **igual ou mais nova**
 | "ninguém consegue entrar" no log | Primeira subida sem `ADMIN_EMAIL`/`ADMIN_PASSWORD`. Preencha e rode `docker compose up -d`. |
 | Esqueci a senha do administrador | `docker compose exec api node dist/scripts/reset-password.js <usuário ou e-mail>` — gera uma senha provisória. |
 | Atualizações: "o serviço de atualização não está rodando" | `docker compose ps updater` e `docker compose logs updater`. Com Docker rootless, ajuste o caminho do socket (seção 12). |
-| Atualizações: "arquivos do projeto alterados" | Rode `git status` na pasta: desfaça a alteração (`git checkout -- arquivo`) ou guarde-a fora do projeto. |
+| Atualizações: "arquivos do projeto alterados" | A tela lista os arquivos. Na pasta do projeto, `git restore <arquivo>` desfaz (o `.env` não é afetado). Caso comum: `deleted: .env.example` porque o `.env` foi criado com `mv` em vez de `cp` — `git restore .env.example` resolve. Mudanças que você precisa manter no compose vão num `docker-compose.override.yml`. |
 | Build parando por falta de memória | Servidor com menos de 2 GB: crie um swap (`fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`). |
 
 Comandos úteis:

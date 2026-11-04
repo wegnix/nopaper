@@ -16,7 +16,7 @@ export interface UpdaterStatus {
   state: 'idle' | 'running' | 'done' | 'failed'; from: string | null; to: string | null; step: string | null;
   startedAt: string | null; finishedAt: string | null; error: string | null; log: string[];
 }
-export interface UpdaterInfo { git: boolean; ref?: string; origin?: string; dirty?: boolean; error?: string }
+export interface UpdaterInfo { git: boolean; ref?: string; origin?: string; dirty?: boolean; changes?: Array<{ code: string; file: string }>; error?: string }
 
 async function updater<T>(path: string, init: RequestInit = {}): Promise<T> {
   const r = await fetch(`${env.UPDATER_URL}${path}`, {

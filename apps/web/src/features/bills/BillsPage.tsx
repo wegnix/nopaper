@@ -36,7 +36,8 @@ export function BillsPage({ type }: { type: BillType }) {
   // filtros na URL (dá para compartilhar/voltar)
   const year = Number(sp.get('ano')) || Number(now.slice(0, 4));
   const month = Number(sp.get('mes')) || Number(now.slice(5, 7));
-  const status = (sp.has('situacao') ? sp.get('situacao') : 'pending') as Status;
+  // padrão "Todas": pagas e pendentes do mês (inclusive faturas de cartão já pagas)
+  const status = (sp.get('situacao') ?? '') as Status;
   const categoryId = sp.get('categoria') ?? '';
   const folderId = sp.get('pasta') ?? '';
   const search = sp.get('busca') ?? '';

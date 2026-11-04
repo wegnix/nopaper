@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DropdownMenu } from 'radix-ui';
 import { toast } from 'sonner';
-import { ArrowLeftRight, Check, ChevronLeft, ChevronRight, CreditCard, MoreHorizontal, Pencil, Plus, Receipt, Trash2 } from 'lucide-react';
-import { addMonthsRef, formatBRL, formatDateBR, toCents, type AttachmentSlot } from '@nopaper/shared';
+import { ArrowLeftRight, Check, ChevronLeft, ChevronRight, CreditCard, MoreHorizontal, Pencil, Plus, Receipt, RotateCcw, Trash2, Wallet } from 'lucide-react';
+import { MONTHS_PT, addMonthsRef, formatBRL, formatDateBR, toCents, type AttachmentSlot } from '@nopaper/shared';
 import { Button, Card, Empty, PageHeader, Spinner } from '@/components/ui/base';
 import { CategoryChip, StatusChip } from '@/components/ui/chips';
 import { useConfirm } from '@/components/ui/dialog';
@@ -57,6 +57,10 @@ export function CardsPage() {
     return [...m.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
   }, [st]);
 
+  const unpay = async (b: Bill) => {
+    if (!(await confirm({ title: 'Reverter o pagamento da fatura?', body: <>A fatura volta para <b>Pendente</b> aqui e em Contas a pagar. A data e o valor pagos são limpos; o comprovante continua anexado.</>, confirmLabel: 'Reverter' }))) return;
+    try { await post(`/api/bills/${b.id}/unpay`); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Pagamento revertido'); } catch (e) { toast.error(errMsg(e)); }
+  };
   const removeTx = async (t: CardTx) => {
     const multi = t.totalInstallments > 1;
     const ok = await confirm({
@@ -105,6 +109,7 @@ export function CardsPage() {
                 <div className="ml-auto flex flex-wrap gap-2">
                   {canManage && <Button variant="ghost" icon={<Pencil className="size-4" />} onClick={() => setCardForm({ open: true, card })}>Editar cartão</Button>}
                   {st?.bill && st.bill.status === 'pending' && canPay && <Button variant="ok" icon={<Check className="size-4" />} onClick={() => setPay({ bill: st.bill!, proofOnly: false })}>Pagar fatura</Button>}
+                  {st?.bill && st.bill.status === 'paid' && canPay && <Button variant="ghost" icon={<RotateCcw className="size-4" />} onClick={() => unpay(st.bill!)}>Reverter pagamento</Button>}
                   {st?.bill && st.bill.status === 'paid' && canPay && <Button variant="ghost" icon={<Receipt className="size-4" />} onClick={() => setPay({ bill: st.bill!, proofOnly: true })}>Comprovante</Button>}
                   {canEdit && card.active && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setTxForm({ open: true, tx: null })}>Lançar compra</Button>}
                 </div>
@@ -117,6 +122,17 @@ export function CardsPage() {
                     <div className="border-l border-line p-4 md:p-5"><p className="text-xs text-muted">Fecha em</p><p className="mt-1 font-display text-lg font-semibold tnum">{st ? formatDateBR(st.statement.closingDate) : '—'}</p></div>
                     <div className="border-l border-line p-4 md:p-5"><p className="text-xs text-muted">Vence em</p><p className="mt-1 font-display text-lg font-semibold tnum">{st ? formatDateBR(st.statement.dueDate) : '—'}</p></div>
                   </div>
+                  {st && (
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-surface-2/40 px-4 py-2.5 text-xs text-muted md:px-5">
+                      <Wallet className="size-3.5 text-accent" />
+                      {st.bill ? (
+                        <>
+                          <span>Esta fatura é uma conta a pagar de <b className="text-ink">{MONTHS_PT[Number(st.bill.dueDate.slice(5, 7)) - 1]} de {st.bill.dueDate.slice(0, 4)}</b> ({st.bill.status === 'paid' ? 'paga' : 'pendente'}).</span>
+                          <Link to={`/pagar?ano=${st.bill.dueDate.slice(0, 4)}&mes=${Number(st.bill.dueDate.slice(5, 7))}&situacao=`} className="font-medium text-accent hover:underline">Ver em Contas a pagar</Link>
+                        </>
+                      ) : <span>A conta a pagar desta fatura é criada no primeiro lançamento e entra em Contas a pagar no mês do vencimento.</span>}
+                    </p>
+                  )}
                   {stQ.isLoading ? <div className="grid place-items-center py-16"><Spinner /></div> : !st?.items.length ? (
                     <p className="px-5 py-14 text-center text-sm text-muted">Nenhum lançamento nesta fatura.</p>
                   ) : (
