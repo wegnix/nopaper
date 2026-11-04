@@ -3,7 +3,7 @@ import { and, eq, gt, inArray, or, sql, ne } from 'drizzle-orm';
 import {
   billCreateSchema, billUpdateSchema, billListQuerySchema, paySchema, bulkPaySchema, restructureSchema,
   deleteModeSchema, BILL_TYPES, type BillType,
-  billPerm,
+  billPerm, isPeriodic,
 } from '@nopaper/shared';
 import { z } from 'zod';
 import { db, schema } from '../db/client.js';
@@ -14,7 +14,7 @@ import { audit } from '../lib/audit.js';
 import {
   loadBill, assertCategoryUsable, assertFolder, createBills, listBills, summary, serialize, serializeMany,
   attachmentsFor, viewPerm, createPerm, orgToday, seriesRows, headIdOf, deleteBillsWithFiles,
-  planOccurrences, restrictedCategoryIds, type BillRow,
+  planOccurrences, recurrenceDayFor, restrictedCategoryIds, type BillRow,
 } from '../services/bills.js';
 
 const typeLabel = (t: string) => (t === 'payable' ? 'conta a pagar' : 'conta a receber');
@@ -171,7 +171,7 @@ export default async function billRoutes(app: FastifyInstance) {
     if (b.statementId) throw badRequest('Conta de fatura de cartão não pode virar recorrente');
     if (b.parentId) throw badRequest('Edite a recorrência a partir da primeira ocorrência da série');
     if (b.status === 'paid') throw badRequest('Esta conta já está paga — reverta o pagamento antes de reestruturar');
-    if (body.isIndefinite && body.recurrenceType !== 'monthly' && body.recurrenceType !== 'yearly') throw badRequest('Recorrência indefinida só para mensal ou anual');
+    if (body.isIndefinite && !isPeriodic(body.recurrenceType)) throw badRequest('Repetição sem data para acabar só para semanal, quinzenal, mensal ou anual');
     const plan = planOccurrences({ ...body, amount: body.amount ?? b.amount });
     const out = await db.transaction(async (tx) => {
       const kids = await tx.select().from(schema.bills).where(eq(schema.bills.parentId, b.id));
@@ -181,7 +181,7 @@ export default async function billRoutes(app: FastifyInstance) {
         recurrenceType: body.recurrenceType, dueDate: plan[0].dueDate, amount: plan[0].amount,
         installmentNumber: plan[0].installmentNumber, totalInstallments: plan[0].totalInstallments,
         isIndefinite: body.isIndefinite && body.recurrenceType !== 'once',
-        recurrenceDay: body.recurrenceType === 'once' ? null : Number(body.dueDate.slice(8, 10)),
+        recurrenceDay: recurrenceDayFor(body.recurrenceType, body.dueDate),
       }).where(eq(schema.bills.id, b.id)).returning();
       const created = plan.length > 1 ? await tx.insert(schema.bills).values(plan.slice(1).map((r) => ({
         orgId: b.orgId, type: b.type, parentId: b.id, description: b.description, categoryId: b.categoryId,

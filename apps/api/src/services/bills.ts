@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, lt, lte, or, sql, isNull, notInArray,
 import type { FastifyRequest } from 'fastify';
 import {
   addMonthsISO, addYearsISO, addDaysISO, todayISO, monthRange, parseISODate, toCents, fromCents,
-  billPerm, type BillAction, type BillType, type Permission, type RecurrenceType, type AttachmentSlot,
+  billPerm, isPeriodic, occurrenceDate, type BillAction, type BillType, type PeriodicType, type Permission, type RecurrenceType, type AttachmentSlot,
 } from '@nopaper/shared';
 import { db, schema, type DBOrTx } from '../db/client.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
@@ -10,10 +10,17 @@ import { deleteFile } from '../lib/storage.js';
 
 export type BillRow = typeof schema.bills.$inferSelect;
 
+/** Sem data para acabar: quantas ocorrências manter lançadas (≈ 6 meses para semanal/quinzenal). */
 export const INDEFINITE = {
+  weekly: { window: 26, threshold: 13, refill: 13 },
+  biweekly: { window: 13, threshold: 7, refill: 6 },
   monthly: { window: 24, threshold: 12, refill: 12 },
   yearly: { window: 5, threshold: 3, refill: 3 },
 } as const;
+
+/** Dia do mês preservado nas repetições mensais/anuais (31 → último dia); semanal não usa. */
+export const recurrenceDayFor = (type: RecurrenceType, dueDate: string) =>
+  type === 'monthly' || type === 'yearly' ? parseISODate(dueDate).d : null;
 
 export const viewPerm = (t: BillType): Permission => billPerm(t, 'view');
 export const createPerm = (t: BillType): Permission => billPerm(t, 'create');
@@ -81,7 +88,7 @@ export interface PlannedRow { amount: string; dueDate: string; installmentNumber
 
 export function planOccurrences(p: PlanInput): PlannedRow[] {
   const day = parseISODate(p.dueDate).d;
-  const advance = (i: number) => (p.recurrenceType === 'yearly' ? addYearsISO(p.dueDate, i, day) : addMonthsISO(p.dueDate, i, day));
+  const advance = (i: number) => occurrenceDate(p.recurrenceType === 'installments' ? 'monthly' : p.recurrenceType, p.dueDate, i, day);
   if (p.recurrenceType === 'once') {
     if (!p.amount) throw badRequest('Informe o valor');
     return [{ amount: p.amount, dueDate: p.dueDate, installmentNumber: null, totalInstallments: null }];
@@ -99,9 +106,9 @@ export function planOccurrences(p: PlanInput): PlannedRow[] {
       amount, dueDate: p.installmentDueDates?.[i] ?? advance(i), installmentNumber: first + i, totalInstallments: total,
     }));
   }
-  // monthly / yearly
+  // semanal / quinzenal / mensal / anual
   let n: number;
-  if (p.isIndefinite) n = INDEFINITE[p.recurrenceType].window;
+  if (p.isIndefinite) n = INDEFINITE[p.recurrenceType as PeriodicType].window;
   else n = p.installmentAmounts?.length || p.installmentDueDates?.length || Math.max(1, p.totalOccurrences ?? 1);
   if (!p.isIndefinite && p.installmentDueDates && p.installmentDueDates.length !== n) throw badRequest('Quantidade de datas difere da quantidade de valores');
   const rows: PlannedRow[] = [];
@@ -168,8 +175,8 @@ export interface CreateInput extends PlanInput {
 }
 
 export async function createBills(tx: DBOrTx, orgId: string, userId: string | null, input: CreateInput) {
-  if (input.isIndefinite && input.recurrenceType !== 'monthly' && input.recurrenceType !== 'yearly') {
-    throw badRequest('Recorrência indefinida só para mensal ou anual');
+  if (input.isIndefinite && !isPeriodic(input.recurrenceType)) {
+    throw badRequest('Repetição sem data para acabar só para semanal, quinzenal, mensal ou anual');
   }
   const plan = planOccurrences(input);
   const base = {
@@ -178,7 +185,7 @@ export async function createBills(tx: DBOrTx, orgId: string, userId: string | nu
     recurrenceType: input.recurrenceType, relatedPerson: input.relatedPerson ?? null, notes: input.notes ?? null,
     pixKey: input.pixKey ?? null, paymentMethod: input.paymentMethod ?? null, createdBy: userId,
     importBatchId: input.importBatchId ?? null,
-    recurrenceDay: input.recurrenceType === 'once' ? null : parseISODate(input.dueDate).d,
+    recurrenceDay: recurrenceDayFor(input.recurrenceType, input.dueDate),
   };
   const paid = input.paidAt ? { status: 'paid', paidAt: input.paidAt, paidAmount: input.paidAmount ?? plan[0].amount } : {};
   const [head] = await tx.insert(schema.bills).values({
@@ -292,14 +299,15 @@ export async function deleteBillsWithFiles(conn: DBOrTx, ids: string[]) {
 
 // ------------------------------------------------------------------ recorrência indefinida
 export async function extendIndefinite(conn: DBOrTx, head: BillRow, todayStr: string) {
-  if (!head.isIndefinite || head.parentId || (head.recurrenceType !== 'monthly' && head.recurrenceType !== 'yearly')) return 0;
-  const cfg = INDEFINITE[head.recurrenceType];
+  const type = head.recurrenceType as RecurrenceType;
+  if (!head.isIndefinite || head.parentId || !isPeriodic(type)) return 0;
+  const cfg = INDEFINITE[type];
   const [{ future, last }] = await conn.select({
     future: sql<number>`count(*) filter (where ${schema.bills.status} = 'pending' and ${schema.bills.dueDate} >= ${todayStr})::int`,
     last: sql<string>`max(${schema.bills.dueDate})::text`,
   }).from(schema.bills).where(or(eq(schema.bills.id, head.id), eq(schema.bills.parentId, head.id)));
   if (future >= cfg.threshold) return 0;
-  const day = head.recurrenceDay ?? parseISODate(head.dueDate).d;
+  const day = head.recurrenceDay ?? recurrenceDayFor(type, head.dueDate) ?? undefined;
   // modelo = ocorrência mais recente (reflete reajustes propagados para as futuras)
   const [tpl] = await conn.select().from(schema.bills)
     .where(or(eq(schema.bills.id, head.id), eq(schema.bills.parentId, head.id)))
@@ -307,11 +315,11 @@ export async function extendIndefinite(conn: DBOrTx, head: BillRow, todayStr: st
   const src = tpl ?? head;
   const rows = [];
   for (let i = 1; i <= cfg.refill; i++) {
-    const dueDate = head.recurrenceType === 'yearly' ? addYearsISO(last, i, day) : addMonthsISO(last, i, day);
+    const dueDate = occurrenceDate(type, last, i, day);
     rows.push({
       orgId: head.orgId, type: head.type, parentId: head.id, description: src.description,
       categoryId: src.categoryId, folderId: src.folderId, amount: src.amount, dueDate,
-      recurrenceType: head.recurrenceType, recurrenceDay: day, relatedPerson: src.relatedPerson,
+      recurrenceType: head.recurrenceType, recurrenceDay: head.recurrenceDay, relatedPerson: src.relatedPerson,
       notes: src.notes, pixKey: src.pixKey, paymentMethod: src.paymentMethod, createdBy: head.createdBy,
     });
   }

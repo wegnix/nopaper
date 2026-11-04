@@ -3,6 +3,7 @@ import { COLOR_KEYS } from './colors.js';
 import { ALL_PERMISSIONS, withRequired, type Permission } from './permissions.js';
 import { documentError, formatDocument, normalizeDocument } from './document.js';
 import { parseMoneyInput } from './money.js';
+import { addDaysISO, addMonthsISO, addYearsISO } from './dates.js';
 
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida (AAAA-MM-DD)');
 
@@ -22,8 +23,23 @@ const optText = (max: number) =>
 
 export const BILL_TYPES = ['payable', 'receivable'] as const;
 export type BillType = (typeof BILL_TYPES)[number];
-export const RECURRENCE_TYPES = ['once', 'monthly', 'yearly', 'installments'] as const;
+export const RECURRENCE_TYPES = ['once', 'weekly', 'biweekly', 'monthly', 'yearly', 'installments'] as const;
 export type RecurrenceType = (typeof RECURRENCE_TYPES)[number];
+/** Tipos que repetem num intervalo fixo e podem não ter data para acabar. */
+export const PERIODIC_TYPES = ['weekly', 'biweekly', 'monthly', 'yearly'] as const satisfies readonly RecurrenceType[];
+export type PeriodicType = (typeof PERIODIC_TYPES)[number];
+export const isPeriodic = (t: RecurrenceType): t is PeriodicType => (PERIODIC_TYPES as readonly string[]).includes(t);
+
+/**
+ * Data da i-ésima ocorrência a partir da base: semanal +7 dias, quinzenal +14, mensal/anual pelo
+ * calendário (dia 31 vira o último dia do mês; `preferredDay` preserva o dia original).
+ */
+export function occurrenceDate(type: RecurrenceType, base: string, i: number, preferredDay?: number): string {
+  if (type === 'weekly') return addDaysISO(base, 7 * i);
+  if (type === 'biweekly') return addDaysISO(base, 14 * i);
+  if (type === 'yearly') return addYearsISO(base, i, preferredDay);
+  return addMonthsISO(base, i, preferredDay);
+}
 /** Máximo de ocorrências numa série com fim (parcelas/meses): 420 = 35 anos (consórcios e financiamentos longos). */
 export const MAX_OCCURRENCES = 420;
 export const ATTACHMENT_SLOTS = ['boleto', 'invoice', 'payment_proof'] as const;

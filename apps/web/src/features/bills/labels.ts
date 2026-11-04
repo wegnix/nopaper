@@ -25,4 +25,4 @@ export function displayStatus(b: Pick<Bill, 'status' | 'dueDate' | 'type'>, toda
   return { status: 'pending', label: 'Pendente' };
 }
 
-export const RECURRENCE_LABEL = { once: 'Única', monthly: 'Mensal', yearly: 'Anual', installments: 'Parcelada' } as const;
+export const RECURRENCE_LABEL = { once: 'Única', weekly: 'Semanal', biweekly: 'Quinzenal', monthly: 'Mensal', yearly: 'Anual', installments: 'Parcelada' } as const;

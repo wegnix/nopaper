@@ -4,6 +4,7 @@ import { parseMoneyInput, toCents, fromCents, formatBRL } from './money.js';
 import { addMonthsISO, addYearsISO } from './dates.js';
 import { parseBoleto, mod10, formatLinhaBancaria, barcodeToLinhaBancaria, dvGeralBancario, findBoletoInText } from './boleto.js';
 import { parsePix, crc16 } from './pix.js';
+import { isPeriodic, occurrenceDate } from './schemas.js';
 
 test('money parsing', () => {
   assert.equal(parseMoneyInput('1.234,56'), '1234.56');
@@ -66,4 +67,15 @@ test('card cycles', () => {
   assert.equal(cycleForPurchase('2026-11-26', 25, 5).ref, '2027-01');
   assert.deepEqual(cycleForRef('2026-03', 30, 7), { ref: '2026-03', closingDate: '2026-02-28', dueDate: '2026-03-07' });
   assert.deepEqual(splitInstallments('100.00', 3), ['33.34', '33.33', '33.33']);
+});
+
+test('recorrência: semanal, quinzenal, mensal e anual', () => {
+  assert.equal(occurrenceDate('weekly', '2026-11-06', 1), '2026-11-13');
+  assert.equal(occurrenceDate('weekly', '2026-12-25', 1), '2027-01-01');
+  assert.equal(occurrenceDate('biweekly', '2026-11-06', 2), '2026-12-04');
+  assert.equal(occurrenceDate('monthly', '2026-01-31', 1), '2026-02-28');
+  assert.equal(occurrenceDate('monthly', '2026-02-28', 1, 31), '2026-03-31');
+  assert.equal(occurrenceDate('yearly', '2028-02-29', 1), '2029-02-28');
+  assert.equal(isPeriodic('weekly'), true);
+  assert.equal(isPeriodic('installments'), false);
 });

@@ -8,6 +8,14 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.1.0] - 2026-11-04
+
+### Adicionado
+- Repetição **Semanal** e **Quinzenal** para contas a pagar e a receber (academia, diarista…): o dia da
+  semana vem do primeiro vencimento; dá para definir quantas vezes, valores diferentes em cada uma ou
+  "repetir sem data para acabar" (o sistema mantém 6 meses lançados e cria os seguintes sozinho).
+  Cada semana é uma conta própria: paga separada, com comprovante, alertas e relatórios.
+
 ## [1.0.2] - 2026-11-04
 
 ### Adicionado

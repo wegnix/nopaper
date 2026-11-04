@@ -1,6 +1,6 @@
 {
   "name": "@nopaper/api",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "main": "dist/server.js",
@@ -17,7 +17,7 @@
     "@fastify/helmet": "13.2.0",
     "@fastify/multipart": "10.1.7",
     "@fastify/rate-limit": "11.2.2",
-    "@nopaper/shared": "1.0.2",
+    "@nopaper/shared": "1.1.0",
     "archiver": "7.0.1",
     "argon2": "0.45.2",
     "drizzle-orm": "^0.45.4",
