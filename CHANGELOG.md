@@ -8,6 +8,13 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.2.1] - 2026-11-04
+
+### Corrigido
+- Cartões no iPhone: na imagem do cartão, o nome do titular e as datas de fechamento e vencimento
+  ficavam cortados (o Safari do iOS calculava a altura do cartão de outro jeito). Agora o cartão tem a
+  altura de um cartão de verdade e cresce se o texto precisar, sem cortar nada.
+
 ## [1.2.0] - 2026-11-04
 
 ### Corrigido

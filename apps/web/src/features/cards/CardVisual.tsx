@@ -55,35 +55,38 @@ export function CardVisual({ card, selected, editable, onClick }: { card: Card; 
         !card.active && 'grayscale',
       )}
     >
+      {/* Altura mínima explícita (proporção de cartão: 300 × 189) e conteúdo como filho direto do flex:
+          com `aspect-ratio` + `h-full` + `overflow-hidden`, o Safari do iOS cortava a linha de baixo
+          (titular e datas). Só a camada decorativa recorta; o cartão cresce se o texto precisar. */}
       <div
-        className={cn('relative aspect-[1.586] overflow-hidden rounded-2xl p-5 text-white shadow-[0_20px_40px_-20px_rgba(0,0,0,.6)]', selected && 'ring-2 ring-accent ring-offset-2 ring-offset-bg')}
+        className={cn('relative flex min-h-[189px] flex-col justify-between gap-3 rounded-2xl p-5 text-white shadow-[0_20px_40px_-20px_rgba(0,0,0,.6)]', selected && 'ring-2 ring-accent ring-offset-2 ring-offset-bg')}
         style={{ background: `linear-gradient(135deg, ${p.dark} 0%, ${p.base} 55%, ${p.light} 140%)` }}
       >
-        <div className="absolute -right-10 -top-16 size-48 rounded-full bg-white/10" />
-        <div className="absolute -right-20 top-10 size-56 rounded-full bg-white/[.06]" />
+        <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+          <span className="absolute -right-10 -top-16 size-48 rounded-full bg-white/10" />
+          <span className="absolute -right-20 top-10 size-56 rounded-full bg-white/[.06]" />
+        </span>
         {selected && editable && (
-          <span className="absolute inset-0 z-10 grid place-items-center bg-black/35 opacity-0 backdrop-blur-[1px] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
+          <span className="absolute inset-0 z-10 grid place-items-center rounded-2xl bg-black/35 opacity-0 backdrop-blur-[1px] transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-sm font-medium text-[#1b2030] shadow"><Pencil className="size-4" /> Editar cartão</span>
           </span>
         )}
-        <div className="relative flex h-full flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <span className="font-display text-lg font-semibold leading-tight drop-shadow">{card.name}</span>
-            <Wifi className="size-5 rotate-90 opacity-70" />
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="h-7 w-10 rounded-md bg-gradient-to-br from-[#f6e27a] to-[#c9a227] opacity-90" />
-            <span className="font-mono text-[15px] tracking-[0.18em] opacity-90">•••• {card.last4 ?? '••••'}</span>
-          </div>
-          <div className="flex items-end justify-between gap-3">
-            {/* titular em destaque, como no cartão físico — distingue cartões iguais de pessoas diferentes */}
-            <span className="min-w-0 leading-tight">
-              {card.holder && <span className="block truncate text-[13px] font-semibold uppercase tracking-[0.08em] drop-shadow" title={card.holder}>{card.holder}</span>}
-              <span className="block text-[11px] opacity-80">{card.holder ? `fecha dia ${card.closingDay} · vence dia ${card.dueDay}` : <>fecha dia {card.closingDay}<br />vence dia {card.dueDay}</>}</span>
-            </span>
-            <span className="shrink-0"><BrandMark brand={card.brand} /></span>
-          </div>
-        </div>
+        <span className="relative flex items-start justify-between gap-3">
+          <span className="min-w-0 font-display text-lg font-semibold leading-tight drop-shadow">{card.name}</span>
+          <Wifi className="size-5 shrink-0 rotate-90 opacity-70" />
+        </span>
+        <span className="relative flex items-center gap-3">
+          <span className="h-7 w-10 shrink-0 rounded-md bg-gradient-to-br from-[#f6e27a] to-[#c9a227] opacity-90" />
+          <span className="font-mono text-[15px] tracking-[0.18em] opacity-90 whitespace-nowrap">•••• {card.last4 ?? '••••'}</span>
+        </span>
+        <span className="relative flex items-end justify-between gap-3">
+          {/* titular em destaque, como no cartão físico — distingue cartões iguais de pessoas diferentes */}
+          <span className="block min-w-0 flex-1 leading-snug">
+            {card.holder && <span className="block break-words text-[13px] font-semibold uppercase tracking-[0.06em] drop-shadow" title={card.holder}>{card.holder}</span>}
+            <span className="block text-[11px] opacity-80">{card.holder ? `fecha dia ${card.closingDay} · vence dia ${card.dueDay}` : <>fecha dia {card.closingDay}<br />vence dia {card.dueDay}</>}</span>
+          </span>
+          <span className="shrink-0"><BrandMark brand={card.brand} /></span>
+        </span>
       </div>
       <div className="mt-3 px-1">
         <div className="flex justify-between text-xs"><span className="text-muted">Fatura atual</span><span className="tnum font-medium">{formatBRL(card.currentTotal)}</span></div>
