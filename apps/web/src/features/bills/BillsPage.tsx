@@ -3,7 +3,7 @@ import { useSearchParams, Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Archive, ChevronLeft, ChevronRight, Folder, FolderOpen, Plus, RefreshCw, Search, Tag, Wallet, X, FileSpreadsheet } from 'lucide-react';
+import { Archive, CalendarDays, ChevronLeft, ChevronRight, Folder, FolderOpen, Plus, RefreshCw, Search, Tag, Wallet, X, FileSpreadsheet } from 'lucide-react';
 import { MONTHS_PT, formatBRL, sumMoney, todayISO, type AttachmentSlot, type BillType } from '@nopaper/shared';
 import { Button, Card, Empty, Input, PageHeader, Segmented, Select, Spinner } from '@/components/ui/base';
 import { ColorChip } from '@/components/ui/chips';
@@ -41,6 +41,8 @@ export function BillsPage({ type }: { type: BillType }) {
   const categoryId = sp.get('categoria') ?? '';
   const folderId = sp.get('pasta') ?? '';
   const search = sp.get('busca') ?? '';
+  // dias de vencimento escolhidos ("5,15"); filtro feito aqui mesmo, sobre a lista do mês
+  const days = useMemo(() => new Set((sp.get('dia') ?? '').split(',').map(Number).filter((d) => d >= 1 && d <= 31)), [sp]);
   const setParam = (patch: Record<string, string | number | null>) => {
     const n = new URLSearchParams(sp);
     for (const [k, v] of Object.entries(patch)) { if (v === null) n.delete(k); else n.set(k, String(v)); }
@@ -70,8 +72,28 @@ export function BillsPage({ type }: { type: BillType }) {
     queryFn: () => get<Summary>(`/api/bills/summary?${qs({ type, year, month })}`),
     placeholderData: (prev) => prev,
   });
-  const bills = listQ.data ?? [];
+  const monthBills = useMemo(() => listQ.data ?? [], [listQ.data]);
   const today = sumQ.data?.today ?? now;
+  /** Dias que têm vencimento na lista atual (com quantidade e se há algo atrasado), mais os já escolhidos. */
+  const dayChips = useMemo(() => {
+    const m = new Map<number, { count: number; overdue: boolean }>();
+    for (const b of monthBills) {
+      const d = Number(b.dueDate.slice(8, 10));
+      const cur = m.get(d) ?? { count: 0, overdue: false };
+      cur.count++;
+      if (b.status === 'pending' && b.dueDate < today) cur.overdue = true;
+      m.set(d, cur);
+    }
+    for (const d of days) if (!m.has(d)) m.set(d, { count: 0, overdue: false });
+    return [...m.entries()].sort((a, b) => a[0] - b[0]);
+  }, [monthBills, days, today]);
+  const bills = useMemo(() => (days.size ? monthBills.filter((b) => days.has(Number(b.dueDate.slice(8, 10)))) : monthBills), [monthBills, days]);
+  const toggleDay = (d: number) => {
+    const n = new Set(days);
+    if (n.has(d)) n.delete(d); else n.add(d);
+    setParam({ dia: n.size ? [...n].sort((a, b) => a - b).join(',') : null });
+  };
+  const todayDay = today.slice(0, 7) === `${year}-${String(month).padStart(2, '0')}` ? Number(today.slice(8, 10)) : null;
 
   // seleção
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -118,7 +140,7 @@ export function BillsPage({ type }: { type: BillType }) {
     if (a) setViewer({ attachmentId: a.id, slot, title: b.description });
   };
 
-  const activeFilters = !!(categoryId || folderId || search);
+  const activeFilters = !!(categoryId || folderId || search || days.size);
 
   return (
     <div className="flex flex-col gap-5">
@@ -159,6 +181,25 @@ export function BillsPage({ type }: { type: BillType }) {
           </div>
           {status === 'overdue' && <p className="text-xs text-danger">Mostrando tudo o que está em atraso, de qualquer mês.</p>}
 
+          {dayChips.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 inline-flex items-center gap-1 text-xs text-faint"><CalendarDays className="size-3.5" /> Dia</span>
+              <ChipToggle active={!days.size} onClick={() => setParam({ dia: null })}>Todos</ChipToggle>
+              {dayChips.map(([d, info]) => (
+                <button key={d} type="button" onClick={() => toggleDay(d)}
+                  title={`${plural(info.count, 'conta', 'contas')} com vencimento no dia ${d}${info.overdue ? ' · há conta atrasada' : ''}${d === todayDay ? ' · hoje' : ''}`}
+                  className={cn('relative inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium tnum transition-colors',
+                    days.has(d) ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink',
+                    d === todayDay && !days.has(d) && 'border-accent/50 text-ink')}>
+                  {String(d).padStart(2, '0')}
+                  <span className={cn('rounded px-1 text-[10px] leading-4', days.has(d) ? 'bg-accent/20' : 'bg-surface-2 text-faint')}>{info.count}</span>
+                  {info.overdue && <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-danger" aria-label="há conta atrasada" />}
+                </button>
+              ))}
+              {days.size > 0 && <span className="ml-1 text-xs text-faint">clique em mais dias para somar ao filtro</span>}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 inline-flex items-center gap-1 text-xs text-faint"><Folder className="size-3.5" /> Pasta</span>
             <ChipToggle active={!folderId} onClick={() => setParam({ pasta: null })}>Todas</ChipToggle>
@@ -174,7 +215,7 @@ export function BillsPage({ type }: { type: BillType }) {
                 {c.label}{c.isRestricted ? ' 🔒' : ''}
               </ColorChip>
             ))}
-            {activeFilters && <button className="ml-2 inline-flex items-center gap-1 text-xs text-muted hover:text-ink" onClick={() => setParam({ pasta: null, categoria: null, busca: null })}><X className="size-3.5" /> limpar filtros</button>}
+            {activeFilters && <button className="ml-2 inline-flex items-center gap-1 text-xs text-muted hover:text-ink" onClick={() => setParam({ pasta: null, categoria: null, busca: null, dia: null })}><X className="size-3.5" /> limpar filtros</button>}
           </div>
         </div>
 
@@ -225,7 +266,7 @@ export function BillsPage({ type }: { type: BillType }) {
       <BulkPayDialog type={type} bills={selectedBills} open={bulk} onClose={() => setBulk(false)} onDone={() => setSelected(new Set())} />
       <CategoryManager open={mgr === 'cat'} onClose={() => setMgr(null)} />
       <FolderManager open={mgr === 'folder'} onClose={() => setMgr(null)} />
-      <ExportDialog type={type} open={mgr === 'export'} onClose={() => setMgr(null)} year={year} month={month} filters={{ status, categoryId, folderId, search, count: bills.length }} />
+      <ExportDialog type={type} open={mgr === 'export'} onClose={() => setMgr(null)} year={year} month={month} filters={{ status, categoryId, folderId, search, days: [...days].sort((a, b) => a - b).join(','), count: bills.length }} />
       <FileViewer target={viewer} onClose={() => setViewer(null)} />
     </div>
   );

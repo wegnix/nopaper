@@ -4,7 +4,7 @@ import { parseMoneyInput, toCents, fromCents, formatBRL } from './money.js';
 import { addMonthsISO, addYearsISO } from './dates.js';
 import { parseBoleto, mod10, formatLinhaBancaria, barcodeToLinhaBancaria, dvGeralBancario, findBoletoInText } from './boleto.js';
 import { parsePix, crc16 } from './pix.js';
-import { isPeriodic, occurrenceDate } from './schemas.js';
+import { billListQuerySchema, isPeriodic, occurrenceDate } from './schemas.js';
 
 test('money parsing', () => {
   assert.equal(parseMoneyInput('1.234,56'), '1234.56');
@@ -78,4 +78,11 @@ test('recorrência: semanal, quinzenal, mensal e anual', () => {
   assert.equal(occurrenceDate('yearly', '2028-02-29', 1), '2029-02-28');
   assert.equal(isPeriodic('weekly'), true);
   assert.equal(isPeriodic('installments'), false);
+});
+
+test('lista: filtro de dias do vencimento', () => {
+  assert.deepEqual(billListQuerySchema.parse({ type: 'payable', days: '15,5,15' }).days, [15, 5]);
+  assert.equal(billListQuerySchema.parse({ type: 'payable' }).days, undefined);
+  assert.equal(billListQuerySchema.safeParse({ type: 'payable', days: '15;drop' }).success, false);
+  assert.deepEqual(billListQuerySchema.parse({ type: 'payable', days: '0,32,10' }).days, [10]);
 });

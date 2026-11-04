@@ -184,7 +184,7 @@ export function RestructureDialog({ bill, onClose, onDone }: { bill: Bill | null
 }
 
 // ------------------------------------------------------------------ exportar ZIP
-export interface ExportFilters { status: string; categoryId: string; folderId: string; search: string; count: number }
+export interface ExportFilters { status: string; categoryId: string; folderId: string; search: string; days: string; count: number }
 
 /** Exportar: a lista como planilha (Excel/CSV) ou o ZIP com anexos para a contabilidade. */
 export function ExportDialog({ type, open, onClose, year: y0, month: m0, filters }: { type: BillType; open: boolean; onClose: () => void; year: number; month: number; filters: ExportFilters }) {
@@ -223,6 +223,7 @@ function SheetExport({ type, year, month, filters, onDone }: { type: BillType; y
     filters.categoryId ? cats.find((c) => c.id === filters.categoryId)?.label : null,
     filters.folderId === 'none' ? 'sem pasta' : filters.folderId ? folders.find((f) => f.id === filters.folderId)?.label : null,
     filters.search ? `“${filters.search}”` : null,
+    filters.days ? `dia${filters.days.includes(',') ? 's' : ''} ${filters.days.split(',').join(', ')}` : null,
   ].filter(Boolean) as string[];
   const download = async () => {
     setBusy(true);
@@ -230,7 +231,7 @@ function SheetExport({ type, year, month, filters, onDone }: { type: BillType; y
       const p: Record<string, string | number> = { type, format, byMonth: byMonth ? 1 : 0 };
       if (scope === 'view') {
         if (filters.status !== 'overdue') { p.year = year; p.month = month; }
-        for (const k of ['status', 'categoryId', 'folderId', 'search'] as const) if (filters[k]) p[k] = filters[k];
+        for (const k of ['status', 'categoryId', 'folderId', 'search', 'days'] as const) if (filters[k]) p[k] = filters[k];
       } else { p.year = year; if (scope === 'month') p.month = month; }
       const res = await api<Response>('GET', `/api/export/sheet?${new URLSearchParams(Object.entries(p).map(([k, v]) => [k, String(v)]))}`, undefined, { raw: true });
       const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? `contas.${format}`;

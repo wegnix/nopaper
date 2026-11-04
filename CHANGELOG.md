@@ -8,6 +8,17 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.1.1] - 2026-11-04
+
+### Adicionado
+- Filtro **Dia** em Contas a pagar e a receber: um botão para cada dia que tem vencimento no mês (com a
+  quantidade de contas e um ponto vermelho se houver atraso); dá para escolher mais de um dia. A soma
+  da lista e a exportação "como está na tela" respeitam o filtro.
+
+### Corrigido
+- Contas do mesmo dia apareciam em ordem aleatória. Agora, depois do vencimento, a ordem é alfabética
+  pela descrição (sem diferenciar maiúsculas e acentos) — na lista, na exportação e nos alertas.
+
 ## [1.1.0] - 2026-11-04
 
 ### Adicionado

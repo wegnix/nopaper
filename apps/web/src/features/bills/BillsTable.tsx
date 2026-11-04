@@ -11,6 +11,9 @@ import type { Bill, Category, Folder } from '@/lib/types';
 import { AttachmentChips, CopyButton, attachmentCount } from './attachments';
 import { L, displayStatus } from './labels';
 
+/** Ordem alfabética em português: ignora maiúsculas e acentos, e números em ordem natural (2 antes de 10). */
+const alpha = new Intl.Collator('pt-BR', { sensitivity: 'base', numeric: true });
+
 type SortKey = 'dueDate' | 'description' | 'folder' | 'category' | 'amount' | 'status' | 'attachments' | 'paidAt';
 
 export interface RowActions {
@@ -38,14 +41,18 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
         case 'paidAt': return b.paidAt;
       }
     };
+    // desempate: vencimento, depois descrição em ordem alfabética (sem diferenciar maiúsculas/acentos)
+    const tie = (a: Bill, b: Bill) =>
+      (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0)
+      || alpha.compare(a.description, b.description)
+      || (a.id < b.id ? -1 : 1);
     return [...bills].sort((a, b) => {
       const va = val(a), vb = val(b);
-      if (va === null && vb === null) return a.id < b.id ? -1 : 1;
+      if (va === null && vb === null) return tie(a, b);
       if (va === null) return 1;
       if (vb === null) return -1;
-      if (va < vb) return -sort.dir;
-      if (va > vb) return sort.dir;
-      return a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.id < b.id ? -1 : 1;
+      const c = typeof va === 'string' && typeof vb === 'string' ? alpha.compare(va, vb) : va < vb ? -1 : va > vb ? 1 : 0;
+      return c ? c * sort.dir : tie(a, b);
     });
   }, [bills, sort, categories, folders, today]);
 

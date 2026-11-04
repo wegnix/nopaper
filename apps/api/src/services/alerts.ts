@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt, notInArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, lt, notInArray, sql } from 'drizzle-orm';
 import {
   addDaysISO, alertConfigSchema, formatBRL, formatDateBR, sumMoney, todayISO, diffDaysISO, type AlertConfig, type BillType,
 } from '@nopaper/shared';
@@ -38,13 +38,13 @@ async function digestFor(orgId: string, type: BillType, rule: AlertConfig['payab
   const cols = { description: schema.bills.description, amount: schema.bills.amount, dueDate: schema.bills.dueDate };
   const sections: Section[] = [];
   if (rule.overdue) {
-    const items = await db.select(cols).from(schema.bills).where(and(base, lt(schema.bills.dueDate, today))).orderBy(asc(schema.bills.dueDate));
+    const items = await db.select(cols).from(schema.bills).where(and(base, lt(schema.bills.dueDate, today))).orderBy(asc(schema.bills.dueDate), sql`lower(${schema.bills.description})`);
     if (items.length) sections.push({ title: type === 'payable' ? 'Vencidas' : 'Atrasadas', items, tone: 'overdue' });
   }
   const days = [...new Set(rule.daysBefore)].sort((a, b) => a - b);
   if (days.length) {
     const dates = days.map((d) => addDaysISO(today, d));
-    const rows = await db.select(cols).from(schema.bills).where(and(base, inArray(schema.bills.dueDate, dates))).orderBy(asc(schema.bills.dueDate));
+    const rows = await db.select(cols).from(schema.bills).where(and(base, inArray(schema.bills.dueDate, dates))).orderBy(asc(schema.bills.dueDate), sql`lower(${schema.bills.description})`);
     for (const d of days) {
       const date = addDaysISO(today, d);
       const items = rows.filter((r) => r.dueDate === date);

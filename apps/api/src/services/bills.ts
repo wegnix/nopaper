@@ -205,6 +205,7 @@ export interface ListFilters {
   type: BillType;
   year?: number; month?: number; from?: string; to?: string;
   categoryId?: string; folderId?: string; status?: 'pending' | 'paid' | 'overdue' | 'due_soon'; search?: string;
+  days?: number[];
 }
 
 export async function listBills(req: FastifyRequest, f: ListFilters) {
@@ -221,6 +222,7 @@ export async function listBills(req: FastifyRequest, f: ListFilters) {
     if (f.status === 'due_soon') conds.push(eq(schema.bills.status, 'pending'), gte(schema.bills.dueDate, today), lte(schema.bills.dueDate, addDaysISO(today, 7)));
   }
   if (f.categoryId) conds.push(eq(schema.bills.categoryId, f.categoryId));
+  if (f.days?.length) conds.push(inArray(sql<number>`extract(day from ${schema.bills.dueDate})::int`, f.days));
   if (f.folderId === 'none') conds.push(isNull(schema.bills.folderId));
   else if (f.folderId) conds.push(eq(schema.bills.folderId, f.folderId));
   if (f.search) {
@@ -232,7 +234,9 @@ export async function listBills(req: FastifyRequest, f: ListFilters) {
       sql`lower(coalesce(${schema.bills.paymentMethod}, '')) like ${term}`,
     ));
   }
-  const rows = await db.select().from(schema.bills).where(and(...conds)).orderBy(asc(schema.bills.dueDate), asc(schema.bills.createdAt)).limit(5000);
+  // mesmo dia: ordem alfabética da descrição (a tela e a exportação seguem a mesma ordem)
+  const rows = await db.select().from(schema.bills).where(and(...conds))
+    .orderBy(asc(schema.bills.dueDate), sql`lower(${schema.bills.description})`, asc(schema.bills.createdAt)).limit(5000);
   return serializeMany(rows);
 }
 
