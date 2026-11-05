@@ -3,6 +3,7 @@ import { Infinity as InfinityIcon } from 'lucide-react';
 import { Checkbox, Field, Input, Segmented } from '@/components/ui/base';
 import { MoneyInput } from './MoneyInput';
 import { RECURRENCE_LABEL } from './labels';
+import { DatePicker } from '@/components/ui/date-picker';
 
 export interface RecState {
   type: RecurrenceType;
@@ -105,7 +106,7 @@ export function RecurrenceEditor({ rec, setRec, dueDate, amount, allowOnce = tru
             {rows.map((r, i) => (
               <div key={i} className="flex items-center gap-2">
                 <span className="w-14 shrink-0 text-right text-xs text-faint tnum">{rec.type === 'installments' ? `${rec.first + i}/${rec.first - 1 + rows.length}` : `${i + 1}º`}</span>
-                <Input type="date" value={r.date} onChange={(e) => setRow(i, { date: e.target.value })} className="h-9 px-2" />
+                <DatePicker size="sm" value={r.date} onChange={(date) => setRow(i, { date })} />
                 <MoneyInput value={r.amount} onChange={(v) => setRow(i, { amount: v })} className="h-9" />
               </div>
             ))}

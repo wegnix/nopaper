@@ -71,6 +71,13 @@
       "when": 1793806975943,
       "tag": "0009_session_idle",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793882184981,
+      "tag": "0010_payroll",
+      "breakpoints": true
     }
   ]
 }

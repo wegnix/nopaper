@@ -77,6 +77,9 @@ export default async function billRoutes(app: FastifyInstance) {
     if (b.statementId && ((body.amount && body.amount !== b.amount) || (body.dueDate && body.dueDate !== b.dueDate))) {
       throw badRequest('O valor e o vencimento desta conta vêm da fatura do cartão. Ajuste os lançamentos na tela de Cartões.');
     }
+    if (b.payrollEntryId && ((body.amount && body.amount !== b.amount) || (body.dueDate && body.dueDate !== b.dueDate))) {
+      throw badRequest('O valor e o vencimento deste salário vêm da Folha de pagamento. Ajuste o lançamento lá.');
+    }
     if (body.categoryId && body.categoryId !== b.categoryId) await assertCategoryUsable(req, body.categoryId, type);
     if (body.folderId) await assertFolder(req, body.folderId);
     const today = orgToday(req);
@@ -169,6 +172,7 @@ export default async function billRoutes(app: FastifyInstance) {
     const body = parse(restructureSchema, req.body);
     const b = await loadBill(req, req.params.id, 'edit');
     if (b.statementId) throw badRequest('Conta de fatura de cartão não pode virar recorrente');
+    if (b.payrollEntryId) throw badRequest('Salário da folha não pode virar recorrente: o próximo mês é aberto na Folha de pagamento');
     if (b.parentId) throw badRequest('Edite a recorrência a partir da primeira ocorrência da série');
     if (b.status === 'paid') throw badRequest('Esta conta já está paga — reverta o pagamento antes de reestruturar');
     if (body.isIndefinite && !isPeriodic(body.recurrenceType)) throw badRequest('Repetição sem data para acabar só para semanal, quinzenal, mensal ou anual');
@@ -217,6 +221,7 @@ export default async function billRoutes(app: FastifyInstance) {
     const mode = parse(deleteModeSchema, req.query.mode ?? 'one');
     const b = await loadBill(req, req.params.id, 'delete');
     if (b.statementId) throw badRequest('Esta conta é a fatura de um cartão. Apague os lançamentos na tela de Cartões.');
+    if (b.payrollEntryId) throw badRequest('Este salário vem da Folha de pagamento. Tire o funcionário da folha do mês por lá.');
     const restricted = await isRestricted(b.orgId, b.categoryId);
     const res = await db.transaction(async (tx) => {
       const series = await seriesRows(tx, b);

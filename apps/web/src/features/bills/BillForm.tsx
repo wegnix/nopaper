@@ -19,6 +19,7 @@ import { RecurrenceEditor, initialRec, needsRows, recPayload, type RecState } fr
 import { DocDrop } from './DocDrop';
 import { CopyButton, SLOT_META } from './attachments';
 import { L, RECURRENCE_LABEL } from './labels';
+import { DatePicker } from '@/components/ui/date-picker';
 
 interface Props {
   type: BillType;
@@ -245,17 +246,20 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
             </Select>
           </Field>
           <Field label={rec.type !== 'once' && !isEdit ? '1º vencimento' : 'Vencimento'} required>
-            <Input type="date" value={f.dueDate} disabled={!!current?.statementId} onChange={(e) => setF({ ...f, dueDate: e.target.value })} />
+            <DatePicker value={f.dueDate} disabled={!!current?.statementId || !!current?.payrollEntryId} onChange={(dueDate) => setF({ ...f, dueDate })} />
           </Field>
         </div>
 
+        {isEdit && current?.payrollEntryId && (
+          <p className="-mt-2 rounded-lg bg-accent-soft/60 px-3 py-2 text-xs text-accent">Este salário vem da Folha de pagamento: valor e vencimento vêm do lançamento do funcionário no mês.</p>
+        )}
         {isEdit && current?.statementId && (
           <p className="-mt-2 rounded-lg bg-accent-soft/60 px-3 py-2 text-xs text-accent">Esta conta é a fatura de um cartão: valor e vencimento vêm dos lançamentos na tela de Cartões.</p>
         )}
         <div className="grid sm:grid-cols-3 gap-4">
           {!hideAmount && (
             <Field label={rec.type === 'installments' && !isEdit ? 'Valor de cada parcela' : 'Valor'} required>
-              <MoneyInput value={f.amount} disabled={!!current?.statementId} onChange={(amount) => setF({ ...f, amount })} />
+              <MoneyInput value={f.amount} disabled={!!current?.statementId || !!current?.payrollEntryId} onChange={(amount) => setF({ ...f, amount })} />
             </Field>
           )}
           <Field label="Forma de pagamento">
@@ -272,7 +276,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
               <Segmented value={f.status} onChange={(status) => setF({ ...f, status, paidAmount: f.paidAmount || f.amount })} options={[{ value: 'pending', label: 'Pendente' }, { value: 'paid', label: l.paid }]} />
             </Field>
             {f.status === 'paid' && <>
-              <Field label={l.paidAt}><Input type="date" value={f.paidAt} onChange={(e) => setF({ ...f, paidAt: e.target.value })} /></Field>
+              <Field label={l.paidAt}><DatePicker value={f.paidAt} onChange={(paidAt) => setF({ ...f, paidAt })} /></Field>
               <Field label={l.paidAmount} hint="Pode diferir do previsto (juros ou desconto)."><MoneyInput value={f.paidAmount} onChange={(paidAmount) => setF({ ...f, paidAmount })} /></Field>
             </>}
           </div>
@@ -358,7 +362,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
             </div>
           </div>
         )}
-        {isEdit && current && !series && !current.statementId && current.status !== 'paid' && (
+        {isEdit && current && !series && !current.statementId && !current.payrollEntryId && current.status !== 'paid' && (
           <button type="button" className="self-start text-sm text-accent hover:underline" onClick={() => onRestructure(current)}>Transformar em conta recorrente ou parcelada</button>
         )}
       </div>

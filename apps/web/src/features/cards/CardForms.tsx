@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Trash2 } from 'lucide-react';
+import { AlertTriangle, CalendarCheck, Trash2 } from 'lucide-react';
 import {
   CARD_BRANDS, CARD_BRAND_LABEL, CARD_COLOR_KEYS, CARD_COLOR_PRESETS, MONTHS_PT_SHORT, addMonthsRef, cycleForPurchase, formatBRL, formatDateBR, parseMoneyInput,
   splitInstallments, todayISO, type CardBrand, type CardColorKey,
 } from '@nopaper/shared';
 import { Dialog } from '@/components/ui/dialog';
+import { DayPicker } from '@/components/ui/day-picker';
 import { Button, Field, Input, Select, Spinner, Switch, Textarea } from '@/components/ui/base';
 import { del, get, post, put, errMsg } from '@/lib/api';
 import { useCategories, useFolders } from '@/lib/queries';
@@ -40,7 +41,7 @@ export function CardFormDialog({ card, open, onClose, onSaved, onDeleted }: { ca
       onSaved?.(r.id); onClose();
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
-  const days = Array.from({ length: 31 }, (_, i) => i + 1);
+  const cycle = cycleForPurchase(todayISO(), f.closingDay, f.dueDay);
   return (
     <Dialog open={open} onClose={onClose} title={card ? 'Editar cartão' : 'Novo cartão'} description="Nunca guardamos o número completo do cartão — só os 4 últimos dígitos para você reconhecê-lo."
       footer={<>
@@ -52,12 +53,24 @@ export function CardFormDialog({ card, open, onClose, onSaved, onDeleted }: { ca
           <Field label="Nome" required><Input autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Ex.: BTG Black, Nubank" /></Field>
           <Field label="4 últimos dígitos"><Input inputMode="numeric" maxLength={4} value={f.last4} onChange={(e) => setF({ ...f, last4: e.target.value.replace(/\D/g, '') })} /></Field>
         </div>
-        <div className="grid sm:grid-cols-3 gap-4">
-          <Field label="Bandeira"><Select value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value as CardBrand })}>{CARD_BRANDS.map((b) => <option key={b} value={b}>{CARD_BRAND_LABEL[b]}</option>)}</Select></Field>
-          <Field label="Dia do fechamento"><Select value={f.closingDay} onChange={(e) => setF({ ...f, closingDay: Number(e.target.value) })}>{days.map((d) => <option key={d} value={d}>{d}</option>)}</Select></Field>
-          <Field label="Dia do vencimento"><Select value={f.dueDay} onChange={(e) => setF({ ...f, dueDay: Number(e.target.value) })}>{days.map((d) => <option key={d} value={d}>{d}</option>)}</Select></Field>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <Field label="Bandeira" className="col-span-2 sm:col-span-1"><Select value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value as CardBrand })}>{CARD_BRANDS.map((b) => <option key={b} value={b}>{CARD_BRAND_LABEL[b]}</option>)}</Select></Field>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-muted">Fecha no dia</span>
+            <DayPicker aria-label="Dia do fechamento" value={f.closingDay} onChange={(closingDay) => setF({ ...f, closingDay })} />
+          </div>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-muted">Vence no dia</span>
+            <DayPicker aria-label="Dia do vencimento" value={f.dueDay} onChange={(dueDay) => setF({ ...f, dueDay })} />
+          </div>
         </div>
-        <p className="-mt-2 text-xs text-faint">Compras a partir do dia {f.closingDay} entram na fatura seguinte, que vence no dia {f.dueDay}{f.dueDay > f.closingDay ? ' do mesmo mês do fechamento' : ' do mês seguinte ao fechamento'}.</p>
+        <div className="-mt-1 flex items-start gap-3 rounded-lg bg-accent-soft/50 px-3.5 py-3">
+          <CalendarCheck className="mt-0.5 size-4 shrink-0 text-accent" />
+          <p className="text-sm">
+            A fatura fecha no dia {f.closingDay} e vence no dia {f.dueDay}{f.dueDay > f.closingDay ? ' do mesmo mês' : ' do mês seguinte'}. Compras feitas no dia do fechamento ou depois já entram na próxima fatura.
+            <span className="mt-0.5 block text-xs text-muted">Hoje, uma compra cairia na fatura que fecha em {formatDateBR(cycle.closingDate)} e vence em {formatDateBR(cycle.dueDate)}.</span>
+          </p>
+        </div>
         <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Limite"><MoneyInput value={f.limitAmount} onChange={(limitAmount) => setF({ ...f, limitAmount })} /></Field>
           <Field label="Titular"><Input value={f.holder} onChange={(e) => setF({ ...f, holder: e.target.value })} /></Field>

@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import {
   billPerm, dupKey, importCheckSchema, importCommitSchema, normText, sumMoney, type BillType, type ImportCell, type ImportSheet,
 } from '@nopaper/shared';
@@ -91,7 +91,7 @@ export default async function importRoutes(app: FastifyInstance) {
   };
 
   /** Lê o arquivo e devolve as abas com células normalizadas — nada é gravado. */
-  app.post('/api/import/read', guard, async (req) => {
+  app.post('/api/import/read', { preHandler: requirePerm('bills.import', 'payroll.manage') }, async (req) => {
     const file = await req.file({ limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
     if (!file) throw badRequest('Envie um arquivo');
     const buf = await file.toBuffer();
@@ -170,7 +170,7 @@ export default async function importRoutes(app: FastifyInstance) {
       remaining: sql<number>`(select count(*)::int from bills where bills.import_batch_id = ${schema.importBatches.id})`,
     }).from(schema.importBatches)
       .leftJoin(schema.users, eq(schema.users.id, schema.importBatches.createdBy))
-      .where(eq(schema.importBatches.orgId, req.org!.id))
+      .where(and(eq(schema.importBatches.orgId, req.org!.id), ne(schema.importBatches.type, 'payroll')))
       .orderBy(desc(schema.importBatches.createdAt)).limit(50);
     return {
       items: rows.filter((r) => req.org!.can(billPerm(r.b.type as BillType, 'view'))).map((r) => ({
@@ -183,7 +183,7 @@ export default async function importRoutes(app: FastifyInstance) {
   /** Desfaz uma importação: apaga as contas que ainda existem daquele lote. */
   app.delete<{ Params: { id: string } }>('/api/import/batches/:id', guard, async (req) => {
     const [b] = await db.select().from(schema.importBatches).where(and(eq(schema.importBatches.id, req.params.id), eq(schema.importBatches.orgId, req.org!.id), isNull(schema.importBatches.undoneAt)));
-    if (!b) throw notFound('Importação não encontrada');
+    if (!b || b.type === 'payroll') throw notFound('Importação não encontrada');
     assertType(req, b.type as BillType, 'delete');
     const removed = await db.transaction(async (tx) => {
       const ids = (await tx.select({ id: schema.bills.id }).from(schema.bills)

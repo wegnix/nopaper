@@ -5,7 +5,7 @@ export interface Folder { id: string; name: string; label: string; color: ColorK
 export interface AttachmentSummary { id: string; name: string; mime: string; size: number }
 export interface Bill {
   id: string; type: BillType; parentId: string | null; description: string; categoryId: string; folderId: string | null;
-  cardId: string | null; statementId: string | null; amount: string; dueDate: string; status: 'pending' | 'paid'; paidAt: string | null; paidAmount: string | null;
+  cardId: string | null; statementId: string | null; payrollEntryId?: string | null; amount: string; dueDate: string; status: 'pending' | 'paid'; paidAt: string | null; paidAmount: string | null;
   recurrenceType: RecurrenceType; installmentNumber: number | null; totalInstallments: number | null; isIndefinite: boolean;
   relatedPerson: string | null; notes: string | null; barcode: string | null; pixKey: string | null; paymentMethod: string | null;
   attachments: Partial<Record<AttachmentSlot, AttachmentSummary>>; createdAt: string; updatedAt: string;

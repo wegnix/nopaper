@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Link } from 'react-router';
-import { Check, CreditCard, ChevronDown, ChevronUp, ChevronsUpDown, Infinity as InfinityIcon, Pencil, Receipt, RotateCcw, StickyNote, Trash2 } from 'lucide-react';
+import { Check, CreditCard, ChevronDown, ChevronUp, ChevronsUpDown, Infinity as InfinityIcon, Pencil, Receipt, RotateCcw, StickyNote, Trash2, Users } from 'lucide-react';
 import { copyDescriptionText, formatBRL, formatDateBR, toCents, type AttachmentSlot, type BillType } from '@nopaper/shared';
 import { Button, Checkbox, IconButton } from '@/components/ui/base';
 import { CategoryChip, FolderChip, StatusChip } from '@/components/ui/chips';
@@ -74,7 +74,7 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
   };
 
   const canSelect = perm.pay;
-  const rowActions = (b: Bill) => (perm.pay || perm.edit || perm.delete || b.statementId) && (
+  const rowActions = (b: Bill) => (perm.pay || perm.edit || perm.delete || b.statementId || b.payrollEntryId) && (
     <div className="flex items-center justify-end gap-0.5">
       {perm.pay && (b.status === 'pending'
         ? <Button size="sm" variant="ok" className="h-7 px-2.5" icon={<Check className="size-3.5" />} onClick={() => actions.onPay(b)}>{l.payAction}</Button>
@@ -85,7 +85,9 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
       {perm.edit && <IconButton label="Editar" onClick={() => actions.onEdit(b)}><Pencil className="size-4" /></IconButton>}
       {b.statementId
         ? <Link to={`/cartoes?cartao=${b.cardId}`} aria-label="Abrir fatura do cartão" title="Abrir fatura do cartão" className="grid size-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"><CreditCard className="size-4" /></Link>
-        : perm.delete && <IconButton label="Apagar" tone="danger" onClick={() => actions.onDelete(b)}><Trash2 className="size-4" /></IconButton>}
+        : b.payrollEntryId
+          ? <Link to={`/folha?lancamento=${b.payrollEntryId}`} aria-label="Abrir na folha de pagamento" title="Abrir na folha de pagamento" className="grid size-8 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"><Users className="size-4" /></Link>
+          : perm.delete && <IconButton label="Apagar" tone="danger" onClick={() => actions.onDelete(b)}><Trash2 className="size-4" /></IconButton>}
     </div>
   );
 

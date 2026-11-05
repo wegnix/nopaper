@@ -14,6 +14,7 @@ import { MoneyInput } from './MoneyInput';
 import { DocDrop } from './DocDrop';
 import { RecurrenceEditor, initialRec, recPayload, type RecState } from './RecurrenceEditor';
 import { L } from './labels';
+import { DatePicker } from '@/components/ui/date-picker';
 
 const invalidate = (qc: ReturnType<typeof useQueryClient>) => qc.invalidateQueries({ queryKey: ['bills'] });
 
@@ -54,7 +55,7 @@ export function PayDialog({ bill, proofOnly, onClose, onView }: { bill: Bill | n
       <div className="flex flex-col gap-4">
         {!proofOnly && (
           <div className="grid grid-cols-2 gap-3">
-            <Field label={l.paidAt}><Input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} /></Field>
+            <Field label={l.paidAt}><DatePicker value={paidAt} onChange={setPaidAt} /></Field>
             <Field label={l.paidAmount}><MoneyInput value={amount} onChange={setAmount} /></Field>
             <p className="col-span-2 -mt-1 text-xs text-faint">Ajuste o valor se houve juros ou desconto.</p>
           </div>
@@ -137,7 +138,7 @@ export function BulkPayDialog({ type, bills, open, onClose, onDone }: { type: Bi
           {bills.map((b) => <li key={b.id} className="flex justify-between gap-3 px-3 py-2"><span className="truncate">{b.description}</span><span className="tnum text-muted">{formatBRL(b.amount)}</span></li>)}
         </ul>
         <Field label={`${l.paidAt} (todas)`} hint="Cada conta recebe o próprio valor previsto. Para juros ou desconto, registre individualmente.">
-          <Input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
+          <DatePicker value={paidAt} onChange={setPaidAt} />
         </Field>
       </div>
     </Dialog>
@@ -174,7 +175,7 @@ export function RestructureDialog({ bill, onClose, onDone }: { bill: Bill | null
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} onClick={submit}>Aplicar repetição</Button></>}>
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="1º vencimento"><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></Field>
+          <Field label="1º vencimento"><DatePicker value={dueDate} onChange={setDueDate} /></Field>
           <Field label="Valor"><MoneyInput value={amount} onChange={setAmount} /></Field>
         </div>
         <RecurrenceEditor rec={rec} setRec={setRec} dueDate={dueDate} amount={amount} />

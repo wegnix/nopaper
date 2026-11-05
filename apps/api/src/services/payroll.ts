@@ -1,0 +1,173 @@
+import type { FastifyRequest } from 'fastify';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import {
+  DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, refLabelPT, formatBRL, toCents, type PayrollSettings,
+} from '@nopaper/shared';
+import { db, schema } from '../db/client.js';
+import type { DBOrTx } from '../db/client.js';
+import { badRequest, conflict, notFound } from '../lib/errors.js';
+import { deleteBillsWithFiles } from './bills.js';
+
+export type EmployeeRow = typeof schema.employees.$inferSelect;
+export type RubricRow = typeof schema.payrollRubrics.$inferSelect;
+export type PeriodRow = typeof schema.payrollPeriods.$inferSelect;
+export type EntryRow = typeof schema.payrollEntries.$inferSelect;
+
+const SETTINGS_KEY = 'payroll';
+
+/** A folha só existe em espaço do tipo Empresa. */
+export function assertCompany(req: FastifyRequest) {
+  if (req.org!.kind !== 'company') throw badRequest('A folha de pagamento só está disponível em espaços do tipo Empresa.', 'company_only');
+}
+
+/** Cria as rubricas padrão e a configuração no 1º acesso do espaço. */
+export async function ensurePayrollDefaults(orgId: string) {
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.payrollRubrics).where(eq(schema.payrollRubrics.orgId, orgId));
+  if (n === 0) {
+    await db.insert(schema.payrollRubrics).values(DEFAULT_PAYROLL_RUBRICS.map((r, i) => ({
+      orgId, name: r.name, section: r.section, kind: r.kind, fixed: !!r.fixed, sortOrder: i,
+    }))).onConflictDoNothing();
+  }
+}
+
+export async function getPayrollSettings(orgId: string, conn: DBOrTx = db): Promise<PayrollSettings> {
+  const [row] = await conn.select().from(schema.orgSettings).where(and(eq(schema.orgSettings.orgId, orgId), eq(schema.orgSettings.key, SETTINGS_KEY)));
+  if (row) return payrollSettingsSchema.parse(row.value);
+  // padrão: categoria "Salário" e pasta "FUNCIONARIO" (estrutura do espaço Empresa), se existirem
+  const [cat] = await conn.select({ id: schema.categories.id }).from(schema.categories)
+    .where(and(eq(schema.categories.orgId, orgId), sql`lower(${schema.categories.label}) = 'salário'`, sql`${schema.categories.kind} <> 'receivable'`));
+  const [folder] = await conn.select({ id: schema.folders.id }).from(schema.folders)
+    .where(and(eq(schema.folders.orgId, orgId), sql`upper(${schema.folders.label}) = 'FUNCIONARIO'`));
+  return { categoryId: cat?.id ?? null, folderId: folder?.id ?? null, payDay: 0, payMonth: 'next', paymentMethod: 'PIX' };
+}
+
+export async function savePayrollSettings(orgId: string, value: PayrollSettings) {
+  await db.insert(schema.orgSettings).values({ orgId, key: SETTINGS_KEY, value })
+    .onConflictDoUpdate({ target: [schema.orgSettings.orgId, schema.orgSettings.key], set: { value } });
+}
+
+export async function rubricsOf(orgId: string, conn: DBOrTx = db) {
+  return conn.select().from(schema.payrollRubrics).where(eq(schema.payrollRubrics.orgId, orgId))
+    .orderBy(asc(schema.payrollRubrics.sortOrder), asc(schema.payrollRubrics.name));
+}
+
+export async function loadEmployee(orgId: string, id: string, conn: DBOrTx = db) {
+  const [e] = await conn.select().from(schema.employees).where(and(eq(schema.employees.id, id), eq(schema.employees.orgId, orgId)));
+  if (!e) throw notFound('Funcionário não encontrado');
+  return e;
+}
+
+export async function loadPeriod(orgId: string, id: string, conn: DBOrTx = db) {
+  const [p] = await conn.select().from(schema.payrollPeriods).where(and(eq(schema.payrollPeriods.id, id), eq(schema.payrollPeriods.orgId, orgId)));
+  if (!p) throw notFound('Mês da folha não encontrado');
+  return p;
+}
+
+export async function loadEntry(orgId: string, id: string, conn: DBOrTx = db) {
+  const [e] = await conn.select().from(schema.payrollEntries).where(and(eq(schema.payrollEntries.id, id), eq(schema.payrollEntries.orgId, orgId)));
+  if (!e) throw notFound('Lançamento da folha não encontrado');
+  return e;
+}
+
+/** Lançamento com conta já paga não muda: reverta o pagamento em Contas a pagar antes. */
+export async function assertEntryEditable(entry: EntryRow, conn: DBOrTx = db) {
+  if (!entry.billId) return;
+  const [b] = await conn.select({ status: schema.bills.status }).from(schema.bills).where(eq(schema.bills.id, entry.billId));
+  if (b?.status === 'paid') throw conflict('Este salário já foi pago. Para alterar, reverta o pagamento da conta em Contas a pagar (ou aqui, em “Reverter pagamento”).');
+}
+
+export interface LineInput { rubricId: string; amount: string; note?: string | null }
+
+/** Grava o lançamento (líquido + rubricas), recalcula os totais e sincroniza a conta a pagar. */
+export async function writeEntry(tx: DBOrTx, orgId: string, userId: string | null, data: {
+  entryId?: string; periodId: string; employeeId: string; payslipNet: string; lines: LineInput[]; notes: string | null;
+}) {
+  const rubrics = await rubricsOf(orgId, tx);
+  const map = new Map(rubrics.map((r) => [r.id, r]));
+  const lines = data.lines.filter((l) => toCents(l.amount) !== 0);
+  for (const l of lines) if (!map.has(l.rubricId)) throw badRequest('Rubrica inválida');
+  const t = payrollTotals(data.payslipNet, lines, map);
+  const values = {
+    payslipNet: t.payslipNet, total: t.total, offPayroll: t.offPayroll, employerCost: t.employerCost, companyCost: t.companyCost, notes: data.notes,
+  };
+  let entryId = data.entryId;
+  if (entryId) {
+    await tx.update(schema.payrollEntries).set(values).where(eq(schema.payrollEntries.id, entryId));
+    await tx.delete(schema.payrollEntryLines).where(eq(schema.payrollEntryLines.entryId, entryId));
+  } else {
+    const [e] = await tx.insert(schema.payrollEntries).values({ ...values, orgId, periodId: data.periodId, employeeId: data.employeeId, createdBy: userId }).returning();
+    entryId = e.id;
+  }
+  if (lines.length) await tx.insert(schema.payrollEntryLines).values(lines.map((l) => ({ entryId: entryId!, rubricId: l.rubricId, amount: l.amount, note: l.note ?? null })));
+  await syncEntryBill(tx, entryId, userId);
+  return { id: entryId, totals: t };
+}
+
+/**
+ * Mantém a conta a pagar do lançamento: cria quando o mês gera contas e o total > 0, atualiza
+ * valor/vencimento/descrição enquanto pendente e apaga quando o total zera. Conta paga não é tocada.
+ */
+export async function syncEntryBill(tx: DBOrTx, entryId: string, userId: string | null) {
+  const [e] = await tx.select().from(schema.payrollEntries).where(eq(schema.payrollEntries.id, entryId));
+  if (!e) return;
+  const [p] = await tx.select().from(schema.payrollPeriods).where(eq(schema.payrollPeriods.id, e.periodId));
+  const [emp] = await tx.select().from(schema.employees).where(eq(schema.employees.id, e.employeeId));
+  const bill = e.billId ? (await tx.select().from(schema.bills).where(eq(schema.bills.id, e.billId)))[0] : undefined;
+  if (bill?.status === 'paid') return;
+  if (!p.billsEnabled || toCents(e.total) <= 0) {
+    if (bill) {
+      await tx.update(schema.payrollEntries).set({ billId: null }).where(eq(schema.payrollEntries.id, e.id));
+      await tx.delete(schema.bills).where(eq(schema.bills.id, bill.id));
+    }
+    return;
+  }
+  const settings = await getPayrollSettings(e.orgId, tx);
+  if (!settings.categoryId) throw badRequest('Escolha a categoria das contas de salário em Folha de pagamento → Configurar.', 'payroll_category');
+  const off = toCents(e.offPayroll);
+  const notes = [
+    `Folha de pagamento ${refLabelPT(p.ref)}.`,
+    off > 0 ? `Pelo holerite: ${formatBRL(toCents(e.total) - off)} · por fora: ${formatBRL(e.offPayroll)}.` : null,
+  ].filter(Boolean).join(' ');
+  const values = {
+    description: `Salário ${emp.name} – ${refLabelPT(p.ref)}`.slice(0, 255), amount: e.total, dueDate: p.payDate,
+    categoryId: settings.categoryId, folderId: settings.folderId ?? null, relatedPerson: emp.name.slice(0, 128),
+    pixKey: emp.pixKey, paymentMethod: settings.paymentMethod ?? null, notes,
+  };
+  if (bill) {
+    await tx.update(schema.bills).set(values).where(eq(schema.bills.id, bill.id));
+    return;
+  }
+  const [b] = await tx.insert(schema.bills).values({
+    ...values, orgId: e.orgId, type: 'payable', recurrenceType: 'once', payrollEntryId: e.id, createdBy: userId,
+  }).returning();
+  await tx.update(schema.payrollEntries).set({ billId: b.id }).where(eq(schema.payrollEntries.id, e.id));
+}
+
+/** Ressincroniza as contas de um conjunto de lançamentos (mudou o mês, o funcionário ou a configuração). */
+export async function syncEntries(tx: DBOrTx, entryIds: string[], userId: string | null) {
+  for (const id of entryIds) await syncEntryBill(tx, id, userId);
+}
+
+export async function entryIdsWhere(tx: DBOrTx, cond: ReturnType<typeof eq>) {
+  return (await tx.select({ id: schema.payrollEntries.id }).from(schema.payrollEntries).where(cond)).map((r) => r.id);
+}
+
+/** Contas já pagas entre os lançamentos (bloqueiam apagar). */
+export async function paidBillsCount(tx: DBOrTx, entryIds: string[]) {
+  if (!entryIds.length) return 0;
+  const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(schema.payrollEntries)
+    .innerJoin(schema.bills, eq(schema.bills.id, schema.payrollEntries.billId))
+    .where(and(inArray(schema.payrollEntries.id, entryIds), eq(schema.bills.status, 'paid')));
+  return n;
+}
+
+/** Apaga lançamentos e as contas pendentes deles (anexos incluídos). */
+export async function deleteEntries(tx: DBOrTx, entryIds: string[]) {
+  if (!entryIds.length) return 0;
+  const rows = await tx.select({ billId: schema.payrollEntries.billId }).from(schema.payrollEntries).where(inArray(schema.payrollEntries.id, entryIds));
+  const billIds = rows.map((r) => r.billId).filter((x): x is string => !!x);
+  await tx.update(schema.payrollEntries).set({ billId: null }).where(inArray(schema.payrollEntries.id, entryIds));
+  await deleteBillsWithFiles(tx, billIds);
+  await tx.delete(schema.payrollEntries).where(inArray(schema.payrollEntries.id, entryIds));
+  return entryIds.length;
+}

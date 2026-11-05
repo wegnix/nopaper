@@ -10,3 +10,4 @@ export * from './import.js';
 export * from './alerts.js';
 export * from './version.js';
 export * from './document.js';
+export * from './payroll.js';

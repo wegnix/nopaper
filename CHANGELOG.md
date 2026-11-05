@@ -8,6 +8,34 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.3.0] - 2026-11-05
+
+### Novo
+- **Folha de pagamento** (só em espaços do tipo Empresa): cadastro de funcionários (CPF, cargo,
+  admissão, PIX e dados bancários) e a folha de cada mês com o líquido do holerite — digitado ou
+  detalhado em rubricas (salário base, INSS, IRRF, vale-transporte…) —, os valores pagos fora do
+  holerite (metas, vitaminas, comissão, hora extra) e os descontos de produtos/vales. Mostra quanto vai
+  pelo holerite e quanto vai por fora, os encargos (FGTS) e o custo total para a empresa.
+- Cada funcionário do mês vira uma conta a pagar "Salário Fulano – Nov/2026", com o PIX dele, na
+  categoria e pasta escolhidas em Configurar (padrão: Salário / FUNCIONARIO). Valor e vencimento seguem
+  a folha; depois de pago, o lançamento fica travado até reverter o pagamento.
+- Abrir um mês novo já traz os funcionários ativos com o líquido e as rubricas fixas do último mês.
+- Importação do histórico a partir da planilha da folha (um bloco por mês), com prévia mês a mês,
+  avisos e opção de desfazer. Os meses importados ficam só como histórico, sem criar contas a pagar.
+- Novas permissões de grupo: ver a folha, lançar/editar o mês e gerenciar funcionários/rubricas.
+
+### Melhorado
+- Cartões: os dias de fechamento e de vencimento agora são escolhidos numa grade de dias (a lista
+  longa fechava sozinha em alguns navegadores), e o cadastro explica com as datas reais em qual fatura
+  cai uma compra feita hoje.
+- Datas de Contas a pagar e a receber (vencimento, data do pagamento, parcelas, baixa em massa) e da
+  folha agora são escolhidas num calendário próprio, igual em todos os navegadores e no iPhone, com
+  atalho para hoje e troca rápida de mês/ano.
+
+### Corrigido
+- No celular, o cadastro de conta ficava mais largo que a tela (a barra de "Repetição" empurrava o
+  diálogo) e cortava o botão de salvar.
+
 ## [1.2.1] - 2026-11-04
 
 ### Corrigido

@@ -18,7 +18,7 @@ interface Log {
 interface Page { items: Log[]; nextBefore: string | null }
 
 const ORG_AREAS: Array<[string, string]> = [
-  ['payable', 'Contas a pagar'], ['receivable', 'Contas a receber'], ['bills', 'Baixa em massa e exportação'], ['card', 'Cartões'],
+  ['payable', 'Contas a pagar'], ['receivable', 'Contas a receber'], ['bills', 'Baixa em massa e exportação'], ['card', 'Cartões'], ['payroll', 'Folha de pagamento'],
   ['category,folder', 'Categorias e pastas'], ['import', 'Importação'], ['member,group', 'Membros e grupos'], ['org,alerts', 'Espaço e alertas'],
 ];
 const PLATFORM_AREAS: Array<[string, string]> = [['auth', 'Acessos e perfil'], ['platform', 'Usuários da plataforma'], ['system', 'Backups, e-mail e Telegram']];

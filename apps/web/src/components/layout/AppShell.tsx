@@ -12,15 +12,16 @@ import { Tooltip } from '@/components/ui/base';
 import { useSidebar } from '@/lib/sidebar';
 import { endSession, useIdleLogout } from '@/lib/idle';
 import { Logo } from './Logo';
-import { NAV, NAV_BOTTOM, type NavItem } from './nav';
+import { NAV, NAV_BOTTOM, navVisible, type NavItem } from './nav';
 import { CommandPalette } from './CommandPalette';
 import { NewOrgDialog } from './NewOrgDialog';
 
 function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigate?: () => void; collapsed?: boolean }) {
   const can = useCan();
+  const kind = useOrg()?.kind;
   return (
     <>
-      {items.filter((i) => !i.perm || can(i.perm)).map((i) => (
+      {items.filter((i) => navVisible(i, can, kind)).map((i) => (
         <Tooltip key={i.to} content={collapsed ? i.label : null} side="right">
           <NavLink
             to={i.to} end={i.to === '/'} onClick={onNavigate} aria-label={collapsed ? i.label : undefined}

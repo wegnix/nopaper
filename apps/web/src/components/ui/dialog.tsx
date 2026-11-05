@@ -24,10 +24,10 @@ export function Dialog({
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
               />
             </RDialog.Overlay>
-            <div className="fixed inset-0 z-[5001] grid place-items-end sm:place-items-center p-0 sm:p-4 pointer-events-none">
+            <div className="fixed inset-0 z-[5001] grid grid-cols-1 place-items-end sm:place-items-center p-0 sm:p-4 pointer-events-none">
               <RDialog.Content asChild forceMount aria-describedby={description ? undefined : undefined}>
                 <motion.div
-                  className={cn('pointer-events-auto w-full flex flex-col max-h-[calc(100dvh-env(safe-area-inset-top)-12px)] sm:max-h-[92dvh] rounded-t-2xl sm:rounded-2xl border border-line bg-surface shadow-2xl max-sm:pb-[env(safe-area-inset-bottom)]', sizes[size], className)}
+                  className={cn('pointer-events-auto w-full min-w-0 flex flex-col max-h-[calc(100dvh-env(safe-area-inset-top)-12px)] sm:max-h-[92dvh] rounded-t-2xl sm:rounded-2xl border border-line bg-surface shadow-2xl max-sm:pb-[env(safe-area-inset-bottom)]', sizes[size], className)}
                   initial={{ opacity: 0, y: 24, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 16, scale: 0.98 }}

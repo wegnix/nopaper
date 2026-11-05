@@ -34,6 +34,10 @@ export const PERMISSIONS = {
   'cards.manage': { group: 'Cartões', label: 'Cadastrar, editar e apagar cartões', requires: ['cards.view'] },
   'cards.edit': { group: 'Cartões', label: 'Lançar, editar e apagar compras', hint: 'Pagar a fatura usa “Dar baixa” de contas a pagar.', requires: ['cards.view'] },
 
+  'payroll.view': { group: 'Folha de pagamento', label: 'Ver a folha de pagamento', hint: 'Só em espaço Empresa. Mostra salários e descontos de cada funcionário.' },
+  'payroll.edit': { group: 'Folha de pagamento', label: 'Lançar e editar a folha do mês', hint: 'Cada lançamento vira uma conta a pagar; pagar usa “Dar baixa” de contas a pagar.', requires: ['payroll.view'] },
+  'payroll.manage': { group: 'Folha de pagamento', label: 'Funcionários, rubricas, configuração e importação', requires: ['payroll.view'] },
+
   'reports.view': { group: 'Relatórios', label: 'Ver relatórios e o gráfico anual do início' },
 
   'alerts.manage': { group: 'Espaço', label: 'Configurar alertas (Telegram / e-mail)' },

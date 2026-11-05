@@ -150,6 +150,8 @@ export const bills = pgTable('bills', {
   pixKey: text('pix_key'),
   paymentMethod: varchar('payment_method', { length: 64 }),
   importBatchId: uuid('import_batch_id'),
+  /** Conta gerada pela folha de pagamento (valor/vencimento vêm do lançamento). */
+  payrollEntryId: uuid('payroll_entry_id'),
   createdBy: uuid('created_by'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -159,6 +161,7 @@ export const bills = pgTable('bills', {
   index('bills_parent_idx').on(t.parentId),
   index('bills_category_idx').on(t.categoryId),
   index('bills_folder_idx').on(t.folderId),
+  index('bills_payroll_entry_idx').on(t.payrollEntryId).where(sql`${t.payrollEntryId} is not null`),
   index('bills_indefinite_idx').on(t.isIndefinite).where(sql`${t.isIndefinite} = true`),
 ]);
 
@@ -252,11 +255,87 @@ export const cardTransactions = pgTable('card_transactions', {
   index('card_tx_org_date_idx').on(t.orgId, t.purchaseDate),
 ]);
 
+// ------------------------------------------------------------------ folha de pagamento (espaço Empresa)
+export const employees = pgTable('employees', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 120 }).notNull(),
+  document: varchar('document', { length: 32 }),
+  role: varchar('role', { length: 64 }),
+  admissionDate: date('admission_date'),
+  terminationDate: date('termination_date'),
+  active: boolean('active').notNull().default(true),
+  pixKey: varchar('pix_key', { length: 140 }),
+  bankInfo: varchar('bank_info', { length: 255 }),
+  notes: text('notes'),
+  /** Criado por uma importação da planilha (desfazer a importação remove se não tiver outros meses). */
+  importBatchId: uuid('import_batch_id'),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex('employees_org_name_uq').on(t.orgId, sql`lower(${t.name})`)]);
+
+/** Rubricas: holerite (proventos/descontos), fora do holerite (extras/descontos) e encargos da empresa. */
+export const payrollRubrics = pgTable('payroll_rubrics', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 64 }).notNull(),
+  section: varchar('section', { length: 16 }).notNull(), // payslip | extra | employer
+  kind: varchar('kind', { length: 16 }).notNull().default('earning'), // earning | deduction
+  fixed: boolean('fixed').notNull().default(false),
+  active: boolean('active').notNull().default(true),
+  sortOrder: smallint('sort_order').notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex('payroll_rubrics_org_name_uq').on(t.orgId, sql`lower(${t.name})`)]);
+
+/** Folha de um mês (competência AAAA-MM). */
+export const payrollPeriods = pgTable('payroll_periods', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  ref: varchar('ref', { length: 7 }).notNull(),
+  payDate: date('pay_date').notNull(),
+  /** Gera as contas a pagar dos lançamentos (meses importados do histórico: não). */
+  billsEnabled: boolean('bills_enabled').notNull().default(true),
+  notes: text('notes'),
+  importBatchId: uuid('import_batch_id'),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex('payroll_periods_org_ref_uq').on(t.orgId, t.ref)]);
+
+export const payrollEntries = pgTable('payroll_entries', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  periodId: uuid('period_id').notNull().references(() => payrollPeriods.id, { onDelete: 'cascade' }),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'restrict' }),
+  /** Líquido do holerite (digitado, ou a soma das rubricas do holerite). */
+  payslipNet: numeric('payslip_net', { precision: 14, scale: 2 }).notNull().default('0'),
+  /** Calculados ao salvar (payrollTotals). */
+  total: numeric('total', { precision: 14, scale: 2 }).notNull().default('0'),
+  offPayroll: numeric('off_payroll', { precision: 14, scale: 2 }).notNull().default('0'),
+  employerCost: numeric('employer_cost', { precision: 14, scale: 2 }).notNull().default('0'),
+  companyCost: numeric('company_cost', { precision: 14, scale: 2 }).notNull().default('0'),
+  notes: text('notes'),
+  billId: uuid('bill_id').references(() => bills.id, { onDelete: 'set null' }),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex('payroll_entries_period_employee_uq').on(t.periodId, t.employeeId), index('payroll_entries_employee_idx').on(t.employeeId)]);
+
+export const payrollEntryLines = pgTable('payroll_entry_lines', {
+  id: id(),
+  entryId: uuid('entry_id').notNull().references(() => payrollEntries.id, { onDelete: 'cascade' }),
+  rubricId: uuid('rubric_id').notNull().references(() => payrollRubrics.id, { onDelete: 'restrict' }),
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  note: varchar('note', { length: 120 }),
+}, (t) => [index('payroll_lines_entry_idx').on(t.entryId), index('payroll_lines_rubric_idx').on(t.rubricId)]);
+
 // ------------------------------------------------------------------ importações
 export const importBatches = pgTable('import_batches', {
   id: id(),
   orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
-  /** payable | receivable */
+  /** payable | receivable | payroll */
   type: varchar('type', { length: 16 }).notNull(),
   fileName: varchar('file_name', { length: 200 }).notNull(),
   rowCount: integer('row_count').notNull(),
