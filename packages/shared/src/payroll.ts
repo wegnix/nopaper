@@ -217,6 +217,42 @@ export const payrollRubricSchema = z.object({
   active: z.boolean().default(true),
 });
 
+/**
+ * Colunas escondidas na impressão da folha: chaves fixas (PAYROLL_PRINT_FIXED) ou ids de rubricas
+ * "fora do holerite". Extra escondido com valor no mês vai para a coluna "Outros extras".
+ * `order` = ordem das colunas depois de "Funcionário" (mesmas chaves); coluna que não estiver na
+ * lista entra logo depois da vizinha da ordem padrão (`printColumnOrder`).
+ */
+export const payrollPrintSchema = z.object({
+  hidden: z.array(z.string().max(40)).max(100).default([]),
+  order: z.array(z.string().max(40)).max(200).default([]),
+});
+export type PayrollPrintSettings = z.infer<typeof payrollPrintSchema>;
+
+/**
+ * Aplica a ordem salva às colunas do mês (`defaults` = ordem padrão). Chave nova (ex.: extra que
+ * não estava na lista) entra logo depois da coluna que a antecede em `defaults`.
+ */
+export function printColumnOrder(defaults: string[], saved: string[]): string[] {
+  const out = saved.filter((k, i) => defaults.includes(k) && saved.indexOf(k) === i);
+  defaults.forEach((k, i) => {
+    if (out.includes(k)) return;
+    let pos = 0;
+    for (let j = i - 1; j >= 0; j--) { const p = out.indexOf(defaults[j]!); if (p >= 0) { pos = p + 1; break; } }
+    out.splice(pos, 0, k);
+  });
+  return out;
+}
+
+/** Ordem para salvar: a nova ordem das colunas do mês + as salvas que não apareceram, no lugar de antes. */
+export function mergePrintOrder(saved: string[], current: string[]): string[] {
+  return printColumnOrder([...saved, ...current.filter((k) => !saved.includes(k))], current);
+}
+export const PAYROLL_PRINT_FIXED = [
+  { key: 'net', label: 'Líquido holerite' }, { key: 'gross', label: 'Total salário' }, { key: 'deductions', label: 'Descontos' },
+  { key: 'total', label: 'Salário a pagar' }, { key: 'off', label: 'Por fora' },
+] as const;
+
 /** Nova ordem das rubricas (ids na ordem desejada; as que faltarem vão para o fim). */
 export const payrollRubricOrderSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(300) });
 
@@ -227,6 +263,7 @@ export const payrollSettingsSchema = z.object({
   payMonth: z.enum(['same', 'next']).default('next'),
   paymentMethod: optText(64),
   costs: payrollCostsSchema.default(DEFAULT_PAYROLL_COSTS),
+  print: payrollPrintSchema.default({ hidden: [], order: [] }),
 });
 export type PayrollSettings = z.infer<typeof payrollSettingsSchema>;
 

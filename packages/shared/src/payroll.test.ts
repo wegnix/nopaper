@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultPayDate, guessPayrollStartYear, parsePayrollSheet, payrollTotals, payslipCheck, DEFAULT_PAYROLL_COSTS, employerInssPct, employeeSchema, whatsappLink } from './payroll.js';
+import { defaultPayDate, guessPayrollStartYear, parsePayrollSheet, payrollTotals, payslipCheck, DEFAULT_PAYROLL_COSTS, employerInssPct, employeeSchema, whatsappLink, printColumnOrder, mergePrintOrder } from './payroll.js';
 import { fromCents } from './money.js';
 
 const R = [
@@ -111,4 +111,14 @@ test('telefone do funcionário: formata, aceita +55 e gera link do WhatsApp', ()
   assert.equal(p('1234').success, false);
   assert.equal(whatsappLink('(11) 91234-5678'), 'https://wa.me/5511912345678');
   assert.equal(whatsappLink(null), null);
+});
+
+test('ordem das colunas da impressão', () => {
+  const def = ['net', 'meta', 'vit', 'outros', 'cimed', 'gross', 'total'];
+  assert.deepEqual(printColumnOrder(def, []), def);
+  // ordem salva; coluna nova entra depois da vizinha padrão; chave que não existe no mês some
+  assert.deepEqual(printColumnOrder(def, ['net', 'meta', 'outros', 'vit', 'gross', 'total', 'velha']), ['net', 'meta', 'outros', 'cimed', 'vit', 'gross', 'total']);
+  assert.deepEqual(printColumnOrder(['net', 'novo', 'gross'], ['gross', 'net']), ['gross', 'net', 'novo']);
+  // salvar num mês sem 'cimed' mantém a posição dela
+  assert.deepEqual(mergePrintOrder(['net', 'vit', 'cimed', 'gross'], ['vit', 'net', 'gross']), ['vit', 'cimed', 'net', 'gross']); // continua logo depois de 'vit'
 });

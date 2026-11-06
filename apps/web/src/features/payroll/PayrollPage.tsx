@@ -3,12 +3,12 @@ import { Link, Navigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, Landmark, MoreHorizontal, Pencil, Plus, Printer,
+  ArrowDown, ArrowUp, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, Landmark, MoreHorizontal, Pencil, Plus, Printer,
   Receipt, RotateCcw, Settings2, Trash2, UserPlus, UsersRound, Wallet,
 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
-import { MONTHS_PT, addMonthsRef, formatBRL, formatDateBR, fromCents, payrollTotals, payslipCheck, refLabelPT, sumMoney, toCents, todayISO, type AttachmentSlot } from '@nopaper/shared';
-import { Button, Card, Empty, Field, Input, PageHeader, Segmented, Spinner, Switch, Textarea } from '@/components/ui/base';
+import { MONTHS_PT, PAYROLL_PRINT_FIXED, addMonthsRef, mergePrintOrder, type PayrollPrintSettings, formatBRL, formatDateBR, fromCents, payrollTotals, payslipCheck, refLabelPT, sumMoney, toCents, todayISO, type AttachmentSlot } from '@nopaper/shared';
+import { Button, Card, Checkbox, Empty, Field, IconButton, Input, PageHeader, Segmented, Spinner, Switch, Textarea } from '@/components/ui/base';
 import { StatusChip } from '@/components/ui/chips';
 import { Dialog, useConfirm } from '@/components/ui/dialog';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -19,12 +19,12 @@ import type { Bill } from '@/lib/types';
 import { CountUp } from '@/features/bills/KpiRibbon';
 import { PayDialog } from '@/features/bills/dialogs';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
-import { useMonth, usePayrollMeta, usePeriods, type Entry, type Period, type PeriodSummary } from './data';
+import { useMonth, usePayrollMeta, usePeriods, type Entry, type Period, type PeriodSummary, type Rubric } from './data';
 import { EntryDialog } from './EntryDialog';
 import { EmployeesTab } from './Employees';
 import { SettingsDialog } from './SettingsDialog';
 import { ImportDialog } from './ImportDialog';
-import { PayrollPrint } from './PayrollPrint';
+import { PayrollPrint, amountOf, extraColumnsOf, printColumnsOf, type PrintRow } from './PayrollPrint';
 
 type Tab = 'mes' | 'funcionarios' | 'historico';
 
@@ -102,6 +102,20 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
   const [editPeriod, setEditPeriod] = useState(false);
   const [pay, setPay] = useState<{ bill: Bill; proofOnly: boolean } | null>(null);
   const [viewer, setViewer] = useState<FileViewerTarget | null>(null);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printCfg, setPrintCfg] = useState<PayrollPrintSettings>(meta.settings.print);
+  useEffect(() => setPrintCfg(meta.settings.print), [meta.settings.print]);
+  /** Guarda as colunas escolhidas (no espaço, quando pode) e abre a impressão do navegador. */
+  const doPrint = async (hidden: string[], monthOrder: string[]) => {
+    // guarda também a posição das colunas que não aparecem neste mês (extras sem valor)
+    const next: PayrollPrintSettings = { hidden, order: mergePrintOrder(meta.settings.print.order, monthOrder) };
+    setPrintCfg(next);
+    setPrintOpen(false);
+    if (canEdit && JSON.stringify(next) !== JSON.stringify(meta.settings.print)) {
+      put('/api/payroll/settings/print', next).then(() => qc.invalidateQueries({ queryKey: ['bills'] })).catch((e) => toast.error(errMsg(e)));
+    }
+    setTimeout(() => window.print(), 250); // depois do diálogo fechar e a folha remontar
+  };
   const today = todayISO();
 
   useEffect(() => {
@@ -190,7 +204,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
           </span>
         )}
         <div className="ml-auto flex flex-wrap gap-2 max-sm:ml-0 max-sm:w-full max-sm:[&>button]:flex-1">
-          {period && rows.length > 0 && <Button variant="ghost" icon={<Printer className="size-4" />} onClick={() => window.print()}>Imprimir</Button>}
+          {period && rows.length > 0 && <Button variant="ghost" icon={<Printer className="size-4" />} onClick={() => setPrintOpen(true)}>Imprimir</Button>}
           {period && canEdit && <Button variant="ghost" icon={<Pencil className="size-4" />} onClick={() => setEditPeriod(true)}>Editar mês</Button>}
           {period && canEdit && <Button variant="primary" icon={<UserPlus className="size-4" />} onClick={() => setEntryDlg({ open: true, entry: null })}>Lançar funcionário</Button>}
         </div>
@@ -302,7 +316,8 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
       {period && <EntryDialog open={entryDlg.open} entry={entryDlg.entry} period={period} employees={meta.employees} rubrics={meta.rubrics}
         costs={meta.settings.costs} takenEmployeeIds={entries.map((e) => e.employeeId)} canEdit={canEdit} canManage={can('payroll.manage')} onClose={() => setEntryDlg({ open: false, entry: null })} />}
       <OpenMonthDialog open={openDlg} refStr={ref} suggested={m?.suggestedPayDate ?? null} onClose={() => setOpenDlg(false)} />
-      {period && rows.length > 0 && <PayrollPrint period={period} rows={rows} rubrics={meta.rubrics} />}
+      {period && rows.length > 0 && <PayrollPrint period={period} rows={rows} rubrics={meta.rubrics} print={printCfg} />}
+      {period && rows.length > 0 && <PrintDialog open={printOpen} refStr={ref} rows={rows} rubrics={meta.rubrics} print={printCfg} onClose={() => setPrintOpen(false)} onPrint={doPrint} />}
       {period && <EditPeriodDialog open={editPeriod} period={period} onClose={() => setEditPeriod(false)} />}
       {pay && <PayDialog bill={pay.bill} proofOnly={pay.proofOnly} onClose={() => setPay(null)} onView={view} />}
       <FileViewer target={viewer} onClose={() => setViewer(null)} />
@@ -317,6 +332,49 @@ function Kpi({ icon: Icon, label, value, sub, tone, first }: { icon: typeof Wall
       <CountUp value={value} className="mt-2 block font-display text-[19px] sm:text-[22px] font-semibold leading-none whitespace-nowrap" />
       <span className="mt-1.5 block truncate text-xs text-faint">{sub}</span>
     </div>
+  );
+}
+
+/** Escolha e ordem das colunas da impressão: fixas + cada extra com valor no mês. Fica salva no espaço. */
+function PrintDialog({ open, refStr, rows, rubrics, print, onClose, onPrint }: {
+  open: boolean; refStr: string; rows: PrintRow[]; rubrics: Rubric[]; print: PayrollPrintSettings;
+  onClose: () => void; onPrint: (hidden: string[], order: string[]) => void;
+}) {
+  const extras = useMemo(() => extraColumnsOf(rows, rubrics), [rows, rubrics]);
+  const [sel, setSel] = useState<string[]>(print.hidden);
+  const [order, setOrder] = useState<string[]>(() => printColumnsOf(extras, print.order));
+  useEffect(() => { if (open) { setSel(print.hidden); setOrder(printColumnsOf(extras, print.order)); } }, [open, print, extras]);
+  const toggle = (k: string, on: boolean) => setSel((p) => (on ? p.filter((x) => x !== k) : [...p, k]));
+  const move = (i: number, d: -1 | 1) => setOrder((p) => { const n = [...p]; [n[i], n[i + d]] = [n[i + d]!, n[i]!]; return n; });
+  const hiddenExtras = extras.filter((r) => sel.includes(r.id));
+  const labelOf = (k: string) => PAYROLL_PRINT_FIXED.find((f) => f.key === k)?.label ?? extras.find((r) => r.id === k)?.name ?? k;
+  const subOf = (k: string) => (extras.some((r) => r.id === k) ? formatBRL(sumMoney(rows.map(({ e }) => amountOf(e, k)))) : null);
+  return (
+    <Dialog open={open} onClose={onClose} size="sm" title={`Imprimir folha de ${refLabelPT(refStr)}`} description="Marque as colunas que vão para o papel (A4 deitado) e use as setas para mudar a ordem. A escolha fica salva para os próximos meses."
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" icon={<Printer className="size-4" />} onClick={() => onPrint(sel, order)}>Imprimir</Button></>}>
+      <ul className="divide-y divide-line/60">
+        <li className="flex items-center justify-between gap-3 py-2"><Checkbox checked disabled onChange={() => {}} label="Funcionário" /><span className="text-xs text-faint">sempre a 1ª</span></li>
+        {order.map((k, i) => {
+          const sub = subOf(k);
+          return (
+            <li key={k} className="flex items-center gap-2 py-1.5">
+              <div className="min-w-0 flex-1"><Checkbox checked={!sel.includes(k)} onChange={(v) => toggle(k, v)} label={labelOf(k)} /></div>
+              {sub && <span className="shrink-0 text-xs text-faint tnum">{sub}</span>}
+              <div className="flex shrink-0">
+                <IconButton label="Subir" disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp className="size-4" /></IconButton>
+                <IconButton label="Descer" disabled={i === order.length - 1} onClick={() => move(i, 1)}><ArrowDown className="size-4" /></IconButton>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {hiddenExtras.length > 0 && (
+        <p className="mt-3 rounded-lg bg-surface-2/60 px-3 py-2 text-xs text-muted">
+          {hiddenExtras.map((r) => r.name).join(', ')} {hiddenExtras.length > 1 ? 'entram' : 'entra'} na coluna <b className="text-ink">Outros extras</b>, para o total do salário continuar fechando no papel.
+        </p>
+      )}
+      <p className="mt-3 text-xs text-faint">Extras sem valor neste mês não aparecem na lista nem no papel (a posição deles fica guardada).</p>
+    </Dialog>
   );
 }
 

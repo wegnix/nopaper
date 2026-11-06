@@ -8,6 +8,15 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.5.0] - 2026-11-06
+
+### Novo
+- Folha de pagamento: o botão **Imprimir** abre uma janela para escolher as colunas que vão para o
+  papel (por exemplo, tirar uma campanha que acabou ou a coluna "Por fora") e mudar a ordem delas
+  com as setas. A escolha fica salva para os próximos meses. Um extra desmarcado que tenha valor no
+  mês entra na coluna **Outros extras**, para o total do salário continuar fechando; extras sem valor
+  no mês já não aparecem.
+
 ## [1.4.1] - 2026-11-06
 
 ### Corrigido

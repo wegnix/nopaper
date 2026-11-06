@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   billPerm, defaultPayDate, employeeSchema, payrollEntryCreateSchema, payrollEntrySchema, payrollImportSchema,
-  payrollPeriodCreateSchema, payrollPeriodUpdateSchema, payrollRubricOrderSchema, payrollRubricSchema, payrollSettingsSchema, personKey,
+  payrollPeriodCreateSchema, payrollPeriodUpdateSchema, payrollPrintSchema, payrollRubricOrderSchema, payrollRubricSchema, payrollSettingsSchema, personKey,
   refLabelPT, sumMoney, toCents, type Permission,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
@@ -74,6 +74,21 @@ export default async function payrollRoutes(app: FastifyInstance) {
     const recalculated = changes.costs ? await db.transaction((tx) => recomputeCosts(req.org!.id, tx)) : 0;
     await audit(req, { action: 'payroll.settings', entityType: 'payroll', description: 'Alterou a configuração da folha de pagamento', details: { changes, resynced: ids.length, recalculated } });
     return body;
+  });
+
+  /** Colunas da impressão (preferência do espaço; quem lança a folha pode mudar). */
+  app.put('/api/payroll/settings/print', edit, async (req) => {
+    const print = parse(payrollPrintSchema, req.body);
+    const before = await getPayrollSettings(req.org!.id);
+    const changes: Record<string, { from: string[]; to: string[] }> = {};
+    for (const k of ['hidden', 'order'] as const) {
+      if (JSON.stringify(before.print[k]) !== JSON.stringify(print[k])) changes[k] = { from: before.print[k], to: print[k] };
+    }
+    if (Object.keys(changes).length) {
+      await savePayrollSettings(req.org!.id, { ...before, print });
+      await audit(req, { action: 'payroll.settings.print', entityType: 'payroll', description: 'Alterou as colunas da impressão da folha', details: { changes } });
+    }
+    return print;
   });
 
   app.post('/api/payroll/employees', manage, async (req) => {
