@@ -8,6 +8,36 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.4.0] - 2026-11-06
+
+### Novo
+- Folha de pagamento: **imprimir a folha do mês** em A4 paisagem, no formato da planilha — líquido do
+  holerite, uma coluna para cada valor fora do holerite usado no mês (Meta global, Meta individual,
+  Vitaminas…), total do salário, descontos, salário a pagar e valor por fora, com totais.
+- Rubricas novas no holerite: **Diferença salarial**, **Periculosidade** e **Empréstimo consignado**
+  (criadas também nos espaços que já usam a folha).
+- A **ordem das rubricas** pode ser mudada em Configurar → Rubricas (setas ↑ ↓) ou direto no
+  lançamento (botão **Ordenar** de cada seção); o lançamento e a impressão seguem essa ordem.
+- **Custo para a empresa** de cada funcionário calculado pela legislação, sobre o bruto do holerite:
+  FGTS 8%, INSS patronal conforme o regime tributário (Simples Nacional: já está no DAS; Simples
+  anexo IV ou Lucro Presumido/Real: 20% + RAT + terceiros), reservas mensais de 13º e de férias + 1/3
+  com os encargos delas, e outros custos lançados (vale-alimentação, parte da empresa no VT…).
+  Regime, alíquotas e reservas ficam em Configurar → **Custos**.
+
+- Funcionários: **histórico mais completo** — total pago até hoje, média por mês, quanto foi pelo
+  holerite e por fora, e cada ano com o total pago (anos anteriores recolhidos).
+- Funcionários: campo **Telefone / WhatsApp**, com botão para abrir a conversa no WhatsApp.
+
+### Alterado
+- O FGTS deixou de ser digitado: é calculado sozinho (8% do total de vantagens). A seção "Encargos da
+  empresa" virou **Outros custos da empresa**, para benefícios pagos pela empresa.
+
+### Corrigido
+- Holerite detalhado agora fecha com o papel: mostra Total de vantagens, Total de descontos e Valor
+  líquido como no holerite e pede o **valor líquido do holerite** para conferir. Se as rubricas não
+  baterem com ele, avisa quanto falta ou sobra e não deixa salvar. Lançamentos detalhados sem
+  conferência aparecem como "holerite não conferido" na lista do mês.
+
 ## [1.3.0] - 2026-11-05
 
 ### Novo

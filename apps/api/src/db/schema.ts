@@ -266,6 +266,8 @@ export const employees = pgTable('employees', {
   terminationDate: date('termination_date'),
   active: boolean('active').notNull().default(true),
   pixKey: varchar('pix_key', { length: 140 }),
+  /** Telefone/WhatsApp, formatado "(11) 91234-5678". */
+  phone: varchar('phone', { length: 32 }),
   bankInfo: varchar('bank_info', { length: 255 }),
   notes: text('notes'),
   /** Criado por uma importação da planilha (desfazer a importação remove se não tiver outros meses). */
@@ -311,6 +313,8 @@ export const payrollEntries = pgTable('payroll_entries', {
   employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'restrict' }),
   /** Líquido do holerite (digitado, ou a soma das rubricas do holerite). */
   payslipNet: numeric('payslip_net', { precision: 14, scale: 2 }).notNull().default('0'),
+  /** Holerite detalhado: valor líquido digitado do holerite, para conferir com a soma das rubricas. */
+  payslipNetDeclared: numeric('payslip_net_declared', { precision: 14, scale: 2 }),
   /** Calculados ao salvar (payrollTotals). */
   total: numeric('total', { precision: 14, scale: 2 }).notNull().default('0'),
   offPayroll: numeric('off_payroll', { precision: 14, scale: 2 }).notNull().default('0'),

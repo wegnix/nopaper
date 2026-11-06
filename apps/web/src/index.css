@@ -227,5 +227,9 @@ html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent;
   .pd-neg { color: #c0392b; }
   .pd-dot { display: inline-block; width: 6pt; height: 6pt; border-radius: 50%; margin-right: 5pt; vertical-align: 0.5pt; }
   .pd-note, .pd-empty { margin: 0 0 5pt; font-size: 8pt; color: #6b7386; }
+  .pd-sheet { margin-top: 12pt; font-size: 10pt; }
+  .print-doc .pd-sheet th { font-size: 7.5pt; vertical-align: bottom; }
+  .print-doc .pd-sheet td { padding: 5pt 6pt; }
+  .print-doc .pd-strong { font-weight: 700; }
   .pd-foot { margin-top: 16pt; padding-top: 5pt; border-top: 1px solid #d6dae4; font-size: 7.5pt; color: #8a93a8; }
 }

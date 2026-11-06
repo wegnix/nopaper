@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Search, Trash2, UserPlus, UsersRound } from 'lucide-react';
-import { formatBRL, formatDateBR, refLabelPT } from '@nopaper/shared';
+import { ChevronRight, MessageCircle, Search, Trash2, UserPlus, UsersRound } from 'lucide-react';
+import { MONTHS_PT_SHORT, formatBRL, formatDateBR, formatPhoneBR, fromCents, refLabelPT, toCents, whatsappLink } from '@nopaper/shared';
 import { Dialog, useConfirm } from '@/components/ui/dialog';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button, Card, Empty, Field, Input, Segmented, Switch, Textarea } from '@/components/ui/base';
@@ -58,13 +58,17 @@ export function EmployeesTab({ employees, canManage, onOpenMonth }: { employees:
   );
 }
 
-interface HistoryRow { ref: string; payslipNet: string; total: string; offPayroll: string; companyCost: string; billStatus: 'pending' | 'paid' | null }
+interface HistoryRow { ref: string; billsEnabled: boolean; paidAt: string | null; payslipNet: string; total: string; offPayroll: string; companyCost: string; billStatus: 'pending' | 'paid' | null }
+
+/** Mês já pago: conta paga, ou mês do histórico importado (pago fora do NoPaper). */
+const isPaid = (h: HistoryRow) => h.billStatus === 'paid' || (!h.billsEnabled && h.billStatus === null);
+const sumC = (rows: HistoryRow[], f: (h: HistoryRow) => string) => rows.reduce((a, h) => a + toCents(f(h)), 0);
 
 function EmployeeDialog({ open, emp, canManage, onClose, onOpenMonth }: { open: boolean; emp: Employee | null; canManage: boolean; onClose: () => void; onOpenMonth: (ref: string) => void }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const orgId = useSession((s) => s.orgId);
-  const blank = { name: '', document: '', role: '', admissionDate: '', terminationDate: '', active: true, pixKey: '', bankInfo: '', notes: '' };
+  const blank = { name: '', document: '', role: '', admissionDate: '', terminationDate: '', active: true, pixKey: '', phone: '', bankInfo: '', notes: '' };
   const [f, setF] = useState(blank);
   const [tab, setTab] = useState<'data' | 'history'>('data');
   const [busy, setBusy] = useState(false);
@@ -73,7 +77,7 @@ function EmployeeDialog({ open, emp, canManage, onClose, onOpenMonth }: { open: 
     setTab('data');
     setF(emp ? {
       name: emp.name, document: emp.document ?? '', role: emp.role ?? '', admissionDate: emp.admissionDate ?? '', terminationDate: emp.terminationDate ?? '',
-      active: emp.active, pixKey: emp.pixKey ?? '', bankInfo: emp.bankInfo ?? '', notes: emp.notes ?? '',
+      active: emp.active, pixKey: emp.pixKey ?? '', phone: emp.phone ?? '', bankInfo: emp.bankInfo ?? '', notes: emp.notes ?? '',
     } : blank);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, emp?.id]);
@@ -96,7 +100,7 @@ function EmployeeDialog({ open, emp, canManage, onClose, onOpenMonth }: { open: 
     if (!(await confirm({ title: `Apagar ${emp.name}?`, tone: 'danger', confirmLabel: 'Apagar', body: 'Só é possível apagar quem não tem meses na folha. Quem saiu da empresa: desative.' }))) return;
     try { await api('DELETE', `/api/payroll/employees/${emp.id}`); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Funcionário apagado'); onClose(); } catch (e) { toast.error(errMsg(e)); }
   };
-  const max = Math.max(1, ...(hist.data ?? []).map((h) => Number(h.total)));
+  const wa = whatsappLink(f.phone);
   return (
     <Dialog open={open} onClose={onClose} size="lg" title={emp ? emp.name : 'Novo funcionário'}
       footer={tab === 'data' ? <>
@@ -112,29 +116,90 @@ function EmployeeDialog({ open, emp, canManage, onClose, onOpenMonth }: { open: 
           <Field label="Cargo / função"><Input maxLength={64} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} placeholder="Ex.: Balconista, Farmacêutico" /></Field>
           <Field label="Admissão"><DatePicker clearable placeholder="Não informada" value={f.admissionDate} onChange={(admissionDate) => setF({ ...f, admissionDate })} disabled={ro} /></Field>
           <Field label="Desligamento"><DatePicker clearable placeholder="Ainda trabalha aqui" value={f.terminationDate} min={f.admissionDate || undefined} onChange={(terminationDate) => setF({ ...f, terminationDate, active: terminationDate ? false : f.active })} disabled={ro} /></Field>
+          <Field label="Telefone / WhatsApp">
+            <div className="flex gap-2">
+              <Input type="tel" inputMode="tel" autoComplete="off" maxLength={32} className="min-w-0 flex-1" value={f.phone} placeholder="(11) 91234-5678"
+                onChange={(e) => setF({ ...f, phone: e.target.value })} onBlur={() => setF((p) => ({ ...p, phone: p.phone ? formatPhoneBR(p.phone) : '' }))} />
+              {wa && <a href={wa} target="_blank" rel="noreferrer" className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-medium text-ok hover:bg-ok/10 pointer-coarse:h-11" title="Abrir conversa no WhatsApp"><MessageCircle className="size-4" /> WhatsApp</a>}
+            </div>
+          </Field>
           <Field label="Chave PIX" hint="Vai para a conta a pagar do salário."><Input maxLength={140} value={f.pixKey} onChange={(e) => setF({ ...f, pixKey: e.target.value })} /></Field>
-          <Field label="Banco / agência / conta"><Input maxLength={255} value={f.bankInfo} onChange={(e) => setF({ ...f, bankInfo: e.target.value })} placeholder="Ex.: Bradesco 237 · ag. 0000 · cc 00000-0" /></Field>
+          <Field label="Banco / agência / conta" className="sm:col-span-2"><Input maxLength={255} value={f.bankInfo} onChange={(e) => setF({ ...f, bankInfo: e.target.value })} placeholder="Ex.: Bradesco 237 · ag. 0000 · cc 00000-0" /></Field>
           <Field label="Observações" className="sm:col-span-2"><Textarea maxLength={1000} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
           <div className="sm:col-span-2"><Switch checked={f.active} onChange={(active) => setF({ ...f, active })} label="Ativo" hint="Só os ativos entram automaticamente ao abrir um mês novo. O histórico de quem saiu continua." /></div>
         </fieldset>
       ) : hist.isLoading ? <p className="py-10 text-center text-sm text-muted">Carregando…</p> : !hist.data?.length ? (
         <p className="py-10 text-center text-sm text-muted">Sem meses na folha.</p>
       ) : (
-        <ul className="divide-y divide-line">
-          {hist.data.map((h) => (
-            <li key={h.ref}>
-              <button type="button" onClick={() => onOpenMonth(h.ref)} className="grid w-full grid-cols-[72px_1fr_auto] items-center gap-3 py-2.5 text-left hover:bg-surface-2/50">
-                <span className="text-sm font-medium tnum">{refLabelPT(h.ref)}</span>
-                <span className="h-1.5 overflow-hidden rounded-full bg-surface-2"><span className="block h-full rounded-full bg-accent/70" style={{ width: `${(Number(h.total) / max) * 100}%` }} /></span>
-                <span className="text-right">
-                  <span className="block text-sm font-medium tnum">{formatBRL(h.total)}</span>
-                  <span className="block text-xs text-faint tnum">{Number(h.offPayroll) > 0 ? `por fora ${formatBRL(h.offPayroll)}` : 'só holerite'}{h.billStatus === 'paid' ? ' · pago' : h.billStatus === 'pending' ? ' · pendente' : ''}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <EmployeeHistory rows={hist.data} onOpenMonth={onOpenMonth} />
       )}
     </Dialog>
+  );
+}
+
+/** Histórico do funcionário: total pago até hoje, por ano e mês a mês (mais recente primeiro). */
+function EmployeeHistory({ rows, onOpenMonth }: { rows: HistoryRow[]; onOpenMonth: (ref: string) => void }) {
+  const paid = rows.filter(isPaid);
+  const pending = rows.filter((h) => h.billStatus === 'pending');
+  const paidC = sumC(paid, (h) => h.total);
+  const offC = sumC(paid, (h) => h.offPayroll);
+  const years = [...new Set(rows.map((h) => h.ref.slice(0, 4)))];
+  const max = Math.max(1, ...rows.map((h) => toCents(h.total)));
+  const first = rows.at(-1)!.ref;
+  const kpi = (label: string, value: string, sub: string, strong?: boolean) => (
+    <div className="min-w-0 rounded-xl border border-line bg-surface-2/40 p-3">
+      <p className="truncate text-xs text-muted">{label}</p>
+      <p className={cn('mt-1 truncate font-display font-semibold tnum', strong ? 'text-xl text-accent' : 'text-lg')}>{value}</p>
+      <p className="text-xs leading-snug text-faint">{sub}</p>
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        {kpi('Pago até hoje', formatBRL(fromCents(paidC)), `${plural(paid.length, 'mês', 'meses')} desde ${refLabelPT(first)}`, true)}
+        {kpi('Média por mês', formatBRL(fromCents(paid.length ? Math.round(paidC / paid.length) : 0)), 'nos meses pagos')}
+        {kpi('Pelo holerite', formatBRL(fromCents(paidC - offC)), paidC ? `${Math.round(((paidC - offC) / paidC) * 100)}% do total` : '—')}
+        {kpi('Por fora', formatBRL(fromCents(offC)), pending.length ? `a pagar: ${formatBRL(fromCents(sumC(pending, (h) => h.total)))}` : 'nada pendente')}
+      </div>
+      {years.map((y, yi) => {
+        const ys = rows.filter((h) => h.ref.startsWith(y));
+        const yp = ys.filter(isPaid);
+        const yPend = ys.filter((h) => h.billStatus === 'pending');
+        return (
+          <details key={y} open={yi === 0} className="group">
+            <summary className="flex cursor-pointer list-none flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-line pb-2 [&::-webkit-details-marker]:hidden">
+              <h3 className="flex items-center gap-1.5 font-display text-lg font-semibold"><ChevronRight className="size-4 self-center text-faint transition-transform group-open:rotate-90" />{y}</h3>
+              <p className="text-sm text-muted">
+                Pago <b className="font-semibold text-ink tnum">{formatBRL(fromCents(sumC(yp, (h) => h.total)))}</b>
+                <span className="text-faint"> · {plural(yp.length, 'mês', 'meses')}</span>
+                {sumC(yp, (h) => h.offPayroll) > 0 && <span className="text-accent tnum"> · por fora {formatBRL(fromCents(sumC(yp, (h) => h.offPayroll)))}</span>}
+                {yPend.length > 0 && <span className="text-warn tnum"> · a pagar {formatBRL(fromCents(sumC(yPend, (h) => h.total)))}</span>}
+              </p>
+            </summary>
+            <ul className="divide-y divide-line/60">
+              {ys.map((h) => (
+                <li key={h.ref}>
+                  <button type="button" onClick={() => onOpenMonth(h.ref)} className="grid w-full grid-cols-[44px_1fr_auto] items-center gap-3 rounded-md px-1 py-2.5 text-left hover:bg-surface-2/50">
+                    <span className="text-sm font-medium">{MONTHS_PT_SHORT[Number(h.ref.slice(5, 7)) - 1]}</span>
+                    <span className="flex h-1.5 overflow-hidden rounded-full bg-surface-2" title={`Holerite ${formatBRL(fromCents(toCents(h.total) - toCents(h.offPayroll)))} · por fora ${formatBRL(h.offPayroll)}`}>
+                      <span className="h-full bg-accent/45" style={{ width: `${((toCents(h.total) - toCents(h.offPayroll)) / max) * 100}%` }} />
+                      <span className="h-full bg-accent" style={{ width: `${(toCents(h.offPayroll) / max) * 100}%` }} />
+                    </span>
+                    <span className="text-right">
+                      <span className="block text-sm font-medium tnum">{formatBRL(h.total)}</span>
+                      <span className="block text-xs text-faint tnum">
+                        {toCents(h.offPayroll) > 0 ? `por fora ${formatBRL(h.offPayroll)}` : 'só holerite'}
+                        {h.billStatus === 'paid' ? ` · pago${h.paidAt ? ` ${formatDateBR(h.paidAt).slice(0, 5)}` : ''}` : h.billStatus === 'pending' ? ' · pendente' : ' · histórico'}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        );
+      })}
+      <p className="flex items-center gap-3 text-xs text-faint"><span className="inline-block h-1.5 w-5 rounded-full bg-accent/45" /> pelo holerite <span className="inline-block h-1.5 w-5 rounded-full bg-accent" /> por fora · “histórico” = mês importado da planilha, já pago</p>
+    </div>
   );
 }

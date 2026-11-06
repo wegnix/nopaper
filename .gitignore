@@ -13,3 +13,6 @@ coverage/
 *.xlsx
 *.csv
 pre-restore-*.dump
+# holerites e backups copiados para a raiz (dados reais)
+/*.pdf
+/nopaper-*.tar.gz

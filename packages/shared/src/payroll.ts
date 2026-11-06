@@ -8,10 +8,14 @@ import { daysInMonth, toISODate, MONTHS_PT_SHORT } from './dates.js';
  *
  * Cada mês (competência) tem um lançamento por funcionário. Valores:
  * - holerite: o líquido que vem do holerite do contador. Pode ser digitado direto ou detalhado em
- *   rubricas (salário base, INSS, IRRF, VT…) — nesse caso o líquido é a soma delas;
+ *   rubricas (salário, INSS, IRRF, VT…) — nesse caso o líquido é a soma delas, conferida com o
+ *   valor líquido digitado do holerite (`payslipNetDeclared`): se não bater, não salva;
  * - extras (fora do holerite): metas, comissões, vitaminas, hora extra… (+) e descontos de
  *   produtos/vales (−);
- * - encargos do empregador (FGTS etc.): só custo, não entram no valor pago ao funcionário.
+ * - custos da empresa: calculados pela legislação sobre o bruto do holerite (FGTS 8%, INSS patronal
+ *   conforme o regime tributário, reservas de 13º e férias + 1/3 com os encargos delas) + outros custos
+ *   lançados (vale-alimentação, plano de saúde…). Não entram no valor pago ao funcionário.
+ *   INSS/IRRF do holerite são do funcionário (descontados dele e só repassados pela empresa).
  *
  * A pagar = líquido do holerite + extras − descontos. "Por fora" = o que passa do holerite.
  */
@@ -22,8 +26,39 @@ export const PAYROLL_KINDS = ['earning', 'deduction'] as const;
 export type PayrollKind = (typeof PAYROLL_KINDS)[number];
 
 export const PAYROLL_SECTION_LABEL: Record<PayrollSection, string> = {
-  payslip: 'Holerite', extra: 'Fora do holerite', employer: 'Encargos da empresa',
+  payslip: 'Holerite', extra: 'Fora do holerite', employer: 'Outros custos da empresa',
 };
+
+/**
+ * Regime tributário da empresa (decide o INSS patronal sobre a folha):
+ * - simples: Simples Nacional anexos I, II, III e V — a contribuição patronal (CPP) já vem no DAS;
+ * - simples_iv: Simples Nacional anexo IV (construção, vigilância, limpeza…) — 20% + RAT fora do DAS;
+ * - normal: Lucro Presumido ou Real — 20% + RAT (1–3% × FAP) + terceiros (Sistema S, salário-educação…).
+ */
+export const PAYROLL_REGIMES = ['simples', 'simples_iv', 'normal'] as const;
+export type PayrollRegime = (typeof PAYROLL_REGIMES)[number];
+export const PAYROLL_REGIME_LABEL: Record<PayrollRegime, string> = {
+  simples: 'Simples Nacional', simples_iv: 'Simples – Anexo IV', normal: 'Lucro Presumido ou Real',
+};
+/** FGTS: 8% da remuneração (Lei 8.036/90). */
+export const FGTS_PCT = 8;
+export const payrollCostsSchema = z.object({
+  regime: z.enum(PAYROLL_REGIMES).default('simples'),
+  /** RAT ajustado pelo FAP (%), só fora do Simples (ou anexo IV). */
+  ratPct: z.number().min(0).max(6).default(2),
+  /** Terceiros / outras entidades (%), só no Lucro Presumido/Real. */
+  thirdPartyPct: z.number().min(0).max(10).default(5.8),
+  /** Inclui as reservas mensais de 13º e férias + 1/3 no custo. */
+  provisions: z.boolean().default(true),
+});
+export type PayrollCosts = z.infer<typeof payrollCostsSchema>;
+export const DEFAULT_PAYROLL_COSTS: PayrollCosts = { regime: 'simples', ratPct: 2, thirdPartyPct: 5.8, provisions: true };
+
+/** % de INSS patronal sobre a folha, pelo regime. */
+export function employerInssPct(c: PayrollCosts): number {
+  if (c.regime === 'simples') return 0;
+  return Math.round((20 + c.ratPct + (c.regime === 'normal' ? c.thirdPartyPct : 0)) * 100) / 100;
+}
 
 export interface PayrollRubricLike { id: string; section: PayrollSection | string; kind: PayrollKind | string }
 export interface PayrollLineLike { rubricId: string; amount: string }
@@ -42,14 +77,40 @@ export interface PayrollTotals {
   offPayroll: string;
   /** Parte paga pelo holerite (total − por fora). */
   onPayroll: string;
+  /** FGTS 8% sobre o bruto do holerite (só detalhado). */
+  fgts: string;
+  /** INSS patronal conforme o regime (0 no Simples). */
+  employerInss: string;
+  /** Outros custos lançados (rubricas da seção employer). */
+  otherCosts: string;
+  /** FGTS + INSS patronal + outros custos (desembolso do mês além do salário). */
   employerCost: string;
-  /** Bruto do holerite (ou líquido, se não detalhado) + extras + encargos. */
+  /** Reservas do mês: 13º (1/12), férias + 1/3 (1/9) e FGTS/INSS sobre elas. */
+  provision13: string;
+  provisionVacation: string;
+  provisionCharges: string;
+  provisions: string;
+  /** Bruto do holerite (ou líquido, se não detalhado) + extras + encargos + reservas. */
   companyCost: string;
   detailed: boolean;
 }
 
-/** Calcula os totais de um lançamento. `typedNet` vale quando não há rubricas do holerite. */
-export function payrollTotals(typedNet: string | null | undefined, lines: PayrollLineLike[], rubrics: PayrollRubricLike[] | Map<string, PayrollRubricLike>): PayrollTotals {
+/**
+ * Conferência do holerite detalhado: o valor líquido digitado (do papel) contra o calculado pelas
+ * rubricas. `diff` = digitado − calculado, em centavos (positivo = falta lançar provento).
+ */
+export function payslipCheck(declared: string | null | undefined, computedNet: string): { state: 'missing' | 'ok' | 'mismatch'; diff: number } {
+  if (declared === null || declared === undefined || declared === '') return { state: 'missing', diff: 0 };
+  const diff = toCents(declared) - toCents(computedNet);
+  return { state: diff === 0 ? 'ok' : 'mismatch', diff };
+}
+
+/**
+ * Calcula os totais de um lançamento. `typedNet` vale quando não há rubricas do holerite.
+ * Os custos legais (FGTS, INSS patronal, reservas) só existem com o holerite detalhado, porque
+ * dependem do bruto (total de vantagens).
+ */
+export function payrollTotals(typedNet: string | null | undefined, lines: PayrollLineLike[], rubrics: PayrollRubricLike[] | Map<string, PayrollRubricLike>, costs: PayrollCosts = DEFAULT_PAYROLL_COSTS): PayrollTotals {
   const map = rubrics instanceof Map ? rubrics : new Map(rubrics.map((r) => [r.id, r]));
   let pe = 0, pd = 0, ee = 0, ed = 0, emp = 0, detailed = false;
   for (const l of lines) {
@@ -63,11 +124,23 @@ export function payrollTotals(typedNet: string | null | undefined, lines: Payrol
   const net = detailed ? pe - pd : toCents(typedNet);
   const total = net + ee - ed;
   const off = Math.max(0, total - net);
+  const base = detailed ? pe : 0;
+  const pct = (c: number, p: number) => Math.round((c * p) / 100);
+  const inssPct = employerInssPct(costs);
+  const fgts = pct(base, FGTS_PCT);
+  const inss = pct(base, inssPct);
+  const p13 = costs.provisions ? Math.round(base / 12) : 0;
+  const pVac = costs.provisions ? Math.round(base / 9) : 0; // 1/12 de férias + 1/3 constitucional
+  const pCharges = pct(p13 + pVac, FGTS_PCT + inssPct);
+  const employer = fgts + inss + emp;
+  const provisions = p13 + pVac + pCharges;
   return {
     payslipEarnings: fromCents(pe), payslipDeductions: fromCents(pd), payslipNet: fromCents(net),
     extraEarnings: fromCents(ee), extraDeductions: fromCents(ed),
     total: fromCents(total), offPayroll: fromCents(off), onPayroll: fromCents(total - off),
-    employerCost: fromCents(emp), companyCost: fromCents((detailed ? pe : net) + ee + emp), detailed,
+    fgts: fromCents(fgts), employerInss: fromCents(inss), otherCosts: fromCents(emp), employerCost: fromCents(employer),
+    provision13: fromCents(p13), provisionVacation: fromCents(pVac), provisionCharges: fromCents(pCharges), provisions: fromCents(provisions),
+    companyCost: fromCents((detailed ? pe : net) + ee + employer + provisions), detailed,
   };
 }
 
@@ -94,6 +167,33 @@ const ref = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Mês inválido (AAAA-MM
 const optText = (max: number) => z.string().max(max).nullish().transform((v) => (v && v.trim() ? v.trim() : null));
 const nonNeg = money.refine((v) => !v.startsWith('-'), 'Use valores positivos (a rubrica já diz se soma ou desconta)');
 
+/** Só os dígitos de um telefone brasileiro, sem o +55 (10 = fixo, 11 = celular). */
+export function phoneDigitsBR(v: string): string {
+  const d = v.replace(/\D/g, '');
+  return (d.length === 12 || d.length === 13) && d.startsWith('55') ? d.slice(2) : d;
+}
+/** "11912345678" → "(11) 91234-5678"; "1133334444" → "(11) 3333-4444"; outro tamanho fica como digitado. */
+export function formatPhoneBR(v: string): string {
+  const d = phoneDigitsBR(v);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return v.trim();
+}
+/** Link do WhatsApp (wa.me) para um telefone brasileiro; null se não for um número completo. */
+export function whatsappLink(v: string | null | undefined): string | null {
+  const d = phoneDigitsBR(v ?? '');
+  return d.length === 10 || d.length === 11 ? `https://wa.me/55${d}` : null;
+}
+const phoneSchema = z.string().max(32).nullish().transform((v, ctx) => {
+  if (!v || !v.trim()) return null;
+  const d = phoneDigitsBR(v);
+  if (d.length !== 10 && d.length !== 11) {
+    ctx.addIssue({ code: 'custom', message: 'Telefone incompleto: use DDD + número, ex.: (11) 91234-5678' });
+    return z.NEVER;
+  }
+  return formatPhoneBR(v);
+});
+
 export const employeeSchema = z.object({
   name: z.string().trim().min(1, 'Informe o nome').max(120),
   document: documentSchema.optional(),
@@ -102,6 +202,7 @@ export const employeeSchema = z.object({
   terminationDate: isoDate.nullish().or(z.literal('').transform(() => null)),
   active: z.boolean().default(true),
   pixKey: optText(140),
+  phone: phoneSchema,
   bankInfo: optText(255),
   notes: optText(1000),
 });
@@ -116,12 +217,16 @@ export const payrollRubricSchema = z.object({
   active: z.boolean().default(true),
 });
 
+/** Nova ordem das rubricas (ids na ordem desejada; as que faltarem vão para o fim). */
+export const payrollRubricOrderSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(300) });
+
 export const payrollSettingsSchema = z.object({
   categoryId: z.string().uuid('Escolha a categoria das contas de salário').nullish(),
   folderId: z.string().uuid().nullish(),
   payDay: z.number().int().min(0).max(31).default(0),
   payMonth: z.enum(['same', 'next']).default('next'),
   paymentMethod: optText(64),
+  costs: payrollCostsSchema.default(DEFAULT_PAYROLL_COSTS),
 });
 export type PayrollSettings = z.infer<typeof payrollSettingsSchema>;
 
@@ -134,6 +239,8 @@ export const payrollLineSchema = z.object({
 export const payrollEntrySchema = z.object({
   employeeId: z.string().uuid('Escolha o funcionário'),
   payslipNet: money.default('0'),
+  /** Holerite detalhado: valor líquido do holerite, para conferir com as rubricas (vazio = sem conferência). */
+  payslipNetDeclared: money.nullish().or(z.literal('').transform(() => null)),
   lines: z.array(payrollLineSchema).max(60).default([]),
   notes: optText(1000),
 });
@@ -171,12 +278,15 @@ export const payrollImportSchema = z.object({
 /** Rubricas padrão de todo espaço (criadas no 1º acesso à folha). */
 export const DEFAULT_PAYROLL_RUBRICS: Array<{ name: string; section: PayrollSection; kind: PayrollKind; fixed?: boolean }> = [
   { name: 'Salário base', section: 'payslip', kind: 'earning', fixed: true },
+  { name: 'Diferença salarial', section: 'payslip', kind: 'earning' },
   { name: 'Horas extras (holerite)', section: 'payslip', kind: 'earning' },
+  { name: 'Periculosidade', section: 'payslip', kind: 'earning' },
   { name: 'Adicionais (holerite)', section: 'payslip', kind: 'earning' },
   { name: 'INSS', section: 'payslip', kind: 'deduction', fixed: true },
   { name: 'IRRF', section: 'payslip', kind: 'deduction', fixed: true },
   { name: 'Vale-transporte', section: 'payslip', kind: 'deduction', fixed: true },
   { name: 'Adiantamento', section: 'payslip', kind: 'deduction' },
+  { name: 'Empréstimo consignado', section: 'payslip', kind: 'deduction' },
   { name: 'Meta global', section: 'extra', kind: 'earning' },
   { name: 'Meta individual', section: 'extra', kind: 'earning' },
   { name: 'Vitaminas', section: 'extra', kind: 'earning' },
@@ -185,7 +295,8 @@ export const DEFAULT_PAYROLL_RUBRICS: Array<{ name: string; section: PayrollSect
   { name: 'Outros proventos', section: 'extra', kind: 'earning' },
   { name: 'Desconto produtos/vale', section: 'extra', kind: 'deduction' },
   { name: 'Outros descontos', section: 'extra', kind: 'deduction' },
-  { name: 'FGTS', section: 'employer', kind: 'earning', fixed: true },
+  { name: 'Vale-alimentação', section: 'employer', kind: 'earning', fixed: true },
+  { name: 'Vale-transporte (parte da empresa)', section: 'employer', kind: 'earning', fixed: true },
 ];
 
 type Cell = string | number | null;
@@ -193,7 +304,7 @@ const MONTH_NAMES = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 
 const norm = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 /** Chave para casar nomes ("ESTEVÃO" = "Estevão"). */
 export const personKey = (v: string) => norm(v);
-/** "EMERSON" → "Emerson"; "ana paula" → "Ana Paula". */
+/** "JOÃO" → "João"; "ana paula" → "Ana Paula". */
 export function titleCaseName(v: string) {
   const small = new Set(['da', 'de', 'do', 'das', 'dos', 'e']);
   return v.trim().toLowerCase().split(/\s+/).map((w, i) => (i > 0 && small.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');

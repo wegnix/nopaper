@@ -1,7 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
-  DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, refLabelPT, formatBRL, toCents, type PayrollSettings,
+  DEFAULT_PAYROLL_COSTS, DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, payslipCheck, refLabelPT, formatBRL, toCents, type PayrollSettings,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import type { DBOrTx } from '../db/client.js';
@@ -28,6 +28,34 @@ export async function ensurePayrollDefaults(orgId: string) {
       orgId, name: r.name, section: r.section, kind: r.kind, fixed: !!r.fixed, sortOrder: i,
     }))).onConflictDoNothing();
   }
+  // configuração anterior aos custos legais (v1.3): grava o padrão e recalcula o custo dos lançamentos
+  const [row] = await db.select().from(schema.orgSettings).where(and(eq(schema.orgSettings.orgId, orgId), eq(schema.orgSettings.key, SETTINGS_KEY)));
+  if (!row || !(row.value as { costs?: unknown })?.costs) {
+    await savePayrollSettings(orgId, await getPayrollSettings(orgId));
+    await recomputeCosts(orgId);
+  }
+}
+
+/** Recalcula encargos/custo gravados de todos os lançamentos (mudou o regime ou as alíquotas). */
+export async function recomputeCosts(orgId: string, conn: DBOrTx = db) {
+  const settings = await getPayrollSettings(orgId, conn);
+  const map = new Map((await rubricsOf(orgId, conn)).map((r) => [r.id, r]));
+  const entries = await conn.select().from(schema.payrollEntries).where(eq(schema.payrollEntries.orgId, orgId));
+  if (!entries.length) return 0;
+  const lines = await conn.select({ entryId: schema.payrollEntryLines.entryId, rubricId: schema.payrollEntryLines.rubricId, amount: schema.payrollEntryLines.amount })
+    .from(schema.payrollEntryLines).innerJoin(schema.payrollEntries, eq(schema.payrollEntries.id, schema.payrollEntryLines.entryId))
+    .where(eq(schema.payrollEntries.orgId, orgId));
+  const byEntry = new Map<string, typeof lines>();
+  for (const l of lines) byEntry.set(l.entryId, [...(byEntry.get(l.entryId) ?? []), l]);
+  let n = 0;
+  for (const e of entries) {
+    const t = payrollTotals(e.payslipNet, byEntry.get(e.id) ?? [], map, settings.costs);
+    if (toCents(t.employerCost) !== toCents(e.employerCost) || toCents(t.companyCost) !== toCents(e.companyCost)) {
+      await conn.update(schema.payrollEntries).set({ employerCost: t.employerCost, companyCost: t.companyCost }).where(eq(schema.payrollEntries.id, e.id));
+      n++;
+    }
+  }
+  return n;
 }
 
 export async function getPayrollSettings(orgId: string, conn: DBOrTx = db): Promise<PayrollSettings> {
@@ -38,7 +66,7 @@ export async function getPayrollSettings(orgId: string, conn: DBOrTx = db): Prom
     .where(and(eq(schema.categories.orgId, orgId), sql`lower(${schema.categories.label}) = 'salário'`, sql`${schema.categories.kind} <> 'receivable'`));
   const [folder] = await conn.select({ id: schema.folders.id }).from(schema.folders)
     .where(and(eq(schema.folders.orgId, orgId), sql`upper(${schema.folders.label}) = 'FUNCIONARIO'`));
-  return { categoryId: cat?.id ?? null, folderId: folder?.id ?? null, payDay: 0, payMonth: 'next', paymentMethod: 'PIX' };
+  return { categoryId: cat?.id ?? null, folderId: folder?.id ?? null, payDay: 0, payMonth: 'next', paymentMethod: 'PIX', costs: DEFAULT_PAYROLL_COSTS };
 }
 
 export async function savePayrollSettings(orgId: string, value: PayrollSettings) {
@@ -80,15 +108,22 @@ export interface LineInput { rubricId: string; amount: string; note?: string | n
 
 /** Grava o lançamento (líquido + rubricas), recalcula os totais e sincroniza a conta a pagar. */
 export async function writeEntry(tx: DBOrTx, orgId: string, userId: string | null, data: {
-  entryId?: string; periodId: string; employeeId: string; payslipNet: string; lines: LineInput[]; notes: string | null;
+  entryId?: string; periodId: string; employeeId: string; payslipNet: string; payslipNetDeclared?: string | null; lines: LineInput[]; notes: string | null;
 }) {
   const rubrics = await rubricsOf(orgId, tx);
   const map = new Map(rubrics.map((r) => [r.id, r]));
   const lines = data.lines.filter((l) => toCents(l.amount) !== 0);
   for (const l of lines) if (!map.has(l.rubricId)) throw badRequest('Rubrica inválida');
-  const t = payrollTotals(data.payslipNet, lines, map);
+  const { costs } = await getPayrollSettings(orgId, tx);
+  const t = payrollTotals(data.payslipNet, lines, map, costs);
+  // holerite detalhado: as rubricas têm de fechar com o valor líquido do holerite (sem furo)
+  const declared = t.detailed ? data.payslipNetDeclared ?? null : null;
+  const check = payslipCheck(declared, t.payslipNet);
+  if (check.state === 'mismatch') {
+    throw badRequest(`As rubricas do holerite somam ${formatBRL(t.payslipNet)}, mas o valor líquido do holerite é ${formatBRL(declared!)} (diferença de ${formatBRL(Math.abs(check.diff) / 100)}). Confira os valores antes de salvar.`, 'payslip_mismatch');
+  }
   const values = {
-    payslipNet: t.payslipNet, total: t.total, offPayroll: t.offPayroll, employerCost: t.employerCost, companyCost: t.companyCost, notes: data.notes,
+    payslipNet: t.payslipNet, payslipNetDeclared: declared, total: t.total, offPayroll: t.offPayroll, employerCost: t.employerCost, companyCost: t.companyCost, notes: data.notes,
   };
   let entryId = data.entryId;
   if (entryId) {

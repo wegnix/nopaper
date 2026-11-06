@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultPayDate, guessPayrollStartYear, parsePayrollSheet, payrollTotals } from './payroll.js';
+import { defaultPayDate, guessPayrollStartYear, parsePayrollSheet, payrollTotals, payslipCheck, DEFAULT_PAYROLL_COSTS, employerInssPct, employeeSchema, whatsappLink } from './payroll.js';
+import { fromCents } from './money.js';
 
 const R = [
   { id: 'base', section: 'payslip', kind: 'earning' }, { id: 'inss', section: 'payslip', kind: 'deduction' },
@@ -18,12 +19,42 @@ test('totais com líquido digitado', () => {
 });
 
 test('holerite detalhado ignora o líquido digitado; desconto maior que extras não gera "por fora"', () => {
-  const t = payrollTotals('999', [{ rubricId: 'base', amount: '2000' }, { rubricId: 'inss', amount: '150' }, { rubricId: 'desc', amount: '300' }], R);
+  const t = payrollTotals('999', [{ rubricId: 'base', amount: '2000' }, { rubricId: 'inss', amount: '150' }, { rubricId: 'desc', amount: '300' }], R, { ...DEFAULT_PAYROLL_COSTS, provisions: false });
   assert.equal(t.payslipNet, '1850.00');
   assert.equal(t.total, '1550.00');
   assert.equal(t.offPayroll, '0.00');
   assert.equal(t.onPayroll, '1550.00');
-  assert.equal(t.companyCost, '2000.00');
+  assert.equal(t.fgts, '160.00');
+  assert.equal(t.companyCost, '2160.00');
+});
+
+test('custo para a empresa: Simples (só FGTS + reservas) e Lucro Presumido (INSS patronal)', () => {
+  const lines = [{ rubricId: 'base', amount: '5226.00' }, { rubricId: 'inss', amount: '533.14' }, { rubricId: 'meta', amount: '800' }];
+  const s = payrollTotals('0', lines, R);
+  assert.equal(s.fgts, '418.08'); // 8% de 5.226,00
+  assert.equal(s.employerInss, '0.00');
+  assert.equal(s.provision13, '435.50');
+  assert.equal(s.provisionVacation, '580.67');
+  assert.equal(s.provisionCharges, '81.29'); // 8% de 1016,17
+  assert.equal(s.companyCost, fromCents(522600 + 80000 + 41808 + 43550 + 58067 + 8129));
+  const n = payrollTotals('0', lines, R, { regime: 'normal', ratPct: 2, thirdPartyPct: 5.8, provisions: true });
+  assert.equal(n.employerInss, '1452.83'); // 27,8%
+  assert.equal(employerInssPct({ regime: 'simples_iv', ratPct: 3, thirdPartyPct: 5.8, provisions: true }), 23);
+  const typed = payrollTotals('4692.86', [], R);
+  assert.equal(typed.fgts, '0.00'); // sem o bruto não dá para calcular
+});
+
+test('holerite detalhado confere com o valor líquido do papel (salário + diferença − INSS)', () => {
+  const R2 = [...R, { id: 'dif', section: 'payslip', kind: 'earning' }];
+  const lines = [{ rubricId: 'base', amount: '4988.00' }, { rubricId: 'dif', amount: '238.00' }, { rubricId: 'inss', amount: '533.14' }, { rubricId: 'fgts', amount: '418.08' }];
+  const t = payrollTotals('0', lines, R2);
+  assert.equal(t.payslipEarnings, '5226.00');
+  assert.equal(t.payslipDeductions, '533.14');
+  assert.equal(t.payslipNet, '4692.86');
+  assert.deepEqual(payslipCheck('4692.86', t.payslipNet), { state: 'ok', diff: 0 });
+  assert.deepEqual(payslipCheck('4692.86', payrollTotals('0', lines.filter((l) => l.rubricId !== 'dif'), R2).payslipNet), { state: 'mismatch', diff: 23800 });
+  assert.equal(payslipCheck(null, t.payslipNet).state, 'missing');
+  assert.equal(payslipCheck('', t.payslipNet).state, 'missing');
 });
 
 test('5º dia útil conta sábado e pula domingo', () => {
@@ -70,4 +101,14 @@ test('lê blocos mensais, vira o ano e ajusta para o total da planilha', () => {
 test('ano inicial: último mês cai no passado', () => {
   assert.equal(guessPayrollStartYear(rows, '2026-11-05'), 2025);
   assert.equal(guessPayrollStartYear(rows, '2026-01-20'), 2025);
+});
+
+test('telefone do funcionário: formata, aceita +55 e gera link do WhatsApp', () => {
+  const p = (phone: string) => employeeSchema.safeParse({ name: 'X', phone });
+  assert.equal(p('11912345678').data?.phone, '(11) 91234-5678');
+  assert.equal(p('+55 (11) 3333-4444').data?.phone, '(11) 3333-4444');
+  assert.equal(p('').data?.phone, null);
+  assert.equal(p('1234').success, false);
+  assert.equal(whatsappLink('(11) 91234-5678'), 'https://wa.me/5511912345678');
+  assert.equal(whatsappLink(null), null);
 });

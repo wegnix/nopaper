@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   billPerm, defaultPayDate, employeeSchema, payrollEntryCreateSchema, payrollEntrySchema, payrollImportSchema,
-  payrollPeriodCreateSchema, payrollPeriodUpdateSchema, payrollRubricSchema, payrollSettingsSchema, personKey,
+  payrollPeriodCreateSchema, payrollPeriodUpdateSchema, payrollRubricOrderSchema, payrollRubricSchema, payrollSettingsSchema, personKey,
   refLabelPT, sumMoney, toCents, type Permission,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
@@ -14,7 +14,7 @@ import { audit } from '../lib/audit.js';
 import { assertCategoryUsable, assertFolder, attachmentsFor, serialize } from '../services/bills.js';
 import {
   assertCompany, assertEntryEditable, deleteEntries, ensurePayrollDefaults, getPayrollSettings, loadEmployee, loadEntry,
-  loadPeriod, paidBillsCount, rubricsOf, savePayrollSettings, syncEntries, writeEntry,
+  loadPeriod, paidBillsCount, recomputeCosts, rubricsOf, savePayrollSettings, syncEntries, writeEntry,
 } from '../services/payroll.js';
 
 /** Violação de índice único (o drizzle embrulha o erro do pg em `cause`). */
@@ -70,7 +70,9 @@ export default async function payrollRoutes(app: FastifyInstance) {
     await db.transaction((tx) => syncEntries(tx, ids, req.user!.id));
     const changes: Record<string, { from: unknown; to: unknown }> = {};
     for (const k of Object.keys(body) as (keyof typeof body)[]) if (JSON.stringify(before[k] ?? null) !== JSON.stringify(body[k] ?? null)) changes[k] = { from: before[k] ?? null, to: body[k] ?? null };
-    await audit(req, { action: 'payroll.settings', entityType: 'payroll', description: 'Alterou a configuração da folha de pagamento', details: { changes, resynced: ids.length } });
+    // regime/alíquotas novos: o custo gravado de todos os meses acompanha
+    const recalculated = changes.costs ? await db.transaction((tx) => recomputeCosts(req.org!.id, tx)) : 0;
+    await audit(req, { action: 'payroll.settings', entityType: 'payroll', description: 'Alterou a configuração da folha de pagamento', details: { changes, resynced: ids.length, recalculated } });
     return body;
   });
 
@@ -123,7 +125,8 @@ export default async function payrollRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>('/api/payroll/employees/:id/history', view, async (req) => {
     const e = await loadEmployee(req.org!.id, req.params.id);
     const rows = await db.select({
-      ref: schema.payrollPeriods.ref, payslipNet: schema.payrollEntries.payslipNet, total: schema.payrollEntries.total,
+      ref: schema.payrollPeriods.ref, billsEnabled: schema.payrollPeriods.billsEnabled, paidAt: schema.bills.paidAt,
+      payslipNet: schema.payrollEntries.payslipNet, total: schema.payrollEntries.total,
       offPayroll: schema.payrollEntries.offPayroll, companyCost: schema.payrollEntries.companyCost, billStatus: schema.bills.status,
     }).from(schema.payrollEntries)
       .innerJoin(schema.payrollPeriods, eq(schema.payrollPeriods.id, schema.payrollEntries.periodId))
@@ -144,6 +147,21 @@ export default async function payrollRoutes(app: FastifyInstance) {
       if (isUniqueViolation(err)) throw conflict(`Já existe uma rubrica chamada "${body.name}"`);
       throw err;
     }
+  });
+
+  /** Reordena as rubricas (vale para os lançamentos, a configuração e a impressão). */
+  app.put('/api/payroll/rubrics/order', manage, async (req) => {
+    const body = parse(payrollRubricOrderSchema, req.body);
+    const rubrics = await rubricsOf(req.org!.id);
+    const pos = new Map(body.ids.map((id, i) => [id, i]));
+    const ordered = [...rubrics].sort((a, b) => (pos.get(a.id) ?? 1e6 + a.sortOrder) - (pos.get(b.id) ?? 1e6 + b.sortOrder));
+    await db.transaction(async (tx) => {
+      for (const [i, r] of ordered.entries()) {
+        if (r.sortOrder !== i) await tx.update(schema.payrollRubrics).set({ sortOrder: i }).where(eq(schema.payrollRubrics.id, r.id));
+      }
+    });
+    await audit(req, { action: 'payroll.rubric.reorder', entityType: 'payroll', description: 'Reordenou as rubricas da folha', details: { changes: { ordem: { from: rubrics.map((r) => r.name), to: ordered.map((r) => r.name) } } } });
+    return { ok: true };
   });
 
   app.put<{ Params: { id: string } }>('/api/payroll/rubrics/:id', manage, async (req) => {
@@ -302,7 +320,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     const emp = await loadEmployee(req.org!.id, body.employeeId);
     const [dup] = await db.select({ id: schema.payrollEntries.id }).from(schema.payrollEntries).where(and(eq(schema.payrollEntries.periodId, p.id), eq(schema.payrollEntries.employeeId, emp.id)));
     if (dup) throw conflict(`${emp.name} já está na folha de ${refLabelPT(p.ref)}`);
-    const r = await db.transaction((tx) => writeEntry(tx, req.org!.id, req.user!.id, { periodId: p.id, employeeId: emp.id, payslipNet: body.payslipNet, lines: body.lines, notes: body.notes }));
+    const r = await db.transaction((tx) => writeEntry(tx, req.org!.id, req.user!.id, { periodId: p.id, employeeId: emp.id, payslipNet: body.payslipNet, payslipNetDeclared: body.payslipNetDeclared, lines: body.lines, notes: body.notes }));
     await audit(req, { action: 'payroll.entry.create', entityType: 'payroll_entry', entityId: r.id, description: `Lançou ${emp.name} na folha de ${refLabelPT(p.ref)} (${r.totals.total})`, details: { total: r.totals.total, offPayroll: r.totals.offPayroll } });
     return { id: r.id };
   });
@@ -315,12 +333,14 @@ export default async function payrollRoutes(app: FastifyInstance) {
     const p = await loadPeriod(req.org!.id, e.periodId);
     const emp = await loadEmployee(req.org!.id, e.employeeId);
     const beforeLines = await db.select().from(schema.payrollEntryLines).where(eq(schema.payrollEntryLines.entryId, e.id));
-    const r = await db.transaction((tx) => writeEntry(tx, req.org!.id, req.user!.id, { entryId: e.id, periodId: e.periodId, employeeId: e.employeeId, payslipNet: body.payslipNet, lines: body.lines, notes: body.notes }));
+    const r = await db.transaction((tx) => writeEntry(tx, req.org!.id, req.user!.id, { entryId: e.id, periodId: e.periodId, employeeId: e.employeeId, payslipNet: body.payslipNet, payslipNetDeclared: body.payslipNetDeclared, lines: body.lines, notes: body.notes }));
     const rubrics = new Map((await rubricsOf(req.org!.id)).map((x) => [x.id, x.name]));
     const asText = (ls: Array<{ rubricId: string; amount: string }>) => Object.fromEntries(ls.filter((l) => toCents(l.amount)).map((l) => [rubrics.get(l.rubricId) ?? l.rubricId, l.amount]));
     const changes: Record<string, { from: unknown; to: unknown }> = {};
     if (e.total !== r.totals.total) changes.total = { from: e.total, to: r.totals.total };
     if (e.payslipNet !== r.totals.payslipNet) changes.payslipNet = { from: e.payslipNet, to: r.totals.payslipNet };
+    const declaredTo = r.totals.detailed ? body.payslipNetDeclared ?? null : null;
+    if ((e.payslipNetDeclared ?? null) !== declaredTo) changes.payslipNetDeclared = { from: e.payslipNetDeclared, to: declaredTo };
     const lf = asText(beforeLines), lt = asText(body.lines);
     if (JSON.stringify(lf) !== JSON.stringify(lt)) changes.rubricas = { from: lf, to: lt };
     if ((e.notes ?? null) !== (body.notes ?? null)) changes.notes = { from: e.notes, to: body.notes };

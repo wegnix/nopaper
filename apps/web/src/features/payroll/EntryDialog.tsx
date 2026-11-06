@@ -1,29 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Lock, Minus, Plus, Trash2 } from 'lucide-react';
-import { PAYROLL_SECTION_LABEL, formatBRL, payrollTotals, refLabelPT, toCents, type PayrollSection } from '@nopaper/shared';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, CircleCheck, Lock, Minus, Plus, Trash2 } from 'lucide-react';
+import { FGTS_PCT, PAYROLL_SECTION_LABEL, employerInssPct, formatBRL, payrollTotals, payslipCheck, refLabelPT, toCents, type PayrollCosts, type PayrollSection } from '@nopaper/shared';
 import { Dialog, useConfirm } from '@/components/ui/dialog';
-import { Button, Field, Select, Switch, Textarea } from '@/components/ui/base';
+import { Button, Field, IconButton, Select, Switch, Textarea } from '@/components/ui/base';
 import { api, post, put, errMsg } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { MoneyInput } from '@/features/bills/MoneyInput';
-import { SECTION_HINT, type Employee, type Entry, type Period, type Rubric } from './data';
+import { SECTION_HINT, useRubricMove, type Employee, type Entry, type Period, type Rubric } from './data';
 
 type LineState = Record<string, { amount: string; note: string | null }>;
 
-export function EntryDialog({ open, onClose, period, entry, employees, rubrics, takenEmployeeIds, canEdit }: {
-  open: boolean; onClose: () => void; period: Period; entry: Entry | null; employees: Employee[]; rubrics: Rubric[];
-  takenEmployeeIds: string[]; canEdit: boolean;
+export function EntryDialog({ open, onClose, period, entry, employees, rubrics, costs, takenEmployeeIds, canEdit, canManage }: {
+  open: boolean; onClose: () => void; period: Period; entry: Entry | null; employees: Employee[]; rubrics: Rubric[]; costs: PayrollCosts;
+  takenEmployeeIds: string[]; canEdit: boolean; canManage: boolean;
 }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const [employeeId, setEmployeeId] = useState('');
+  /** Líquido do holerite: o valor pago (não detalhado) ou o valor para conferência (detalhado). */
   const [net, setNet] = useState('');
   const [detailed, setDetailed] = useState(false);
   const [lines, setLines] = useState<LineState>({});
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  /** Seção em modo "ordenar" (setas no lugar dos valores); a ordem vale para todos os lançamentos. */
+  const [sorting, setSorting] = useState<PayrollSection | null>(null);
+  const moveRubric = useRubricMove();
   const rmap = useMemo(() => new Map(rubrics.map((r) => [r.id, r])), [rubrics]);
   const paid = entry?.bill?.status === 'paid';
   const readOnly = !canEdit || paid;
@@ -34,25 +38,40 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
     for (const l of entry?.lines ?? []) ls[l.rubricId] = { amount: l.amount, note: l.note };
     setLines(ls);
     setEmployeeId(entry?.employeeId ?? '');
-    setNet(entry ? entry.payslipNet : '');
-    setDetailed(!!entry?.lines.some((l) => rmap.get(l.rubricId)?.section === 'payslip'));
+    const isDetailed = !!entry?.lines.some((l) => rmap.get(l.rubricId)?.section === 'payslip');
+    setNet(entry ? (isDetailed ? entry.payslipNetDeclared ?? '' : entry.payslipNet) : '');
+    setDetailed(isDetailed);
     setNotes(entry?.notes ?? '');
+    setSorting(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, entry?.id]);
 
   const lineList = Object.entries(lines).map(([rubricId, v]) => ({ rubricId, amount: v.amount || '0', note: v.note }))
     .filter((l) => detailed || rmap.get(l.rubricId)?.section !== 'payslip');
-  const t = payrollTotals(net || '0', lineList, rmap);
+  const t = payrollTotals(detailed ? '0' : net || '0', lineList, rmap, costs);
+  // detalhado: a soma das rubricas tem de bater com o valor líquido do holerite
+  const check = payslipCheck(detailed ? net : null, t.payslipNet);
+  const mismatch = detailed && check.state === 'mismatch';
   const available = employees.filter((e) => e.active && !takenEmployeeIds.includes(e.id));
   const emp = employees.find((e) => e.id === (entry?.employeeId ?? employeeId));
 
   const section = (s: PayrollSection) => {
     // ativas + as inativas que já têm valor neste lançamento
-    const rs = rubrics.filter((r) => r.section === s && (r.active || toCents(lines[r.id]?.amount) !== 0));
-    const order = (r: Rubric) => (r.kind === 'deduction' ? 1 : 0);
-    return [...rs].sort((a, b) => order(a) - order(b) || a.sortOrder - b.sortOrder);
+    // na ordem definida em Configurar → Rubricas
+    return rubrics.filter((r) => r.section === s && (r.active || toCents(lines[r.id]?.amount) !== 0));
   };
-  const row = (r: Rubric) => (
+  const sortHeader = (s: PayrollSection) => canManage && !readOnly && (
+    <Button size="sm" variant={sorting === s ? 'primary' : 'ghost'} icon={sorting === s ? <Check className="size-4" /> : <ArrowUpDown className="size-4" />}
+      onClick={() => setSorting(sorting === s ? null : s)}>{sorting === s ? 'Pronto' : 'Ordenar'}</Button>
+  );
+  const row = (r: Rubric, i: number, list: Rubric[]) => sorting === r.section ? (
+    <div key={r.id} className="flex items-center gap-2 py-1.5">
+      <IconButton label="Subir" disabled={i === 0} onClick={() => moveRubric(rubrics, list, r, -1)}><ArrowUp className="size-4" /></IconButton>
+      <IconButton label="Descer" disabled={i === list.length - 1} onClick={() => moveRubric(rubrics, list, r, 1)}><ArrowDown className="size-4" /></IconButton>
+      <span className="min-w-0 truncate text-sm">{r.name}</span>
+      {toCents(lines[r.id]?.amount) !== 0 && <span className="ml-auto shrink-0 text-xs text-faint tnum">{formatBRL(lines[r.id]!.amount)}</span>}
+    </div>
+  ) : (
     <div key={r.id} className="grid grid-cols-[1fr_150px] items-center gap-3 py-1.5">
       <div className="min-w-0">
         <p className="flex items-center gap-1.5 text-sm">
@@ -71,7 +90,10 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
     if (!entry && !employeeId) return;
     setBusy(true);
     try {
-      const body = { employeeId: entry?.employeeId ?? employeeId, payslipNet: detailed ? '0' : net || '0', lines: lineList.filter((l) => toCents(l.amount) !== 0), notes };
+      const body = {
+        employeeId: entry?.employeeId ?? employeeId, payslipNet: detailed ? '0' : net || '0', payslipNetDeclared: detailed && net ? net : null,
+        lines: lineList.filter((l) => toCents(l.amount) !== 0), notes,
+      };
       if (entry) await put(`/api/payroll/entries/${entry.id}`, body);
       else await post('/api/payroll/entries', { ...body, periodId: period.id });
       qc.invalidateQueries({ queryKey: ['bills'] });
@@ -103,7 +125,7 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
       footer={<>
         {entry && canEdit && !paid && <Button variant="ghost" className="mr-auto text-danger hover:text-danger" icon={<Trash2 className="size-4" />} onClick={remove}>Tirar da folha</Button>}
         <Button variant="ghost" onClick={onClose}>{readOnly ? 'Fechar' : 'Cancelar'}</Button>
-        {!readOnly && <Button variant="primary" loading={busy} disabled={!entry && !employeeId} onClick={save}>Salvar</Button>}
+        {!readOnly && <Button variant="primary" loading={busy} disabled={(!entry && !employeeId) || mismatch} title={mismatch ? 'As rubricas não fecham com o valor líquido do holerite' : undefined} onClick={save}>Salvar</Button>}
       </>}>
       {paid && (
         <p className="mb-4 flex items-center gap-2 rounded-lg bg-ok/10 px-3 py-2 text-sm text-ok"><Lock className="size-4 shrink-0" /> Salário já pago — para alterar, reverta o pagamento.</p>
@@ -122,10 +144,41 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
           <section>
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
               <h3 className="font-display font-semibold">{PAYROLL_SECTION_LABEL.payslip}</h3>
-              {!readOnly && <div className="w-56"><Switch checked={detailed} onChange={setDetailed} label="Detalhar holerite" /></div>}
+              <div className="flex items-center gap-2">
+                {detailed && sortHeader('payslip')}
+                {!readOnly && <div className="w-48"><Switch checked={detailed} onChange={setDetailed} label="Detalhar holerite" /></div>}
+              </div>
             </div>
             <p className="mt-1.5 text-xs text-faint">{SECTION_HINT.payslip}</p>
-            {detailed ? <div className="mt-2 divide-y divide-line/60">{section('payslip').map(row)}</div> : (
+            {detailed ? (
+              <>
+                <div className="mt-2 divide-y divide-line/60">{section('payslip').map(row)}</div>
+                <div className="mt-3 grid grid-cols-3 overflow-hidden rounded-xl border border-line text-right">
+                  {([['Total de vantagens', t.payslipEarnings, ''], ['Total de descontos', t.payslipDeductions, 'text-danger'], ['Valor líquido', t.payslipNet, 'font-semibold']] as const).map(([label, v, tone], i) => (
+                    <div key={label} className={cn('min-w-0 px-2.5 py-2 sm:px-3', i > 0 && 'border-l border-line', i === 2 && 'bg-surface-2/60')}>
+                      <p className="truncate text-[11px] text-muted sm:text-xs">{label}</p>
+                      <p className={cn('tnum text-sm sm:text-base', tone)}>{formatBRL(v)}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 grid grid-cols-[1fr_150px] items-center gap-3">
+                  <span className="min-w-0 text-sm">
+                    <span className="font-medium">Valor líquido do holerite</span>
+                    <span className="block text-xs text-faint">Digite o valor do papel para conferir.</span>
+                  </span>
+                  <MoneyInput aria-label="Valor líquido do holerite" value={net} disabled={readOnly} onChange={setNet} />
+                </div>
+                {check.state === 'ok' && <p className="mt-2 flex items-center gap-2 rounded-lg bg-ok/10 px-3 py-2 text-sm text-ok"><CircleCheck className="size-4 shrink-0" /> Confere com o holerite.</p>}
+                {check.state === 'mismatch' && (
+                  <p className="mt-2 flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                    <span>Não fecha: {check.diff > 0 ? 'faltam' : 'sobram'} <b className="tnum">{formatBRL(Math.abs(check.diff) / 100)}</b> nas rubricas
+                      ({check.diff > 0 ? 'algum provento não lançado ou desconto a mais' : 'algum desconto não lançado ou provento a mais'}). Confira antes de salvar.</span>
+                  </p>
+                )}
+                {check.state === 'missing' && !readOnly && <p className="mt-2 flex items-center gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn"><AlertTriangle className="size-4 shrink-0" /> Sem conferência: informe o valor líquido do holerite.</p>}
+              </>
+            ) : (
               <div className="mt-3 grid grid-cols-[1fr_150px] items-center gap-3">
                 <span className="text-sm">Líquido do holerite</span>
                 <MoneyInput aria-label="Líquido do holerite" value={net} disabled={readOnly} onChange={setNet} />
@@ -134,13 +187,13 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
           </section>
 
           <section>
-            <h3 className="border-b border-line pb-2 font-display font-semibold">{PAYROLL_SECTION_LABEL.extra}</h3>
+            <div className="flex items-center justify-between gap-2 border-b border-line pb-1.5"><h3 className="font-display font-semibold">{PAYROLL_SECTION_LABEL.extra}</h3>{sortHeader('extra')}</div>
             <p className="mt-1.5 text-xs text-faint">{SECTION_HINT.extra}</p>
             <div className="mt-2 divide-y divide-line/60">{section('extra').map(row)}</div>
           </section>
 
           <section>
-            <h3 className="border-b border-line pb-2 font-display font-semibold">{PAYROLL_SECTION_LABEL.employer}</h3>
+            <div className="flex items-center justify-between gap-2 border-b border-line pb-1.5"><h3 className="font-display font-semibold">{PAYROLL_SECTION_LABEL.employer}</h3>{sortHeader('employer')}</div>
             <p className="mt-1.5 text-xs text-faint">{SECTION_HINT.employer}</p>
             <div className="mt-2 divide-y divide-line/60">{section('employer').map(row)}</div>
           </section>
@@ -149,8 +202,8 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
         </div>
 
         <aside className="flex flex-col gap-2 self-start rounded-xl border border-line bg-surface-2/50 p-4 lg:sticky lg:top-0">
-          {t.detailed && sum('Proventos do holerite', t.payslipEarnings)}
-          {t.detailed && sum('Descontos do holerite', t.payslipDeductions, 'danger')}
+          {t.detailed && sum('Total de vantagens', t.payslipEarnings)}
+          {t.detailed && sum('Total de descontos', t.payslipDeductions, 'danger')}
           {sum('Líquido do holerite', t.payslipNet)}
           {sum('Extras', t.extraEarnings, 'ok')}
           {sum('Descontos (produtos/vales)', t.extraDeductions, 'danger')}
@@ -159,8 +212,21 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
           {sum('Pelo holerite', t.onPayroll, 'muted')}
           {sum('Por fora', t.offPayroll, 'accent')}
           <div className="my-1 h-px bg-line" />
-          {sum('Encargos', t.employerCost, 'muted')}
-          {sum('Custo para a empresa', t.companyCost)}
+          <p className="text-xs font-medium uppercase tracking-wide text-faint">Custo para a empresa</p>
+          {sum(t.detailed ? 'Salário bruto (holerite)' : 'Líquido do holerite', t.detailed ? t.payslipEarnings : t.payslipNet, 'muted')}
+          {toCents(t.extraEarnings) > 0 && sum('Extras (fora do holerite)', t.extraEarnings, 'muted')}
+          {t.detailed && sum(`FGTS ${FGTS_PCT}%`, t.fgts, 'muted')}
+          {t.detailed && (employerInssPct(costs) > 0
+            ? sum(`INSS patronal ${employerInssPct(costs).toLocaleString('pt-BR')}%`, t.employerInss, 'muted')
+            : <div className="flex items-baseline justify-between gap-3 text-sm"><span className="text-muted">INSS patronal</span><span className="text-xs text-faint">no DAS (Simples)</span></div>)}
+          {t.detailed && toCents(t.provisions) > 0 && <>
+            {sum('Reserva 13º salário', t.provision13, 'muted')}
+            {sum('Reserva férias + 1/3', t.provisionVacation, 'muted')}
+            {sum('Encargos das reservas', t.provisionCharges, 'muted')}
+          </>}
+          {toCents(t.otherCosts) > 0 && sum('Outros custos', t.otherCosts, 'muted')}
+          {sum('Custo total no mês', t.companyCost, undefined, true)}
+          {!t.detailed && <p className="text-xs text-warn">Detalhe o holerite para calcular FGTS, 13º e férias — sem o bruto, o custo fica incompleto.</p>}
           <p className="mt-2 text-xs text-faint leading-relaxed">
             {period.billsEnabled
               ? <>O valor a pagar vira a conta “Salário {emp?.name ?? '…'} – {refLabelPT(period.ref)}” em Contas a pagar.</>

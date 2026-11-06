@@ -3,11 +3,11 @@ import { Link, Navigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  Banknote, CalendarDays, Check, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, Landmark, MoreHorizontal, Pencil, Plus,
+  Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, Landmark, MoreHorizontal, Pencil, Plus, Printer,
   Receipt, RotateCcw, Settings2, Trash2, UserPlus, UsersRound, Wallet,
 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
-import { MONTHS_PT, addMonthsRef, formatBRL, formatDateBR, payrollTotals, refLabelPT, sumMoney, toCents, todayISO, type AttachmentSlot } from '@nopaper/shared';
+import { MONTHS_PT, addMonthsRef, formatBRL, formatDateBR, payrollTotals, payslipCheck, refLabelPT, sumMoney, toCents, todayISO, type AttachmentSlot } from '@nopaper/shared';
 import { Button, Card, Empty, Field, Input, PageHeader, Segmented, Spinner, Switch, Textarea } from '@/components/ui/base';
 import { StatusChip } from '@/components/ui/chips';
 import { Dialog, useConfirm } from '@/components/ui/dialog';
@@ -24,6 +24,7 @@ import { EntryDialog } from './EntryDialog';
 import { EmployeesTab } from './Employees';
 import { SettingsDialog } from './SettingsDialog';
 import { ImportDialog } from './ImportDialog';
+import { PayrollPrint } from './PayrollPrint';
 
 type Tab = 'mes' | 'funcionarios' | 'historico';
 
@@ -110,13 +111,15 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
   }, [openEntryId, m, onEntryOpened]);
 
   const entries = useMemo(() => [...(m?.entries ?? [])].sort((a, b) => (empMap.get(a.employeeId)?.name ?? '').localeCompare(empMap.get(b.employeeId)?.name ?? '', 'pt-BR')), [m, empMap]);
-  const rows = entries.map((e) => ({ e, emp: empMap.get(e.employeeId), t: payrollTotals(e.payslipNet, e.lines, rmap) }));
+  const rows = entries.map((e) => ({ e, emp: empMap.get(e.employeeId), t: payrollTotals(e.payslipNet, e.lines, rmap, meta.settings.costs) }));
   const k = {
     total: sumMoney(rows.map((r) => r.t.total)), on: sumMoney(rows.map((r) => r.t.onPayroll)), off: sumMoney(rows.map((r) => r.t.offPayroll)),
-    extras: sumMoney(rows.map((r) => r.t.extraEarnings)), employer: sumMoney(rows.map((r) => r.t.employerCost)), cost: sumMoney(rows.map((r) => r.t.companyCost)),
+    extras: sumMoney(rows.map((r) => r.t.extraEarnings)), employer: sumMoney(rows.flatMap((r) => [r.t.employerCost, r.t.provisions])), cost: sumMoney(rows.map((r) => r.t.companyCost)),
     paid: rows.filter((r) => r.e.bill?.status === 'paid').length, bills: rows.filter((r) => r.e.bill).length,
   };
 
+  /** Holerite detalhado sem o valor líquido para conferir (ex.: mês aberto copiando as rubricas fixas). */
+  const unchecked = (e: Entry, t: { detailed: boolean; payslipNet: string }) => t.detailed && payslipCheck(e.payslipNetDeclared, t.payslipNet).state !== 'ok';
   const status = (e: Entry) => {
     if (!period?.billsEnabled) return <StatusChip status="pending" label="Histórico" />;
     if (!e.bill) return <span className="text-xs text-faint">sem conta</span>;
@@ -176,6 +179,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
           </span>
         )}
         <div className="ml-auto flex flex-wrap gap-2 max-sm:ml-0 max-sm:w-full max-sm:[&>button]:flex-1">
+          {period && rows.length > 0 && <Button variant="ghost" icon={<Printer className="size-4" />} onClick={() => window.print()}>Imprimir</Button>}
           {period && canEdit && <Button variant="ghost" icon={<Pencil className="size-4" />} onClick={() => setEditPeriod(true)}>Editar mês</Button>}
           {period && canEdit && <Button variant="primary" icon={<UserPlus className="size-4" />} onClick={() => setEntryDlg({ open: true, entry: null })}>Lançar funcionário</Button>}
         </div>
@@ -193,7 +197,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
             <Kpi icon={Landmark} label="Pelo holerite" value={k.on} sub="depósito do líquido" />
             <Kpi icon={Banknote} label="Por fora" value={k.off} sub="metas, comissões…" />
             <Kpi icon={Plus} label="Extras" value={k.extras} sub="antes dos descontos" />
-            <Kpi icon={Receipt} label="Encargos" value={k.employer} sub="FGTS etc." />
+            <Kpi icon={Receipt} label="Encargos" value={k.employer} sub={meta.settings.costs.provisions ? 'FGTS, 13º e férias' : 'FGTS e outros custos'} />
             <Kpi icon={Wallet} label="Custo da empresa" value={k.cost} sub={period.billsEnabled ? `${k.paid}/${k.bills} pagos` : 'histórico'} />
           </div>
           {!period.billsEnabled && (
@@ -224,6 +228,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
                       <td className="px-5 py-3">
                         <p className="font-medium">{emp?.name ?? '—'}</p>
                         <p className="text-xs text-faint">{emp?.role ?? (t.detailed ? 'holerite detalhado' : '')}{e.notes ? `${emp?.role ? ' · ' : ''}${e.notes.split('\n')[0]}` : ''}</p>
+                        {unchecked(e, t) && <p className="flex items-center gap-1 text-xs text-warn"><AlertTriangle className="size-3" /> holerite não conferido</p>}
                       </td>
                       <td className="px-3 py-3 text-right tnum">{formatBRL(t.payslipNet)}</td>
                       <td className="px-3 py-3 text-right tnum text-ok">{toCents(t.extraEarnings) ? `+ ${formatBRL(t.extraEarnings)}` : '—'}</td>
@@ -256,6 +261,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{emp?.name ?? '—'}</span>
                           <span className="block truncate text-xs text-faint">{emp?.role ?? ''}</span>
+                          {unchecked(e, t) && <span className="flex items-center gap-1 text-xs text-warn"><AlertTriangle className="size-3" /> holerite não conferido</span>}
                         </span>
                         <span className="shrink-0">{status(e)}</span>
                       </span>
@@ -281,8 +287,9 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
       )}
 
       {period && <EntryDialog open={entryDlg.open} entry={entryDlg.entry} period={period} employees={meta.employees} rubrics={meta.rubrics}
-        takenEmployeeIds={entries.map((e) => e.employeeId)} canEdit={canEdit} onClose={() => setEntryDlg({ open: false, entry: null })} />}
+        costs={meta.settings.costs} takenEmployeeIds={entries.map((e) => e.employeeId)} canEdit={canEdit} canManage={can('payroll.manage')} onClose={() => setEntryDlg({ open: false, entry: null })} />}
       <OpenMonthDialog open={openDlg} refStr={ref} suggested={m?.suggestedPayDate ?? null} onClose={() => setOpenDlg(false)} />
+      {period && rows.length > 0 && <PayrollPrint period={period} rows={rows} rubrics={meta.rubrics} />}
       {period && <EditPeriodDialog open={editPeriod} period={period} onClose={() => setEditPeriod(false)} />}
       {pay && <PayDialog bill={pay.bill} proofOnly={pay.proofOnly} onClose={() => setPay(null)} onView={view} />}
       <FileViewer target={viewer} onClose={() => setViewer(null)} />
