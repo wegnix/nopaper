@@ -7,7 +7,7 @@ import {
   Receipt, RotateCcw, Settings2, Trash2, UserPlus, UsersRound, Wallet,
 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
-import { MONTHS_PT, addMonthsRef, formatBRL, formatDateBR, payrollTotals, payslipCheck, refLabelPT, sumMoney, toCents, todayISO, type AttachmentSlot } from '@nopaper/shared';
+import { MONTHS_PT, addMonthsRef, formatBRL, formatDateBR, fromCents, payrollTotals, payslipCheck, refLabelPT, sumMoney, toCents, todayISO, type AttachmentSlot } from '@nopaper/shared';
 import { Button, Card, Empty, Field, Input, PageHeader, Segmented, Spinner, Switch, Textarea } from '@/components/ui/base';
 import { StatusChip } from '@/components/ui/chips';
 import { Dialog, useConfirm } from '@/components/ui/dialog';
@@ -113,13 +113,24 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
   const entries = useMemo(() => [...(m?.entries ?? [])].sort((a, b) => (empMap.get(a.employeeId)?.name ?? '').localeCompare(empMap.get(b.employeeId)?.name ?? '', 'pt-BR')), [m, empMap]);
   const rows = entries.map((e) => ({ e, emp: empMap.get(e.employeeId), t: payrollTotals(e.payslipNet, e.lines, rmap, meta.settings.costs) }));
   const k = {
-    total: sumMoney(rows.map((r) => r.t.total)), on: sumMoney(rows.map((r) => r.t.onPayroll)), off: sumMoney(rows.map((r) => r.t.offPayroll)),
+    total: sumMoney(rows.map((r) => r.t.total)), net: sumMoney(rows.map((r) => r.t.payslipNet)),
+    // descontos maiores que os extras saem do próprio líquido: o depósito fica abaixo do holerite
+    netCut: sumMoney(rows.map((r) => fromCents(Math.max(0, toCents(r.t.payslipNet) - toCents(r.t.onPayroll))))), off: sumMoney(rows.map((r) => r.t.offPayroll)),
     extras: sumMoney(rows.map((r) => r.t.extraEarnings)), employer: sumMoney(rows.flatMap((r) => [r.t.employerCost, r.t.provisions])), cost: sumMoney(rows.map((r) => r.t.companyCost)),
     paid: rows.filter((r) => r.e.bill?.status === 'paid').length, bills: rows.filter((r) => r.e.bill).length,
   };
 
   /** Holerite detalhado sem o valor líquido para conferir (ex.: mês aberto copiando as rubricas fixas). */
   const unchecked = (e: Entry, t: { detailed: boolean; payslipNet: string }) => t.detailed && payslipCheck(e.payslipNetDeclared, t.payslipNet).state !== 'ok';
+  /** Desconto maior que os extras: o resto sai do líquido e o depósito fica abaixo do holerite. */
+  const cutNote = (t: { payslipNet: string; onPayroll: string }) => {
+    const cut = toCents(t.payslipNet) - toCents(t.onPayroll);
+    return cut > 0 && (
+      <span className="flex items-center gap-1 text-xs text-warn" title={`Os descontos passam dos extras em ${formatBRL(cut / 100)}: o depósito é ${formatBRL(t.onPayroll)}, abaixo do líquido do holerite.`}>
+        <AlertTriangle className="size-3 shrink-0" /> desconto maior que os extras · deposita {formatBRL(t.onPayroll)}
+      </span>
+    );
+  };
   const status = (e: Entry) => {
     if (!period?.billsEnabled) return <StatusChip status="pending" label="Histórico" />;
     if (!e.bill) return <span className="text-xs text-faint">sem conta</span>;
@@ -194,7 +205,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
         <>
           <div className="flex max-sm:snap-x max-sm:snap-mandatory max-sm:overflow-x-auto no-scrollbar sm:grid sm:grid-cols-3 xl:grid-cols-6 border-b border-line">
             <Kpi icon={HandCoins} label="A pagar" value={k.total} sub={plural(rows.length, 'funcionário', 'funcionários')} tone="accent" first />
-            <Kpi icon={Landmark} label="Pelo holerite" value={k.on} sub="depósito do líquido" />
+            <Kpi icon={Landmark} label="Líquido dos holerites" value={k.net} sub={toCents(k.netCut) > 0 ? `${formatBRL(k.netCut)} abatidos` : 'soma dos holerites'} />
             <Kpi icon={Banknote} label="Por fora" value={k.off} sub="metas, comissões…" />
             <Kpi icon={Plus} label="Extras" value={k.extras} sub="antes dos descontos" />
             <Kpi icon={Receipt} label="Encargos" value={k.employer} sub={meta.settings.costs.provisions ? 'FGTS, 13º e férias' : 'FGTS e outros custos'} />
@@ -228,6 +239,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
                       <td className="px-5 py-3">
                         <p className="font-medium">{emp?.name ?? '—'}</p>
                         <p className="text-xs text-faint">{emp?.role ?? (t.detailed ? 'holerite detalhado' : '')}{e.notes ? `${emp?.role ? ' · ' : ''}${e.notes.split('\n')[0]}` : ''}</p>
+                        {cutNote(t)}
                         {unchecked(e, t) && <p className="flex items-center gap-1 text-xs text-warn"><AlertTriangle className="size-3" /> holerite não conferido</p>}
                       </td>
                       <td className="px-3 py-3 text-right tnum">{formatBRL(t.payslipNet)}</td>
@@ -261,6 +273,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
                         <span className="min-w-0">
                           <span className="block truncate font-medium">{emp?.name ?? '—'}</span>
                           <span className="block truncate text-xs text-faint">{emp?.role ?? ''}</span>
+                          {cutNote(t)}
                           {unchecked(e, t) && <span className="flex items-center gap-1 text-xs text-warn"><AlertTriangle className="size-3" /> holerite não conferido</span>}
                         </span>
                         <span className="shrink-0">{status(e)}</span>

@@ -8,6 +8,16 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.4.1] - 2026-11-06
+
+### Corrigido
+- Folha de pagamento: o indicador "Pelo holerite" virou **Líquido dos holerites** e agora bate com a
+  soma da coluna Holerite. Quando os descontos de um funcionário passam dos extras e são abatidos do
+  próprio salário, o indicador mostra quanto foi abatido, e a linha dele avisa "desconto maior que os
+  extras" com o valor que será depositado.
+- O botão **Ordenar** das seções do lançamento aparece também em salários já pagos (a ordem é uma
+  configuração geral e não altera o lançamento).
+
 ## [1.4.0] - 2026-11-06
 
 ### Novo

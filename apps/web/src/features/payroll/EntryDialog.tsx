@@ -60,7 +60,8 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
     // na ordem definida em Configurar → Rubricas
     return rubrics.filter((r) => r.section === s && (r.active || toCents(lines[r.id]?.amount) !== 0));
   };
-  const sortHeader = (s: PayrollSection) => canManage && !readOnly && (
+  // a ordem é configuração geral (não muda o lançamento): disponível até em salário já pago
+  const sortHeader = (s: PayrollSection) => canManage && (
     <Button size="sm" variant={sorting === s ? 'primary' : 'ghost'} icon={sorting === s ? <Check className="size-4" /> : <ArrowUpDown className="size-4" />}
       onClick={() => setSorting(sorting === s ? null : s)}>{sorting === s ? 'Pronto' : 'Ordenar'}</Button>
   );
