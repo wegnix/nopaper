@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, BarChart3, CreditCard, LayoutDashboard, Settings, UsersRound, type LucideIcon } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, BarChart3, CreditCard, Landmark, LayoutDashboard, Settings, UsersRound, type LucideIcon } from 'lucide-react';
 import type { Permission } from '@nopaper/shared';
 
 /** `companyOnly`: só aparece em espaço do tipo Empresa. */
@@ -8,6 +8,7 @@ export const NAV: NavItem[] = [
   { to: '/pagar', label: 'Contas a pagar', icon: ArrowUpRight, perm: 'payable.view' },
   { to: '/receber', label: 'Contas a receber', icon: ArrowDownLeft, perm: 'receivable.view' },
   { to: '/cartoes', label: 'Cartões', icon: CreditCard, perm: 'cards.view' },
+  { to: '/bancos', label: 'Contas bancárias', icon: Landmark, perm: 'bank.view' },
   { to: '/folha', label: 'Folha de pagamento', icon: UsersRound, perm: 'payroll.view', companyOnly: true },
   { to: '/relatorios', label: 'Relatórios', icon: BarChart3, perm: 'reports.view' },
 ];

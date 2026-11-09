@@ -34,6 +34,9 @@ export const PERMISSIONS = {
   'cards.manage': { group: 'Cartões', label: 'Cadastrar, editar e apagar cartões', requires: ['cards.view'] },
   'cards.edit': { group: 'Cartões', label: 'Lançar, editar e apagar compras', hint: 'Pagar a fatura usa “Dar baixa” de contas a pagar.', requires: ['cards.view'] },
 
+  'bank.view': { group: 'Contas bancárias', label: 'Ver contas bancárias e extratos', hint: 'Saldos, lançamentos importados e a conciliação.' },
+  'bank.import': { group: 'Contas bancárias', label: 'Importar extratos e conciliar', hint: 'Ligar um lançamento a uma conta também precisa de “Dar baixa”; criar conta pelo extrato, de “Cadastrar”.', requires: ['bank.view'] },
+  'bank.manage': { group: 'Contas bancárias', label: 'Cadastrar, editar e apagar contas bancárias', requires: ['bank.view'] },
   'payroll.view': { group: 'Folha de pagamento', label: 'Ver a folha de pagamento', hint: 'Só em espaço Empresa. Mostra salários e descontos de cada funcionário.' },
   'payroll.edit': { group: 'Folha de pagamento', label: 'Lançar e editar a folha do mês', hint: 'Cada lançamento vira uma conta a pagar; pagar usa “Dar baixa” de contas a pagar.', requires: ['payroll.view'] },
   'payroll.manage': { group: 'Folha de pagamento', label: 'Funcionários, rubricas, configuração e importação', requires: ['payroll.view'] },
@@ -70,10 +73,10 @@ export const billPerm = (type: 'payable' | 'receivable', action: BillAction) => 
 export const DEFAULT_OPERATOR_PERMISSIONS: Permission[] = [
   'payable.view', 'payable.create', 'payable.edit', 'payable.pay', 'payable.delete',
   'receivable.view', 'receivable.create', 'receivable.edit', 'receivable.pay', 'receivable.delete',
-  'cards.view', 'cards.manage', 'cards.edit', 'reports.view',
+  'cards.view', 'cards.manage', 'cards.edit', 'bank.view', 'bank.import', 'reports.view',
 ];
 
 /** Permissões de um grupo "Leitura" padrão. */
 export const DEFAULT_READONLY_PERMISSIONS: Permission[] = [
-  'payable.view', 'receivable.view', 'cards.view', 'reports.view',
+  'payable.view', 'receivable.view', 'cards.view', 'bank.view', 'reports.view',
 ];

@@ -8,6 +8,28 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.7.0] - 2026-11-09
+
+### Novo
+- **Contas bancárias e extrato OFX** (espaços Pessoal e Empresa): importe o extrato exportado do banco
+  em OFX (padrão ou com datas ISO 8601). A conta bancária é reconhecida pelo banco, agência e número do
+  arquivo (ou cadastrada na hora), o saldo do extrato fica guardado e lançamentos já importados não
+  entram de novo.
+- **Conciliação** do extrato com as contas a pagar e a receber, em três modos: **Só conferir** (o que
+  está no extrato e no NoPaper, só no extrato e só no NoPaper, sem alterar nada), **Ligar às contas**
+  (o NoPaper sugere o par pelo mesmo valor e data próxima; ao aplicar, dá baixa na data do banco ou só
+  liga se a conta já estava paga) e **Ligar e criar contas** (o que sobrar vira conta nova já paga, na
+  categoria escolhida — dá para marcar vários de uma vez). Lançamentos podem ser ignorados, e tudo pode
+  ser desfeito lançamento a lançamento ou por importação.
+- Permissões novas em Grupos: ver contas bancárias, importar/conciliar extratos e cadastrar contas
+  bancárias.
+
+### Melhorado
+- Listas de escolha (categoria, pasta, tipo, mês…) no computador abrem uma lista própria do NoPaper,
+  que fica aberta com um clique — antes, em alguns sistemas a lista do navegador fechava ao soltar o
+  botão do mouse. No celular e no tablet continua o seletor do próprio aparelho.
+- Cadastro da conta bancária: o banco é escolhido com busca (nome ou código).
+
 ## [1.6.0] - 2026-11-09
 
 ### Novo

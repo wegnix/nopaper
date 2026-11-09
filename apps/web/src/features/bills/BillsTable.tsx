@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Link } from 'react-router';
 import { Check, CreditCard, ChevronDown, ChevronUp, ChevronsUpDown, Infinity as InfinityIcon, Pencil, Receipt, RotateCcw, StickyNote, Trash2, Users } from 'lucide-react';
 import { copyDescriptionText, formatBRL, formatDateBR, toCents, type AttachmentSlot, type BillType } from '@nopaper/shared';
-import { Button, Checkbox, IconButton } from '@/components/ui/base';
+import { Button, Checkbox, IconButton, Select } from '@/components/ui/base';
 import { CategoryChip, FolderChip, StatusChip } from '@/components/ui/chips';
 import { cn } from '@/lib/utils';
 import type { BillPerms } from '@/lib/session';
@@ -177,8 +177,8 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
           {canSelect && <Checkbox checked={allSel} indeterminate={!allSel && someSel} disabled={!pendingIds.length} onChange={(v) => setSelected(v ? new Set(pendingIds) : new Set())} label={<span className="text-xs text-muted">Pendentes</span>} className="items-center" />}
           <label className="ml-auto flex items-center gap-1.5">
             <span>Ordenar</span>
-            <select
-              aria-label="Ordenar por" className="h-8 rounded-md border border-line bg-surface-2 px-2 text-xs text-ink pointer-coarse:h-9"
+            <Select
+              aria-label="Ordenar por" className="h-8 w-auto rounded-md px-2 text-xs pointer-coarse:h-9"
               value={`${sort.key}:${sort.dir}`} onChange={(e) => { const [k, d] = e.target.value.split(':'); setSort({ key: k as SortKey, dir: Number(d) as 1 | -1 }); }}
             >
               <option value="dueDate:1">Vencimento ↑</option>
@@ -189,7 +189,7 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
               <option value="status:1">Situação</option>
               <option value="category:1">Categoria</option>
               <option value="folder:1">Pasta</option>
-            </select>
+            </Select>
           </label>
         </div>
         <ul className="grid md:grid-cols-2 [&>li]:border-line [&>li]:border-b md:[&>li:nth-child(odd)]:border-r">

@@ -359,6 +359,75 @@ export const payrollCommissionImports = pgTable('payroll_commission_imports', {
   createdAt: createdAt(),
 }, (t) => [index('payroll_comm_imports_period_idx').on(t.periodId, t.createdAt)]);
 
+// ------------------------------------------------------------------ contas bancárias e extratos (OFX)
+export const bankAccounts = pgTable('bank_accounts', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 80 }).notNull(),
+  /** Código do banco com 3 dígitos (BANKID do OFX). */
+  bankCode: varchar('bank_code', { length: 8 }),
+  branch: varchar('branch', { length: 20 }),
+  accountNumber: varchar('account_number', { length: 30 }),
+  /** accountKey(banco, agência, conta): reconhece a conta do arquivo. */
+  matchKey: varchar('match_key', { length: 80 }),
+  kind: varchar('kind', { length: 16 }).notNull().default('checking'),
+  color: varchar('color', { length: 16 }).notNull().default('sky'),
+  active: boolean('active').notNull().default(true),
+  notes: text('notes'),
+  /** Saldo do último extrato importado (LEDGERBAL) e a data dele. */
+  balance: numeric('balance', { precision: 14, scale: 2 }),
+  balanceDate: date('balance_date'),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex('bank_accounts_org_key_uq').on(t.orgId, t.matchKey).where(sql`${t.matchKey} is not null`)]);
+
+export const bankImports = pgTable('bank_imports', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  accountId: uuid('account_id').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  fileName: varchar('file_name', { length: 200 }).notNull(),
+  dateFrom: date('date_from'),
+  dateTo: date('date_to'),
+  balance: numeric('balance', { precision: 14, scale: 2 }),
+  balanceDate: date('balance_date'),
+  /** Lançamentos no arquivo e quantos eram novos (o resto já tinha sido importado). */
+  txCount: integer('tx_count').notNull().default(0),
+  newCount: integer('new_count').notNull().default(0),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+}, (t) => [index('bank_imports_account_idx').on(t.accountId, t.createdAt)]);
+
+/**
+ * Lançamento do extrato. `status`: pending | linked (ligado a uma conta) | ignored.
+ * `action` (ligado): paid = a conciliação deu baixa na conta; matched = a conta já estava paga;
+ * created = a conta foi criada pelo extrato. Desfazer volta cada caso.
+ */
+export const bankTransactions = pgTable('bank_transactions', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  accountId: uuid('account_id').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  importId: uuid('import_id').references(() => bankImports.id, { onDelete: 'set null' }),
+  fitId: varchar('fit_id', { length: 120 }).notNull(),
+  postedAt: date('posted_at').notNull(),
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  trnType: varchar('trn_type', { length: 16 }),
+  memo: varchar('memo', { length: 255 }),
+  name: varchar('name', { length: 255 }),
+  refNum: varchar('ref_num', { length: 64 }),
+  checkNum: varchar('check_num', { length: 64 }),
+  status: varchar('status', { length: 16 }).notNull().default('pending'),
+  action: varchar('action', { length: 16 }),
+  billId: uuid('bill_id').references(() => bills.id, { onDelete: 'set null' }),
+  reconciledBy: uuid('reconciled_by'),
+  reconciledAt: timestamp('reconciled_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex('bank_tx_account_fit_uq').on(t.accountId, t.fitId),
+  index('bank_tx_account_date_idx').on(t.accountId, t.postedAt),
+  index('bank_tx_bill_idx').on(t.billId),
+]);
+
 // ------------------------------------------------------------------ importações
 export const importBatches = pgTable('import_batches', {
   id: id(),
