@@ -11,3 +11,4 @@ export * from './alerts.js';
 export * from './version.js';
 export * from './document.js';
 export * from './payroll.js';
+export * from './commissions.js';

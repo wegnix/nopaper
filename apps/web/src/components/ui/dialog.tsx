@@ -1,20 +1,25 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode, type SetStateAction } from 'react';
 import { Dialog as RDialog } from 'radix-ui';
 import { AnimatePresence, motion } from 'motion/react';
-import { X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from './base';
 
 const sizes = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' };
 
+/**
+ * Janela. `dirty` = há alterações não salvas: fechar (X, Esc, clique fora ou o botão Fechar do
+ * `SaveFooter`) pergunta antes de descartar.
+ */
 export function Dialog({
-  open, onClose, title, description, children, footer, size = 'md', className,
+  open, onClose, title, description, children, footer, size = 'md', className, dirty,
 }: {
   open: boolean; onClose: () => void; title: ReactNode; description?: ReactNode; children?: ReactNode;
-  footer?: ReactNode; size?: keyof typeof sizes; className?: string;
+  footer?: ReactNode; size?: keyof typeof sizes; className?: string; dirty?: boolean;
 }) {
+  const close = useGuardedClose(onClose, !!dirty);
   return (
-    <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
+    <RDialog.Root open={open} onOpenChange={(o) => !o && close()}>
       <AnimatePresence>
         {open && (
           <RDialog.Portal forceMount>
@@ -76,5 +81,58 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         {state?.body && <div className="text-sm text-muted leading-relaxed">{state.body}</div>}
       </Dialog>
     </ConfirmCtx.Provider>
+  );
+}
+
+// ---------------------------------------------------------------- formulários: salvar sem fechar
+const serialize = (v: unknown) => JSON.stringify(v, (_k, x) => (x instanceof Set ? [...x].sort() : x));
+
+/**
+ * Estado de formulário que sabe se mudou desde o último salvar/carregar.
+ * `load(v)` troca o valor e a base (abrir outro registro); `markSaved(v)` diz que `v` foi gravado
+ * (passe o valor enviado: o que for digitado durante o salvamento continua "não salvo").
+ */
+export function useFormState<T>(initial: T | (() => T)) {
+  const [value, setValue] = useState<T>(initial);
+  const [base, setBase] = useState(() => serialize(value));
+  const load = useCallback((v: T) => { setValue(v); setBase(serialize(v)); }, []);
+  const markSaved = useCallback((v: T) => setBase(serialize(v)), []);
+  const dirty = serialize(value) !== base;
+  return [value, setValue as (v: SetStateAction<T>) => void, { dirty, load, markSaved }] as const;
+}
+
+/** Fecha direto, ou pergunta antes se houver alterações não salvas. */
+export function useGuardedClose(onClose: () => void, dirty: boolean) {
+  const confirm = useConfirm();
+  const asking = useRef(false);
+  return useCallback(async () => {
+    if (!dirty) { onClose(); return; }
+    if (asking.current) return;
+    asking.current = true;
+    const ok = await confirm({ title: 'Descartar as alterações?', body: 'Há alterações que ainda não foram salvas nesta janela.', confirmLabel: 'Descartar', tone: 'danger' });
+    asking.current = false;
+    if (ok) onClose();
+  }, [dirty, onClose, confirm]);
+}
+
+/**
+ * Rodapé padrão de cadastro: "Salvar" grava e mantém a janela aberta; "Fechar" fecha (perguntando
+ * se houver algo não salvo). `left` = ações extras à esquerda (ex.: Apagar).
+ */
+export function SaveFooter({ dirty, saving, onSave, onClose, canSave = true, saveLabel = 'Salvar', left, readOnly, isNew }: {
+  dirty: boolean; saving?: boolean; onSave: () => void; onClose: () => void; canSave?: boolean; saveLabel?: string; left?: ReactNode; readOnly?: boolean; isNew?: boolean;
+}) {
+  const close = useGuardedClose(onClose, dirty);
+  return (
+    <>
+      {left}
+      {!readOnly && !isNew && (
+        <span className={cn('inline-flex items-center gap-1.5 text-xs', dirty ? 'text-warn' : 'text-faint', !left && 'mr-auto')} aria-live="polite">
+          {dirty ? <><span className="size-1.5 rounded-full bg-warn" />Alterações não salvas</> : <><Check className="size-3.5" />Tudo salvo</>}
+        </span>
+      )}
+      <Button variant="ghost" onClick={close}>Fechar</Button>
+      {!readOnly && <Button variant="primary" loading={saving} disabled={!canSave || (!dirty && !isNew)} onClick={onSave}>{saveLabel}</Button>}
+    </>
   );
 }

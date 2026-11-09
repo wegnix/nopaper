@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, CircleCheck, Lock, Minus, Plus, Trash2 } from 'lucide-react';
 import { FGTS_PCT, PAYROLL_SECTION_LABEL, employerInssPct, formatBRL, payrollTotals, payslipCheck, refLabelPT, toCents, type PayrollCosts, type PayrollSection } from '@nopaper/shared';
-import { Dialog, useConfirm } from '@/components/ui/dialog';
+import { Dialog, SaveFooter, useConfirm } from '@/components/ui/dialog';
 import { Button, Field, IconButton, Select, Switch, Textarea } from '@/components/ui/base';
 import { api, post, put, errMsg } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -12,8 +12,8 @@ import { SECTION_HINT, useRubricMove, type Employee, type Entry, type Period, ty
 
 type LineState = Record<string, { amount: string; note: string | null }>;
 
-export function EntryDialog({ open, onClose, period, entry, employees, rubrics, costs, takenEmployeeIds, canEdit, canManage }: {
-  open: boolean; onClose: () => void; period: Period; entry: Entry | null; employees: Employee[]; rubrics: Rubric[]; costs: PayrollCosts;
+export function EntryDialog({ open, onClose, onCreated, period, entry, employees, rubrics, costs, takenEmployeeIds, canEdit, canManage }: {
+  open: boolean; onClose: () => void; onCreated: (id: string) => void; period: Period; entry: Entry | null; employees: Employee[]; rubrics: Rubric[]; costs: PayrollCosts;
   takenEmployeeIds: string[]; canEdit: boolean; canManage: boolean;
 }) {
   const qc = useQueryClient();
@@ -25,6 +25,11 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
   const [lines, setLines] = useState<LineState>({});
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  /** Foto do formulário no último carregar/salvar (alterações não salvas = diferente da atual). */
+  const [base, setBase] = useState('');
+  const snap = (v: { employeeId: string; net: string; detailed: boolean; lines: LineState; notes: string }) =>
+    JSON.stringify({ ...v, lines: Object.entries(v.lines).filter(([, x]) => toCents(x.amount) !== 0).map(([k, x]) => [k, toCents(x.amount), x.note ?? null]).sort() });
+  const dirty = open && snap({ employeeId, net, detailed, lines, notes }) !== base;
   /** Seção em modo "ordenar" (setas no lugar dos valores); a ordem vale para todos os lançamentos. */
   const [sorting, setSorting] = useState<PayrollSection | null>(null);
   const moveRubric = useRubricMove();
@@ -39,10 +44,12 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
     setLines(ls);
     setEmployeeId(entry?.employeeId ?? '');
     const isDetailed = !!entry?.lines.some((l) => rmap.get(l.rubricId)?.section === 'payslip');
-    setNet(entry ? (isDetailed ? entry.payslipNetDeclared ?? '' : entry.payslipNet) : '');
+    const n = entry ? (isDetailed ? entry.payslipNetDeclared ?? '' : entry.payslipNet) : '';
+    setNet(n);
     setDetailed(isDetailed);
     setNotes(entry?.notes ?? '');
     setSorting(null);
+    setBase(snap({ employeeId: entry?.employeeId ?? '', net: n, detailed: isDetailed, lines: ls, notes: entry?.notes ?? '' }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, entry?.id]);
 
@@ -95,11 +102,12 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
         employeeId: entry?.employeeId ?? employeeId, payslipNet: detailed ? '0' : net || '0', payslipNetDeclared: detailed && net ? net : null,
         lines: lineList.filter((l) => toCents(l.amount) !== 0), notes,
       };
+      const saved = snap({ employeeId, net, detailed, lines, notes });
       if (entry) await put(`/api/payroll/entries/${entry.id}`, body);
-      else await post('/api/payroll/entries', { ...body, periodId: period.id });
-      qc.invalidateQueries({ queryKey: ['bills'] });
-      toast.success(entry ? 'Lançamento atualizado' : 'Funcionário lançado na folha');
-      onClose();
+      else { const r = await post<{ id: string }>('/api/payroll/entries', { ...body, periodId: period.id }); onCreated(r.id); }
+      await qc.invalidateQueries({ queryKey: ['bills'] });
+      toast.success(entry ? 'Lançamento salvo' : 'Funcionário lançado na folha');
+      setBase(saved);
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   const remove = async () => {
@@ -120,14 +128,11 @@ export function EntryDialog({ open, onClose, period, entry, employees, rubrics, 
   );
 
   return (
-    <Dialog open={open} onClose={onClose} size="xl"
+    <Dialog open={open} onClose={onClose} dirty={dirty && !readOnly} size="xl"
       title={entry ? `${emp?.name ?? 'Funcionário'} · ${refLabelPT(period.ref)}` : `Lançar funcionário · ${refLabelPT(period.ref)}`}
       description={emp?.role ?? undefined}
-      footer={<>
-        {entry && canEdit && !paid && <Button variant="ghost" className="mr-auto text-danger hover:text-danger" icon={<Trash2 className="size-4" />} onClick={remove}>Tirar da folha</Button>}
-        <Button variant="ghost" onClick={onClose}>{readOnly ? 'Fechar' : 'Cancelar'}</Button>
-        {!readOnly && <Button variant="primary" loading={busy} disabled={(!entry && !employeeId) || mismatch} title={mismatch ? 'As rubricas não fecham com o valor líquido do holerite' : undefined} onClick={save}>Salvar</Button>}
-      </>}>
+      footer={<SaveFooter dirty={dirty} isNew={!entry} readOnly={readOnly} saving={busy} canSave={!(!entry && !employeeId) && !mismatch} onSave={save} onClose={onClose}
+        left={entry && canEdit && !paid && <Button variant="ghost" className="mr-auto text-danger hover:text-danger" icon={<Trash2 className="size-4" />} onClick={remove}>Tirar da folha</Button>} />}>
       {paid && (
         <p className="mb-4 flex items-center gap-2 rounded-lg bg-ok/10 px-3 py-2 text-sm text-ok"><Lock className="size-4 shrink-0" /> Salário já pago — para alterar, reverta o pagamento.</p>
       )}

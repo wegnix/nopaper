@@ -1,13 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { PayrollKind, PayrollSection, PayrollSettings } from '@nopaper/shared';
+import type { PayrollKind, PayrollSection, PayrollSettings, SalesSeller } from '@nopaper/shared';
 import { errMsg, get, put } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import type { Bill } from '@/lib/types';
 
 export interface Employee {
   id: string; name: string; document: string | null; role: string | null; admissionDate: string | null; terminationDate: string | null;
-  active: boolean; pixKey: string | null; phone: string | null; bankInfo: string | null; notes: string | null; months: number; lastRef: string | null;
+  active: boolean; pixKey: string | null; phone: string | null; sellerCode: string | null; bankInfo: string | null; notes: string | null; months: number; lastRef: string | null;
 }
 export interface Rubric { id: string; name: string; section: PayrollSection; kind: PayrollKind; fixed: boolean; active: boolean; sortOrder: number; usage: number }
 export interface PayrollMeta { settings: PayrollSettings; rubrics: Rubric[]; employees: Employee[] }
@@ -62,4 +62,17 @@ export function useRubricMove() {
     try { await put('/api/payroll/rubrics/order', { ids }); } catch (e) { toast.error(errMsg(e)); }
     qc.invalidateQueries({ queryKey: payrollKey(orgId, 'meta') });
   };
+}
+
+/** Último relatório de vendas importado no mês (comissões). */
+export interface CommissionImport {
+  id: string; fileName: string; from: string | null; to: string | null; sellers: SalesSeller[]; createdAt: string; createdByName: string | null;
+  result: { applied: Array<{ employee: string; total: string }>; skipped: Array<{ employee: string; reason: string }>; missing: string[] };
+}
+export function useCommissionImport(periodId: string | null) {
+  const orgId = useSession((s) => s.orgId);
+  return useQuery({
+    enabled: !!periodId, queryKey: payrollKey(orgId, 'commissions', periodId),
+    queryFn: () => get<{ import: CommissionImport | null }>(`/api/payroll/periods/${periodId}/commissions`).then((r) => r.import),
+  });
 }

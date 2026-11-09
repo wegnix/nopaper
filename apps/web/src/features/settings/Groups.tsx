@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { ALL_PERMISSIONS, DEFAULT_OPERATOR_PERMISSIONS, DEFAULT_READONLY_PERMISSIONS, PERMISSIONS, permissionRequires, withRequired, type Permission } from '@nopaper/shared';
 import { Button, Card, Checkbox, Field, IconButton, Input, Switch, Tooltip } from '@/components/ui/base';
-import { Dialog, useConfirm } from '@/components/ui/dialog';
+import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { del, get, post, put, errMsg } from '@/lib/api';
 import { useCan, useOrg, useSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
@@ -29,12 +29,12 @@ export function useGroups() {
   return useQuery({ queryKey: ['groups', orgId], queryFn: () => get<{ items: Group[] }>('/api/groups').then((r) => r.items) });
 }
 
-function GroupForm({ group, onClose }: { group: Partial<Group>; onClose: () => void }) {
+function GroupForm({ group, onClose, onSaved }: { group: Partial<Group>; onClose: () => void; onSaved: (g: Partial<Group>) => void }) {
   const qc = useQueryClient();
   const org = useOrg();
   const can = useCan();
   const iAmAdmin = !!org?.isAdmin;
-  const [f, setF] = useState({ name: group.name ?? '', description: group.description ?? '', isAdmin: group.isAdmin ?? false, permissions: new Set(group.permissions ?? []) });
+  const [f, setF, form] = useFormState({ name: group.name ?? '', description: group.description ?? '', isAdmin: group.isAdmin ?? false, permissions: new Set(group.permissions ?? []) });
   const [busy, setBusy] = useState(false);
   // quem não é admin só concede o que já tem (o que o grupo já tinha pode ficar)
   const grantable = (p: Permission) => iAmAdmin || can(p) || !!group.permissions?.includes(p);
@@ -53,17 +53,18 @@ function GroupForm({ group, onClose }: { group: Partial<Group>; onClose: () => v
   const save = async () => {
     setBusy(true);
     const body = { ...f, permissions: [...f.permissions] };
-    try { if (group.id) await put(`/api/groups/${group.id}`, body); else await post('/api/groups', body); qc.invalidateQueries({ queryKey: ['groups'] }); toast.success('Grupo salvo'); onClose(); } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+    try {
+      const g = group.id ? await put<Group>(`/api/groups/${group.id}`, body) : await post<Group>('/api/groups', body);
+      qc.invalidateQueries({ queryKey: ['groups'] }); toast.success(group.id ? 'Grupo salvo' : 'Grupo criado');
+      form.markSaved(f); onSaved({ ...group, ...g, permissions: body.permissions });
+    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   const count = f.permissions.size;
   return (
-    <Dialog open onClose={onClose} size="xl" title={group.id ? `Editar grupo ${group.name}` : 'Novo grupo'}
+    <Dialog open onClose={onClose} dirty={form.dirty} size="xl" title={group.id ? `Editar grupo ${group.name}` : 'Novo grupo'}
       description="Marque o que as pessoas deste grupo podem fazer neste espaço. Quem está em vários grupos recebe a soma."
-      footer={<>
-        {!f.isAdmin && <span className="mr-auto text-xs text-muted">{count} de {ALL_PERMISSIONS.length} permissões</span>}
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button variant="primary" loading={busy} disabled={!f.name.trim()} onClick={save}>Salvar grupo</Button>
-      </>}>
+      footer={<SaveFooter dirty={form.dirty} isNew={!group.id} saving={busy} canSave={!!f.name.trim()} onSave={save} onClose={onClose}
+        left={!f.isAdmin && <span className="mr-auto text-xs text-muted">{count} de {ALL_PERMISSIONS.length} permissões</span>} />}>
       <div className="flex flex-col gap-5">
         <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Nome"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
@@ -154,7 +155,7 @@ export function GroupsPage() {
           </li>
         ))}
       </ul>
-      {editing && <GroupForm group={editing} onClose={() => setEditing(null)} />}
+      {editing && <GroupForm group={editing} onClose={() => setEditing(null)} onSaved={setEditing} />}
     </Card>
   );
 }

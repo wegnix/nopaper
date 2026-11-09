@@ -2,11 +2,14 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
-  billPerm, defaultPayDate, employeeSchema, payrollEntryCreateSchema, payrollEntrySchema, payrollImportSchema,
+  billPerm, commissionByRubric, commissionNote, defaultPayDate, mergeCommissionGroups, parseSalesReport, payrollCommissionApplySchema, payrollCommissionsSchema,
+  reportGroups, sellerCommission, employeeSchema, payrollEntryCreateSchema, payrollEntrySchema, payrollImportSchema,
   payrollPeriodCreateSchema, payrollPeriodUpdateSchema, payrollPrintSchema, payrollRubricOrderSchema, payrollRubricSchema, payrollSettingsSchema, personKey,
   refLabelPT, sumMoney, toCents, type Permission,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
+import { env } from '../env.js';
+import { pdfToRows } from '../services/pdf.js';
 import { parse } from '../lib/validate.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
@@ -22,6 +25,10 @@ const isUniqueViolation = (err: unknown) => {
   const e = err as { code?: string; cause?: { code?: string } };
   return e.code === '23505' || e.cause?.code === '23505';
 };
+const violated = (err: unknown) => { const e = err as { constraint?: string; cause?: { constraint?: string } }; return e.constraint ?? e.cause?.constraint ?? ''; };
+/** Mensagem do índice único violado no cadastro de funcionário (nome ou código de vendedor). */
+const employeeConflict = (err: unknown, body: { name: string; sellerCode?: string | null }) =>
+  violated(err).includes('seller') ? conflict(`O código de vendedor ${body.sellerCode} já é de outro funcionário`) : conflict(`Já existe um funcionário chamado "${body.name}"`);
 
 const guard = (...p: Permission[]) => ({
   preHandler: [requirePerm(...p), async (req: FastifyRequest) => { assertCompany(req); }],
@@ -64,6 +71,9 @@ export default async function payrollRoutes(app: FastifyInstance) {
     await assertCategoryUsable(req, body.categoryId, 'payable');
     await assertFolder(req, body.folderId);
     const before = await getPayrollSettings(req.org!.id);
+    // impressão e comissões têm rotas próprias: a tela de configuração pode estar com uma cópia velha
+    body.print = before.print;
+    body.commissions = before.commissions;
     await savePayrollSettings(req.org!.id, body);
     // contas pendentes passam a usar a categoria/pasta/forma de pagamento novas
     const ids = await pendingEntryIds(eq(schema.payrollEntries.orgId, req.org!.id));
@@ -91,6 +101,41 @@ export default async function payrollRoutes(app: FastifyInstance) {
     return print;
   });
 
+  /** Regras de comissão (relatório de vendas). */
+  app.put('/api/payroll/settings/commissions', manage, async (req) => {
+    const body = parse(payrollCommissionsSchema, req.body);
+    const rubrics = new Map((await rubricsOf(req.org!.id)).map((r) => [r.id, r]));
+    for (const r of body.rules) {
+      const rb = rubrics.get(r.rubricId);
+      if (!rb || rb.section !== 'extra' || rb.kind !== 'earning') throw badRequest(`Na regra "${r.name}", escolha uma rubrica de provento fora do holerite.`);
+    }
+    if (new Set(body.rules.map((r) => r.id)).size !== body.rules.length) throw badRequest('Regras repetidas');
+    const before = await getPayrollSettings(req.org!.id);
+    const next = { ...body, groups: mergeCommissionGroups(before.commissions.groups, body.groups) };
+    const summary = (c: typeof next) => c.rules.map((r) => ({ nome: r.name, grupos: r.groups.map((g) => g.code).join(','), base: r.base, taxa: r.rate, metas: r.tiers, rubrica: rubrics.get(r.rubricId)?.name ?? r.rubricId, ativa: r.active }));
+    await savePayrollSettings(req.org!.id, { ...before, commissions: next });
+    await audit(req, { action: 'payroll.settings.commissions', entityType: 'payroll', description: 'Alterou as regras de comissão da folha', details: { changes: { regras: { from: summary(before.commissions), to: summary(next) } } } });
+    return next;
+  });
+
+  /** Lê o relatório de vendas (PDF): vendedores e grupos de produtos. Não grava nada na folha. */
+  app.post('/api/payroll/commissions/read', edit, async (req) => {
+    const file = await req.file({ limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
+    if (!file) throw badRequest('Envie o relatório de vendas em PDF');
+    const buf = await file.toBuffer();
+    if (file.file.truncated) throw badRequest(`Arquivo maior que ${env.MAX_UPLOAD_MB} MB`);
+    if (buf.subarray(0, 5).toString('latin1') !== '%PDF-') throw badRequest('O arquivo não é um PDF. Exporte o relatório de vendas em PDF.');
+    let rows: string[][];
+    try { rows = await pdfToRows(buf); } catch { throw badRequest('Não consegui ler este PDF. Exporte o relatório de novo e tente outra vez.'); }
+    const report = parseSalesReport(rows);
+    if (!report.sellers.length) throw badRequest('Não achei vendedores e grupos de produtos neste PDF. Use o relatório "Vendas Vendedor e Grupo Produtos" com "Totais por vendedor e grupo produtos".', 'sales_report_unknown');
+    // grupos novos ficam disponíveis para as regras
+    const settings = await getPayrollSettings(req.org!.id);
+    const groups = mergeCommissionGroups(settings.commissions.groups, reportGroups(report));
+    if (JSON.stringify(groups) !== JSON.stringify(settings.commissions.groups)) await savePayrollSettings(req.org!.id, { ...settings, commissions: { ...settings.commissions, groups } });
+    return { fileName: file.filename.slice(0, 200), report };
+  });
+
   app.post('/api/payroll/employees', manage, async (req) => {
     const body = parse(employeeSchema, req.body);
     try {
@@ -98,7 +143,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
       await audit(req, { action: 'payroll.employee.create', entityType: 'employee', entityId: e.id, description: `Cadastrou o funcionário ${e.name}` });
       return e;
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict(`Já existe um funcionário chamado "${body.name}"`);
+      if (isUniqueViolation(err)) throw employeeConflict(err, body);
       throw err;
     }
   });
@@ -110,7 +155,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     try {
       [u] = await db.update(schema.employees).set(body).where(eq(schema.employees.id, e.id)).returning();
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict(`Já existe um funcionário chamado "${body.name}"`);
+      if (isUniqueViolation(err)) throw employeeConflict(err, body);
       throw err;
     }
     // nome/PIX novos nas contas ainda pendentes
@@ -296,6 +341,117 @@ export default async function payrollRoutes(app: FastifyInstance) {
     }
     await audit(req, { action: 'payroll.period.update', entityType: 'payroll_period', entityId: p.id, description: `Editou a folha de ${refLabelPT(p.ref)}`, details: { changes: { payDate: { from: p.payDate, to: u.payDate }, notes: { from: p.notes, to: u.notes } } } });
     return u;
+  });
+
+  /**
+   * Comissões do relatório de vendas no mês: para cada vendedor ligado a um funcionário, grava o
+   * valor de cada regra na rubrica dela (substitui o valor anterior dessas rubricas; zero = remove).
+   * Funcionário sem lançamento no mês entra na folha. Salário já pago fica de fora.
+   */
+  app.post<{ Params: { id: string } }>('/api/payroll/periods/:id/commissions', edit, async (req) => {
+    const body = parse(payrollCommissionApplySchema, req.body);
+    const orgId = req.org!.id;
+    const p = await loadPeriod(orgId, req.params.id);
+    const settings = await getPayrollSettings(orgId);
+    const rules = settings.commissions.rules.filter((r) => r.active);
+    if (!rules.length) throw badRequest('Configure as regras em Configurar → Comissões antes de importar o relatório de vendas.', 'no_commission_rules');
+    const rubrics = await rubricsOf(orgId);
+    const rname = new Map(rubrics.map((r) => [r.id, r.name]));
+    for (const r of rules) if (!rname.has(r.rubricId)) throw badRequest(`A rubrica da regra "${r.name}" não existe mais. Escolha outra em Configurar → Comissões.`);
+    const target = new Set(rules.map((r) => r.rubricId));
+    const out = await db.transaction(async (tx) => {
+      const emps = await tx.select().from(schema.employees).where(eq(schema.employees.orgId, orgId));
+      const linked: Array<{ code: string; from: string | null; to: string | null }> = [];
+      /** Funcionários que deixaram de ser o vendedor de algum código: as comissões deles no mês saem. */
+      const unlinked = new Set<string>();
+      for (const l of body.links) {
+        const cur = emps.find((e) => e.sellerCode === l.code);
+        if ((cur?.id ?? null) === l.employeeId) continue;
+        if (!req.org!.can('payroll.manage')) throw forbidden('Ligar vendedores a funcionários exige a permissão de gerenciar a folha.');
+        if (cur) { await tx.update(schema.employees).set({ sellerCode: null }).where(eq(schema.employees.id, cur.id)); cur.sellerCode = null; unlinked.add(cur.id); }
+        const e = l.employeeId ? emps.find((x) => x.id === l.employeeId) : null;
+        if (l.employeeId && !e) throw badRequest('Funcionário inválido');
+        if (e) { await tx.update(schema.employees).set({ sellerCode: l.code }).where(eq(schema.employees.id, e.id)); e.sellerCode = l.code; }
+        linked.push({ code: l.code, from: cur?.name ?? null, to: e?.name ?? null });
+      }
+      const byCode = new Map(emps.filter((e) => e.sellerCode).map((e) => [e.sellerCode!, e]));
+      const entries = await tx.select().from(schema.payrollEntries).where(eq(schema.payrollEntries.periodId, p.id));
+      const applied: Array<{ employee: string; code: string; total: string; created: boolean; changes: Record<string, { from: string | null; to: string | null }> }> = [];
+      const skipped: Array<{ employee: string; reason: string }> = [];
+      for (const s of body.sellers) {
+        const emp = byCode.get(s.code);
+        if (!emp) continue;
+        const byRubric = commissionByRubric(sellerCommission(s, rules));
+        const entry = entries.find((e) => e.employeeId === emp.id);
+        if (entry?.billId) {
+          const [b] = await tx.select({ status: schema.bills.status }).from(schema.bills).where(eq(schema.bills.id, entry.billId));
+          if (b?.status === 'paid') { skipped.push({ employee: emp.name, reason: 'salário já pago' }); continue; }
+        }
+        const old = entry ? await tx.select().from(schema.payrollEntryLines).where(eq(schema.payrollEntryLines.entryId, entry.id)) : [];
+        const added = [...byRubric].filter(([, v]) => toCents(v.amount) > 0)
+          .map(([rubricId, v]) => ({ rubricId, amount: v.amount, note: commissionNote(v.lines, body.from, body.to) }));
+        if (!entry && !added.length) continue;
+        const changes: Record<string, { from: string | null; to: string | null }> = {};
+        for (const rid of target) {
+          const from = old.filter((l) => l.rubricId === rid).reduce((a, l) => a + toCents(l.amount), 0);
+          const to = toCents(added.find((a) => a.rubricId === rid)?.amount ?? '0');
+          if (from !== to) changes[rname.get(rid)!] = { from: from ? (from / 100).toFixed(2) : null, to: to ? (to / 100).toFixed(2) : null };
+        }
+        if (entry && !Object.keys(changes).length) continue;
+        await writeEntry(tx, orgId, req.user!.id, {
+          entryId: entry?.id, periodId: p.id, employeeId: emp.id, payslipNet: entry?.payslipNet ?? '0', payslipNetDeclared: entry?.payslipNetDeclared ?? null,
+          lines: [...old.filter((l) => !target.has(l.rubricId)).map((l) => ({ rubricId: l.rubricId, amount: l.amount, note: l.note })), ...added],
+          notes: entry?.notes ?? null,
+        });
+        applied.push({ employee: emp.name, code: s.code, total: sumMoney(added.map((a) => a.amount)), created: !entry, changes });
+      }
+      for (const empId of unlinked) {
+        const emp = emps.find((e) => e.id === empId)!;
+        if (emp.sellerCode) continue; // ligado a outro código neste mesmo envio
+        const entry = entries.find((e) => e.employeeId === empId);
+        if (!entry) continue;
+        if (entry.billId) {
+          const [b] = await tx.select({ status: schema.bills.status }).from(schema.bills).where(eq(schema.bills.id, entry.billId));
+          if (b?.status === 'paid') { skipped.push({ employee: emp.name, reason: 'salário já pago' }); continue; }
+        }
+        const old = await tx.select().from(schema.payrollEntryLines).where(eq(schema.payrollEntryLines.entryId, entry.id));
+        const gone = old.filter((l) => target.has(l.rubricId));
+        if (!gone.length) continue;
+        await writeEntry(tx, orgId, req.user!.id, {
+          entryId: entry.id, periodId: p.id, employeeId: empId, payslipNet: entry.payslipNet, payslipNetDeclared: entry.payslipNetDeclared ?? null,
+          lines: old.filter((l) => !target.has(l.rubricId)).map((l) => ({ rubricId: l.rubricId, amount: l.amount, note: l.note })), notes: entry.notes ?? null,
+        });
+        const changes: Record<string, { from: string | null; to: string | null }> = {};
+        for (const l of gone) changes[rname.get(l.rubricId)!] = { from: l.amount, to: null };
+        applied.push({ employee: emp.name, code: '', total: '0.00', created: false, changes });
+      }
+      const inReport = new Set(body.sellers.map((s) => s.code));
+      const missing = emps.filter((e) => e.sellerCode && e.active && !inReport.has(e.sellerCode)).map((e) => e.name);
+      const result = { applied, skipped, linked, missing };
+      // guarda o relatório para rever a tela depois (Ver comissões no mês)
+      await tx.insert(schema.payrollCommissionImports).values({
+        orgId, periodId: p.id, fileName: body.fileName, dateFrom: body.from, dateTo: body.to, sellers: body.sellers, result, createdBy: req.user!.id,
+      });
+      return result;
+    });
+    await audit(req, {
+      action: 'payroll.commissions', entityType: 'payroll_period', entityId: p.id,
+      description: `Lançou as comissões do relatório de vendas "${body.fileName}" na folha de ${refLabelPT(p.ref)} (${out.applied.length} funcionário(s))`,
+      details: { fileName: body.fileName, from: body.from, to: body.to, ...out },
+    });
+    return out;
+  });
+
+  /** Último relatório de vendas importado no mês (para rever e lançar de novo). */
+  app.get<{ Params: { id: string } }>('/api/payroll/periods/:id/commissions', view, async (req) => {
+    const p = await loadPeriod(req.org!.id, req.params.id);
+    const [row] = await db.select({
+      id: schema.payrollCommissionImports.id, fileName: schema.payrollCommissionImports.fileName, from: schema.payrollCommissionImports.dateFrom,
+      to: schema.payrollCommissionImports.dateTo, sellers: schema.payrollCommissionImports.sellers, result: schema.payrollCommissionImports.result,
+      createdAt: schema.payrollCommissionImports.createdAt, createdByName: schema.users.name,
+    }).from(schema.payrollCommissionImports).leftJoin(schema.users, eq(schema.users.id, schema.payrollCommissionImports.createdBy))
+      .where(eq(schema.payrollCommissionImports.periodId, p.id)).orderBy(desc(schema.payrollCommissionImports.createdAt)).limit(1);
+    return { import: row ?? null };
   });
 
   /** Mês importado do histórico (sem contas): passa a gerar as contas a pagar. */

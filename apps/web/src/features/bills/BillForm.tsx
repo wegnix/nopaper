@@ -7,7 +7,7 @@ import {
   ATTACHMENT_SLOTS, ATTACHMENT_SLOT_LABEL, PAYMENT_METHODS, PIX_KEY_TYPE_LABEL, formatBRL, formatDateBR, parseBoleto, parsePix,
   todayISO, type AttachmentSlot, type BillType,
 } from '@nopaper/shared';
-import { Dialog } from '@/components/ui/dialog';
+import { Dialog, SaveFooter, useFormState } from '@/components/ui/dialog';
 import { Button, Checkbox, Field, IconButton, Input, Segmented, Select } from '@/components/ui/base';
 import { api, post, put, errMsg, ApiError } from '@/lib/api';
 import { useCategories, useFolders } from '@/lib/queries';
@@ -50,14 +50,16 @@ async function uploadAttachment(billId: string, file: File, slot: AttachmentSlot
 
 export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecurrence, onView }: Props) {
   const l = L[type];
-  const isEdit = !!bill;
+  const [current, setCurrent] = useState<Bill | null>(bill);
+  /** Depois de criar, a janela continua aberta editando a conta criada. */
+  const isEdit = !!current;
   const perm = useBillPerms(type);
   const qc = useQueryClient();
   const { data: categories = [] } = useCategories();
   const { data: folders = [] } = useFolders();
   const cats = useMemo(() => categories.filter((c) => c.kind === 'both' || c.kind === type), [categories, type]);
 
-  const [f, setF] = useState(() => blank());
+  const [f, setF, form] = useFormState(() => blank());
   const [rec, setRec] = useState<RecState>(initialRec());
   const [cascade, setCascade] = useState(false);
   const [pending, setPending] = useState<{ file: File; slot: AttachmentSlot | null; cls: Classification | null } | null>(null);
@@ -65,7 +67,6 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [manualFor, setManualFor] = useState<File | null>(null);
-  const [current, setCurrent] = useState<Bill | null>(bill);
 
   function blank() {
     return {
@@ -74,24 +75,28 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
     };
   }
 
+  function fromBill(b: Bill) {
+    return {
+      description: b.description, categoryId: b.categoryId, folderId: b.folderId ?? '', amount: b.amount, dueDate: b.dueDate,
+      status: b.status, paidAt: b.paidAt ?? todayISO(), paidAmount: b.paidAmount ?? b.amount, relatedPerson: b.relatedPerson ?? '',
+      notes: b.notes ?? '', barcode: b.barcode ?? '', pixKey: b.pixKey ?? '', paymentMethod: b.paymentMethod ?? '',
+    };
+  }
   useEffect(() => {
     if (!open) return;
     setCurrent(bill);
     setPending(null); setManualFor(null); setCascade(false);
     if (bill) {
-      setF({
-        description: bill.description, categoryId: bill.categoryId, folderId: bill.folderId ?? '', amount: bill.amount, dueDate: bill.dueDate,
-        status: bill.status, paidAt: bill.paidAt ?? todayISO(), paidAmount: bill.paidAmount ?? bill.amount, relatedPerson: bill.relatedPerson ?? '',
-        notes: bill.notes ?? '', barcode: bill.barcode ?? '', pixKey: bill.pixKey ?? '', paymentMethod: bill.paymentMethod ?? '',
-      });
+      form.load(fromBill(bill));
       setRec(initialRec(bill.recurrenceType, bill.isIndefinite));
     } else {
-      setF({ ...blank(), categoryId: cats[0]?.id ?? '' });
+      form.load({ ...blank(), categoryId: cats[0]?.id ?? '' });
       setRec(initialRec());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, bill?.id]);
-  useEffect(() => { if (open && !f.categoryId && cats[0]) setF((p) => ({ ...p, categoryId: cats[0].id })); }, [cats, open, f.categoryId]);
+  // categorias chegaram depois de abrir: escolhe a 1ª sem contar como alteração
+  useEffect(() => { if (open && !f.categoryId && cats[0]) form.load({ ...f, categoryId: cats[0].id }); }, [cats, open, f.categoryId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const boleto = useMemo(() => (f.barcode.replace(/\D/g, '').length >= 44 ? parseBoleto(f.barcode) : null), [f.barcode]);
   const pix = useMemo(() => (f.pixKey.trim() ? parsePix(f.pixKey) : null), [f.pixKey]);
@@ -165,10 +170,13 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
           ...recPayload(rec, f.dueDate, f.amount),
         };
         const r = await post<{ headId: string; items: Bill[] }>('/api/bills', payload);
+        let head = r.items.find((b) => b.id === r.headId) ?? r.items[0] ?? null;
         if (pending?.slot) {
-          try { await uploadAttachment(r.headId, pending.file, pending.slot); } catch (e) { toast.error(`Conta criada, mas o anexo falhou: ${errMsg(e)}`); }
+          try { head = (await uploadAttachment(r.headId, pending.file, pending.slot)).bill; } catch (e) { toast.error(`Conta criada, mas o anexo falhou: ${errMsg(e)}`); }
         }
-        toast.success(r.items.length > 1 ? `${r.items.length} lançamentos criados` : 'Conta criada');
+        toast.success(r.items.length > 1 ? `${r.items.length} lançamentos criados — editando o primeiro` : 'Conta criada');
+        setPending(null);
+        if (head) { setCurrent(head); form.load(fromBill(head)); setRec(initialRec(head.recurrenceType, head.isIndefinite)); }
       } else if (current) {
         const folderChanged = (current.folderId ?? '') !== f.folderId;
         const r = await put<Bill & { cascaded: number }>(`/api/bills/${current.id}`, {
@@ -178,25 +186,25 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
           cascade: series && (cascade || folderChanged),
         });
         toast.success(r.cascaded ? `Conta salva e ${r.cascaded} ocorrência(s) futura(s) atualizada(s)` : 'Conta salva');
+        setCurrent(r); form.load(fromBill(r)); setCascade(false);
       }
       qc.invalidateQueries({ queryKey: ['bills'] });
       qc.invalidateQueries({ queryKey: ['categories'] });
       qc.invalidateQueries({ queryKey: ['folders'] });
-      onClose();
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
 
   const hideAmount = !isEdit && needsRows(rec);
+  // criando: a repetição e o arquivo também contam como alteração
+  const dirty = form.dirty || (!isEdit && (!!pending || rec.type !== 'once'));
 
   return (
     <Dialog
       open={open} onClose={onClose} size="lg"
       title={isEdit ? 'Editar conta' : l.new}
       description={isEdit && current ? <span className="inline-flex items-center gap-2">{RECURRENCE_LABEL[current.recurrenceType]}{current.installmentNumber && ` · parcela ${current.installmentNumber}/${current.totalInstallments}`}{current.isIndefinite && <span className="inline-flex items-center gap-1 text-accent"><InfinityIcon className="size-3.5" /> sem data para acabar</span>}</span> : (isTouch() ? 'Envie' : 'Arraste') + ' o boleto ou a nota para preencher automaticamente.'}
-      footer={<>
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button variant="primary" loading={busy} disabled={!valid} onClick={submit}>{isEdit ? 'Salvar alterações' : 'Criar conta'}</Button>
-      </>}
+      dirty={dirty}
+      footer={<SaveFooter dirty={dirty} isNew={!isEdit} saving={busy} canSave={!!valid} onSave={submit} onClose={onClose} saveLabel={isEdit ? 'Salvar' : 'Criar conta'} />}
     >
       <div className="flex flex-col gap-5">
         {!isEdit && (

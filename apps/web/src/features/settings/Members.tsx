@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Crown, Pencil, Trash2, UserPlus } from 'lucide-react';
 import { Button, Card, Checkbox, Field, IconButton, Input, Switch } from '@/components/ui/base';
-import { Dialog, useConfirm } from '@/components/ui/dialog';
+import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { del, get, post, put, errMsg } from '@/lib/api';
 import { useCan, useOrg, useSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
@@ -13,28 +13,31 @@ import { useGroups } from './Groups';
 
 interface Member { id: string; userId: string; name: string; email: string; username: string; isOwner: boolean; active: boolean; lastLoginAt: string | null; groupIds: string[] }
 
-function MemberForm({ member, onClose }: { member: Partial<Member>; onClose: () => void }) {
+function MemberForm({ member, onClose, onSaved }: { member: Partial<Member>; onClose: () => void; onSaved: (m: Partial<Member>) => void }) {
   const { data: groups = [] } = useGroups();
   const org = useOrg();
   const can = useCan();
   // quem não é admin do espaço só mexe em grupos cujas permissões já tem
   const assignable = (g: { isAdmin: boolean; permissions: Permission[] }) => !!org?.isAdmin || (!g.isAdmin && g.permissions.every(can));
   const qc = useQueryClient();
-  const [f, setF] = useState({ email: member.email ?? '', name: member.name ?? '', username: '', password: '', groupIds: new Set(member.groupIds ?? []), active: member.active ?? true });
+  const [f, setF, form] = useFormState({ email: member.email ?? '', name: member.name ?? '', username: '', password: '', groupIds: new Set(member.groupIds ?? []), active: member.active ?? true });
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
     try {
       if (member.id) await put(`/api/members/${member.id}`, { groupIds: [...f.groupIds], active: f.active });
-      else await post('/api/members', { email: f.email, name: f.name || undefined, username: f.username || undefined, password: f.password || undefined, groupIds: [...f.groupIds] });
+      else {
+        const r = await post<{ id: string }>('/api/members', { email: f.email, name: f.name || undefined, username: f.username || undefined, password: f.password || undefined, groupIds: [...f.groupIds] });
+        onSaved({ ...member, id: r.id, email: f.email, name: f.name || f.email, groupIds: [...f.groupIds], active: true, isOwner: false });
+      }
       qc.invalidateQueries({ queryKey: ['members'] }); qc.invalidateQueries({ queryKey: ['groups'] });
-      toast.success(member.id ? 'Membro atualizado' : 'Membro adicionado');
-      onClose();
+      toast.success(member.id ? 'Membro salvo' : 'Membro adicionado');
+      form.markSaved({ ...f, password: '' }); if (!member.id) setF((p) => ({ ...p, password: '' }));
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   return (
-    <Dialog open onClose={onClose} title={member.id ? member.name : 'Adicionar membro'} description={member.id ? member.email : 'Se a pessoa já tem conta no NoPaper, basta o e-mail. Senão, defina nome e senha inicial.'}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} onClick={save}>{member.id ? 'Salvar' : 'Adicionar'}</Button></>}>
+    <Dialog open onClose={onClose} dirty={form.dirty} title={member.id ? member.name : 'Adicionar membro'} description={member.id ? member.email : 'Se a pessoa já tem conta no NoPaper, basta o e-mail. Senão, defina nome e senha inicial.'}
+      footer={<SaveFooter dirty={form.dirty} isNew={!member.id} saving={busy} canSave={!!member.id || !!f.email.trim()} onSave={save} onClose={onClose} saveLabel={member.id ? 'Salvar' : 'Adicionar'} />}>
       <div className="flex flex-col gap-4">
         {!member.id && <>
           <Field label="E-mail"><Input type="email" autoFocus value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
@@ -93,7 +96,7 @@ export function MembersPage() {
           </li>
         ))}
       </ul>
-      {editing && <MemberForm member={editing} onClose={() => setEditing(null)} />}
+      {editing && <MemberForm member={editing} onClose={() => setEditing(null)} onSaved={setEditing} />}
     </Card>
   );
 }

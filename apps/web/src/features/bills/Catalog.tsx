@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Folder, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { COLOR_KEYS, COLOR_PRESETS, type ColorKey } from '@nopaper/shared';
-import { Dialog, useConfirm } from '@/components/ui/dialog';
+import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { Button, Checkbox, Field, IconButton, Input, Segmented } from '@/components/ui/base';
 import { ColorChip } from '@/components/ui/chips';
 import { del, post, put, errMsg } from '@/lib/api';
@@ -29,18 +29,21 @@ export function ColorPicker<K extends string = ColorKey>({ value, onChange, keys
   );
 }
 
-function CategoryForm({ initial, onClose }: { initial: Partial<Category> | null; onClose: () => void }) {
+function CategoryForm({ initial, onClose, onSaved }: { initial: Partial<Category> | null; onClose: () => void; onSaved: (c: Category) => void }) {
   const can = useCan();
   const qc = useQueryClient();
-  const [f, setF] = useState({ label: initial?.label ?? '', color: (initial?.color ?? 'slate') as ColorKey, kind: initial?.kind ?? 'both', isRestricted: initial?.isRestricted ?? false });
+  const [f, setF, form] = useFormState({ label: initial?.label ?? '', color: (initial?.color ?? 'slate') as ColorKey, kind: initial?.kind ?? 'both', isRestricted: initial?.isRestricted ?? false });
   const save = useMutation({
-    mutationFn: () => (initial?.id ? put(`/api/categories/${initial.id}`, f) : post('/api/categories', f)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); toast.success(initial?.id ? 'Categoria atualizada' : 'Categoria criada'); onClose(); },
+    mutationFn: (body: typeof f) => (initial?.id ? put<Category>(`/api/categories/${initial.id}`, body) : post<Category>('/api/categories', body)),
+    onSuccess: (c, body) => {
+      qc.invalidateQueries({ queryKey: ['categories'] }); toast.success(initial?.id ? 'Categoria salva' : 'Categoria criada');
+      form.markSaved(body); onSaved({ ...initial, ...c } as Category);
+    },
     onError: (e) => toast.error(errMsg(e)),
   });
   return (
-    <Dialog open onClose={onClose} title={initial?.id ? 'Editar categoria' : 'Nova categoria'} size="sm"
-      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={save.isPending} disabled={!f.label.trim()} onClick={() => save.mutate()}>Salvar</Button></>}>
+    <Dialog open onClose={onClose} dirty={form.dirty} title={initial?.id ? 'Editar categoria' : 'Nova categoria'} size="sm"
+      footer={<SaveFooter dirty={form.dirty} isNew={!initial?.id} saving={save.isPending} canSave={!!f.label.trim()} onSave={() => save.mutate(f)} onClose={onClose} />}>
       <div className="flex flex-col gap-4">
         <Field label="Nome"><Input autoFocus value={f.label} maxLength={64} onChange={(e) => setF({ ...f, label: e.target.value })} placeholder="Ex.: Retiradas dos sócios" /></Field>
         <Field label="Usada em">
@@ -87,22 +90,25 @@ export function CategoryManager({ open, onClose }: { open: boolean; onClose: () 
           ))}
         </ul>
       </Dialog>
-      {editing !== false && <CategoryForm initial={editing} onClose={() => setEditing(false)} />}
+      {editing !== false && <CategoryForm initial={editing} onClose={() => setEditing(false)} onSaved={setEditing} />}
     </>
   );
 }
 
-function FolderForm({ initial, onClose }: { initial: Partial<FolderT> | null; onClose: () => void }) {
+function FolderForm({ initial, onClose, onSaved }: { initial: Partial<FolderT> | null; onClose: () => void; onSaved: (f: FolderT) => void }) {
   const qc = useQueryClient();
-  const [f, setF] = useState({ label: initial?.label ?? '', name: initial?.name ?? '', color: (initial?.color ?? 'slate') as ColorKey });
+  const [f, setF, form] = useFormState({ label: initial?.label ?? '', name: initial?.name ?? '', color: (initial?.color ?? 'slate') as ColorKey });
   const save = useMutation({
-    mutationFn: () => (initial?.id ? put(`/api/folders/${initial.id}`, f) : post('/api/folders', f)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['folders'] }); toast.success(initial?.id ? 'Pasta atualizada' : 'Pasta criada'); onClose(); },
+    mutationFn: (body: typeof f) => (initial?.id ? put<FolderT>(`/api/folders/${initial.id}`, body) : post<FolderT>('/api/folders', body)),
+    onSuccess: (x, body) => {
+      qc.invalidateQueries({ queryKey: ['folders'] }); toast.success(initial?.id ? 'Pasta salva' : 'Pasta criada');
+      form.markSaved(body); onSaved({ ...initial, ...x } as FolderT);
+    },
     onError: (e) => toast.error(errMsg(e)),
   });
   return (
-    <Dialog open onClose={onClose} title={initial?.id ? 'Editar pasta' : 'Nova pasta'} size="sm"
-      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={save.isPending} disabled={!f.label.trim() || !f.name.trim()} onClick={() => save.mutate()}>Salvar</Button></>}>
+    <Dialog open onClose={onClose} dirty={form.dirty} title={initial?.id ? 'Editar pasta' : 'Nova pasta'} size="sm"
+      footer={<SaveFooter dirty={form.dirty} isNew={!initial?.id} saving={save.isPending} canSave={!!f.label.trim() && !!f.name.trim()} onSave={() => save.mutate(f)} onClose={onClose} />}>
       <div className="flex flex-col gap-4">
         <Field label="Rótulo" hint="Texto curto exibido na tabela (até 32 caracteres)."><Input autoFocus maxLength={32} value={f.label} onChange={(e) => setF({ ...f, label: e.target.value, name: f.name || '' })} placeholder="Ex.: Aluguel" /></Field>
         <Field label="Nome da pasta no ZIP" hint="Nome do diretório criado dentro de ANO/MÊS/ na exportação para a contabilidade. Não use / ou \."><Input maxLength={64} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Ex.: Aluguel da matriz" /></Field>
@@ -139,7 +145,7 @@ export function FolderManager({ open, onClose }: { open: boolean; onClose: () =>
           ))}
         </ul>
       </Dialog>
-      {editing !== false && <FolderForm initial={editing} onClose={() => setEditing(false)} />}
+      {editing !== false && <FolderForm initial={editing} onClose={() => setEditing(false)} onSaved={setEditing} />}
     </>
   );
 }

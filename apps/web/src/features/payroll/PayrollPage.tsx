@@ -3,14 +3,14 @@ import { Link, Navigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  ArrowDown, ArrowUp, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, Landmark, MoreHorizontal, Pencil, Plus, Printer,
+  ArrowDown, ArrowUp, BadgePercent, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, Landmark, MoreHorizontal, Pencil, Plus, Printer,
   Receipt, RotateCcw, Settings2, Trash2, UserPlus, UsersRound, Wallet,
 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import { MONTHS_PT, PAYROLL_PRINT_FIXED, addMonthsRef, mergePrintOrder, type PayrollPrintSettings, formatBRL, formatDateBR, fromCents, payrollTotals, payslipCheck, refLabelPT, sumMoney, toCents, todayISO, type AttachmentSlot } from '@nopaper/shared';
 import { Button, Card, Checkbox, Empty, Field, IconButton, Input, PageHeader, Segmented, Spinner, Switch, Textarea } from '@/components/ui/base';
 import { StatusChip } from '@/components/ui/chips';
-import { Dialog, useConfirm } from '@/components/ui/dialog';
+import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { DatePicker } from '@/components/ui/date-picker';
 import { api, get, post, put, errMsg } from '@/lib/api';
 import { useCan, useOrg } from '@/lib/session';
@@ -19,10 +19,11 @@ import type { Bill } from '@/lib/types';
 import { CountUp } from '@/features/bills/KpiRibbon';
 import { PayDialog } from '@/features/bills/dialogs';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
-import { useMonth, usePayrollMeta, usePeriods, type Entry, type Period, type PeriodSummary, type Rubric } from './data';
+import { useCommissionImport, useMonth, usePayrollMeta, usePeriods, type Entry, type Period, type PeriodSummary, type Rubric } from './data';
 import { EntryDialog } from './EntryDialog';
 import { EmployeesTab } from './Employees';
-import { SettingsDialog } from './SettingsDialog';
+import { SettingsDialog, type SettingsTab } from './SettingsDialog';
+import { CommissionsDialog } from './Commissions';
 import { ImportDialog } from './ImportDialog';
 import { PayrollPrint, amountOf, extraColumnsOf, printColumnsOf, type PrintRow } from './PayrollPrint';
 
@@ -37,8 +38,9 @@ export function PayrollPage() {
   const set = (patch: Record<string, string | null>) => { const n = new URLSearchParams(sp); for (const [k, v] of Object.entries(patch)) v === null ? n.delete(k) : n.set(k, v); setSp(n, { replace: true }); };
   const meta = usePayrollMeta();
   const periods = usePeriods();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState<SettingsTab | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [salesOpen, setSalesOpen] = useState(false);
   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
 
   // vindo de Contas a pagar: ?lancamento=<id> → abre o mês e o lançamento
@@ -61,9 +63,10 @@ export function PayrollPage() {
     <div className="flex flex-col gap-4 sm:gap-6">
       <PageHeader title="Folha de pagamento"
         description="Holerite, metas, comissões e descontos de cada funcionário, mês a mês. Cada salário vira uma conta a pagar."
-        actions={canManage && <>
-          <Button variant="ghost" icon={<FileSpreadsheet className="size-4" />} onClick={() => setImportOpen(true)}>Importar planilha</Button>
-          <Button variant="secondary" icon={<Settings2 className="size-4" />} onClick={() => setSettingsOpen(true)}>Configurar</Button>
+        actions={(canManage || can('payroll.edit')) && <>
+          {can('payroll.edit') && <Button variant="ghost" icon={<BadgePercent className="size-4" />} onClick={() => setSalesOpen(true)}>Importar vendas</Button>}
+          {canManage && <Button variant="ghost" icon={<FileSpreadsheet className="size-4" />} onClick={() => setImportOpen(true)}>Importar planilha</Button>}
+          {canManage && <Button variant="secondary" icon={<Settings2 className="size-4" />} onClick={() => setSettingsOpen('bills')}>Configurar</Button>}
         </>} />
 
       <Segmented className="self-start max-sm:self-stretch" value={tab} onChange={(v) => set({ aba: v === 'mes' ? null : v })} options={[
@@ -71,21 +74,23 @@ export function PayrollPage() {
       ]} />
 
       {!settings.categoryId && canManage && (
-        <p className="rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn">Escolha a categoria das contas de salário em <button className="font-medium underline" onClick={() => setSettingsOpen(true)}>Configurar</button> antes de abrir o primeiro mês.</p>
+        <p className="rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn">Escolha a categoria das contas de salário em <button className="font-medium underline" onClick={() => setSettingsOpen('bills')}>Configurar</button> antes de abrir o primeiro mês.</p>
       )}
 
-      {tab === 'mes' && <MonthView refStr={ref} onRef={(r) => set({ mes: r })} openEntryId={openEntryId} onEntryOpened={() => setOpenEntryId(null)} />}
+      {tab === 'mes' && <MonthView refStr={ref} onRef={(r) => set({ mes: r })} openEntryId={openEntryId} onEntryOpened={() => setOpenEntryId(null)} onConfigure={() => setSettingsOpen('commissions')} />}
       {tab === 'funcionarios' && <EmployeesTab employees={employees} canManage={canManage} onOpenMonth={(r) => set({ aba: null, mes: r })} />}
       {tab === 'historico' && <HistoryView periods={periods.data ?? []} loading={periods.isLoading} onOpen={(r) => set({ aba: null, mes: r })} />}
 
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} rubrics={rubrics} />
+      <SettingsDialog open={!!settingsOpen} initialTab={settingsOpen ?? 'bills'} onClose={() => setSettingsOpen(null)} settings={settings} rubrics={rubrics} employees={employees} />
+      <CommissionsDialog open={salesOpen} onClose={() => setSalesOpen(false)} periods={periods.data ?? []} currentRef={ref} employees={employees} rubrics={rubrics}
+        commissions={settings.commissions} canManage={canManage} onConfigure={() => setSettingsOpen('commissions')} onDone={(r) => set({ aba: null, mes: r })} />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} rubrics={rubrics} existingRefs={(periods.data ?? []).map((p) => p.ref)} onDone={(r) => set({ aba: 'historico', mes: r })} />
     </div>
   );
 }
 
 // ------------------------------------------------------------------ mês
-function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr: string; onRef: (r: string) => void; openEntryId: string | null; onEntryOpened: () => void }) {
+function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure }: { refStr: string; onRef: (r: string) => void; openEntryId: string | null; onEntryOpened: () => void; onConfigure: () => void }) {
   const can = useCan();
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -103,6 +108,18 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
   const [pay, setPay] = useState<{ bill: Bill; proofOnly: boolean } | null>(null);
   const [viewer, setViewer] = useState<FileViewerTarget | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
+  // último relatório de vendas importado neste mês (comissões): dá para rever a tela
+  const commImport = useCommissionImport(period?.id ?? null).data ?? null;
+  const periodsList = usePeriods().data ?? [];
+  const [commOpen, setCommOpen] = useState(false);
+  const commRubrics = new Set(meta.settings.commissions.rules.filter((r) => r.active).map((r) => r.rubricId));
+  const commTotal = sumMoney((m?.entries ?? []).flatMap((e) => e.lines.filter((l) => commRubrics.has(l.rubricId)).map((l) => l.amount)));
+  /** Lançamento recém-criado: a janela passa a editá-lo assim que o mês recarregar. */
+  const [createdId, setCreatedId] = useState<string | null>(null);
+  useEffect(() => {
+    const e = createdId ? m?.entries.find((x) => x.id === createdId) : null;
+    if (e) { setEntryDlg((d) => (d.open ? { open: true, entry: e } : d)); setCreatedId(null); }
+  }, [createdId, m]);
   const [printCfg, setPrintCfg] = useState<PayrollPrintSettings>(meta.settings.print);
   useEffect(() => setPrintCfg(meta.settings.print), [meta.settings.print]);
   /** Guarda as colunas escolhidas (no espaço, quando pode) e abre a impressão do navegador. */
@@ -231,6 +248,16 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
               {canEdit && <button className="font-medium text-accent hover:underline" onClick={enableBills}>Gerar contas a pagar deste mês</button>}
             </p>
           )}
+          {commImport && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-accent-soft/30 px-4 py-2.5 text-sm md:px-5">
+              <BadgePercent className="size-4 shrink-0 text-accent" />
+              <span className="min-w-0 flex-1">
+                Comissões{commImport.from && commImport.to ? <> das vendas de <b className="tnum">{formatDateBR(commImport.from).slice(0, 5)} a {formatDateBR(commImport.to)}</b></> : null}: <b className="tnum">{formatBRL(commTotal)}</b>
+                <span className="block truncate text-xs text-faint">“{commImport.fileName}” · importado em {formatDateBR(commImport.createdAt.slice(0, 10))}{commImport.createdByName ? ` por ${commImport.createdByName}` : ''}</span>
+              </span>
+              <Button size="sm" variant="secondary" onClick={() => setCommOpen(true)}>Ver comissões</Button>
+            </div>
+          )}
           {!rows.length ? <p className="px-5 py-14 text-center text-sm text-muted">Ninguém lançado neste mês.</p> : (
             <>
               {/* desktop: tabela */}
@@ -314,10 +341,14 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened }: { refStr:
       )}
 
       {period && <EntryDialog open={entryDlg.open} entry={entryDlg.entry} period={period} employees={meta.employees} rubrics={meta.rubrics}
-        costs={meta.settings.costs} takenEmployeeIds={entries.map((e) => e.employeeId)} canEdit={canEdit} canManage={can('payroll.manage')} onClose={() => setEntryDlg({ open: false, entry: null })} />}
+        costs={meta.settings.costs} takenEmployeeIds={entries.map((e) => e.employeeId)} canEdit={canEdit} canManage={can('payroll.manage')} onClose={() => setEntryDlg({ open: false, entry: null })}
+        onCreated={setCreatedId} />}
       <OpenMonthDialog open={openDlg} refStr={ref} suggested={m?.suggestedPayDate ?? null} onClose={() => setOpenDlg(false)} />
       {period && rows.length > 0 && <PayrollPrint period={period} rows={rows} rubrics={meta.rubrics} print={printCfg} />}
       {period && rows.length > 0 && <PrintDialog open={printOpen} refStr={ref} rows={rows} rubrics={meta.rubrics} print={printCfg} onClose={() => setPrintOpen(false)} onPrint={doPrint} />}
+      {period && commImport && <CommissionsDialog open={commOpen} onClose={() => setCommOpen(false)} periods={periodsList} currentRef={ref} employees={meta.employees} rubrics={meta.rubrics}
+        commissions={meta.settings.commissions} canManage={can('payroll.manage')} canEdit={canEdit} initial={{ ...commImport, ref }}
+        onConfigure={onConfigure} onDone={() => undefined} />}
       {period && <EditPeriodDialog open={editPeriod} period={period} onClose={() => setEditPeriod(false)} />}
       {pay && <PayDialog bill={pay.bill} proofOnly={pay.proofOnly} onClose={() => setPay(null)} onView={view} />}
       <FileViewer target={viewer} onClose={() => setViewer(null)} />
@@ -407,13 +438,14 @@ function OpenMonthDialog({ open, refStr: ref, suggested, onClose }: { open: bool
 function EditPeriodDialog({ open, period, onClose }: { open: boolean; period: Period; onClose: () => void }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const [payDate, setPayDate] = useState(period.payDate);
-  const [notes, setNotes] = useState(period.notes ?? '');
+  const [f, setF, form] = useFormState({ payDate: period.payDate, notes: period.notes ?? '' });
+  const { payDate, notes } = f;
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setPayDate(period.payDate); setNotes(period.notes ?? ''); } }, [open, period]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) form.load({ payDate: period.payDate, notes: period.notes ?? '' }); }, [open, period.payDate, period.notes]);
   const save = async () => {
     setBusy(true);
-    try { await put(`/api/payroll/periods/${period.id}`, { payDate, notes }); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Mês atualizado'); onClose(); } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+    try { await put(`/api/payroll/periods/${period.id}`, f); form.markSaved(f); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Mês salvo'); } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   const remove = async () => {
     const ok = await confirm({ title: `Apagar a folha de ${refLabelPT(period.ref)}?`, tone: 'danger', confirmLabel: 'Apagar mês',
@@ -422,14 +454,12 @@ function EditPeriodDialog({ open, period, onClose }: { open: boolean; period: Pe
     try { await api('DELETE', `/api/payroll/periods/${period.id}`); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Mês apagado'); onClose(); } catch (e) { toast.error(errMsg(e)); }
   };
   return (
-    <Dialog open={open} onClose={onClose} size="sm" title={`Folha de ${refLabelPT(period.ref)}`}
-      footer={<>
-        <Button variant="ghost" className="mr-auto text-danger hover:text-danger" icon={<Trash2 className="size-4" />} onClick={remove}>Apagar mês</Button>
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!payDate} onClick={save}>Salvar</Button>
-      </>}>
+    <Dialog open={open} onClose={onClose} dirty={form.dirty} size="sm" title={`Folha de ${refLabelPT(period.ref)}`}
+      footer={<SaveFooter dirty={form.dirty} saving={busy} canSave={!!payDate} onSave={save} onClose={onClose}
+        left={<Button variant="ghost" className="mr-auto text-danger hover:text-danger" icon={<Trash2 className="size-4" />} onClick={remove}>Apagar mês</Button>} />}>
       <div className="flex flex-col gap-4">
-        <Field label="Data do pagamento" hint={period.billsEnabled ? 'Muda o vencimento das contas de salário ainda pendentes.' : undefined}><DatePicker value={payDate} onChange={setPayDate} /></Field>
-        <Field label="Observações"><Textarea maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+        <Field label="Data do pagamento" hint={period.billsEnabled ? 'Muda o vencimento das contas de salário ainda pendentes.' : undefined}><DatePicker value={payDate} onChange={(payDate) => setF((p) => ({ ...p, payDate }))} /></Field>
+        <Field label="Observações"><Textarea maxLength={1000} value={notes} onChange={(e) => setF((p) => ({ ...p, notes: e.target.value }))} /></Field>
       </div>
     </Dialog>
   );

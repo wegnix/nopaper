@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Building2, Crown, KeyRound, LogOut, Pencil, Search, ShieldCheck, UserPlus } from 'lucide-react';
 import { usernameFromEmail } from '@nopaper/shared';
 import { Button, Card, Field, IconButton, Input, Spinner, Switch } from '@/components/ui/base';
-import { Dialog } from '@/components/ui/dialog';
+import { Dialog, SaveFooter, useFormState } from '@/components/ui/dialog';
 import { errMsg, get, post, put } from '@/lib/api';
 import { useSession, type SessionPayload } from '@/lib/session';
 import { cn } from '@/lib/utils';
@@ -93,7 +93,7 @@ export function UsersPage() {
           {!rows.length && <li className="px-5 py-10 text-center text-sm text-faint">Nenhuma conta encontrada.</li>}
         </ul>
       )}
-      {editing && <UserForm user={editing === 'new' ? null : editing} selfId={me.id} onClose={() => setEditing(null)} />}
+      {editing && <UserForm user={editing === 'new' ? null : editing} selfId={me.id} onClose={() => setEditing(null)} onSaved={setEditing} />}
       {resetting && <ResetPassword user={resetting} onClose={() => setResetting(null)} />}
     </Card>
   );
@@ -108,10 +108,10 @@ function Badge({ children, tone }: { children: React.ReactNode; tone?: 'accent' 
   );
 }
 
-function UserForm({ user, selfId, onClose }: { user: PUser | null; selfId: string; onClose: () => void }) {
+function UserForm({ user, selfId, onClose, onSaved }: { user: PUser | null; selfId: string; onClose: () => void; onSaved: (u: PUser) => void }) {
   const qc = useQueryClient();
   const self = user?.id === selfId;
-  const [f, setF] = useState({
+  const [f, setF, form] = useFormState({
     name: user?.name ?? '', email: user?.email ?? '', username: user?.username ?? '', password: '',
     active: user?.active ?? true, isSuperadmin: user?.isSuperadmin ?? false, canCreateOrgs: user?.canCreateOrgs ?? false,
   });
@@ -119,18 +119,21 @@ function UserForm({ user, selfId, onClose }: { user: PUser | null; selfId: strin
   const save = async () => {
     setBusy(true);
     try {
-      if (user) await put(`/api/system/users/${user.id}`, { name: f.name, email: f.email, username: f.username, active: f.active, isSuperadmin: f.isSuperadmin, canCreateOrgs: f.canCreateOrgs });
-      else await post('/api/system/users', { name: f.name, email: f.email, username: f.username || undefined, password: f.password, isSuperadmin: f.isSuperadmin, canCreateOrgs: f.canCreateOrgs });
+      const u = user
+        ? await put<PUser>(`/api/system/users/${user.id}`, { name: f.name, email: f.email, username: f.username, active: f.active, isSuperadmin: f.isSuperadmin, canCreateOrgs: f.canCreateOrgs })
+        : await post<PUser>('/api/system/users', { name: f.name, email: f.email, username: f.username || undefined, password: f.password, isSuperadmin: f.isSuperadmin, canCreateOrgs: f.canCreateOrgs });
       qc.invalidateQueries({ queryKey: ['system', 'users'] });
       if (self) useSession.getState().setSession(await get<SessionPayload>('/api/auth/me'));
-      toast.success(user ? 'Conta atualizada' : 'Conta criada. A pessoa cria a própria senha no primeiro acesso.');
-      onClose();
+      toast.success(user ? 'Conta salva' : 'Conta criada. A pessoa cria a própria senha no primeiro acesso.');
+      const saved = { ...f, password: '', username: u?.username ?? f.username };
+      form.load(saved);
+      if (!user && u?.id) onSaved(u);
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   return (
-    <Dialog open onClose={onClose} title={user ? user.name : 'Nova conta'}
+    <Dialog open onClose={onClose} dirty={form.dirty} title={user ? user.name : 'Nova conta'}
       description={user ? 'Dados de acesso e permissões da conta na plataforma.' : 'A conta é criada sem espaço: depois, adicione a pessoa em Membros do espaço desejado (ou deixe que ela crie o próprio).'}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} disabled={f.name.trim().length < 2 || !f.email.trim() || (!user && f.password.length < 8)} onClick={save}>{user ? 'Salvar' : 'Criar conta'}</Button></>}>
+      footer={<SaveFooter dirty={form.dirty} isNew={!user} saving={busy} canSave={f.name.trim().length >= 2 && !!f.email.trim() && (!!user || f.password.length >= 8)} onSave={save} onClose={onClose} saveLabel={user ? 'Salvar' : 'Criar conta'} />}>
       <div className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nome"><Input value={f.name} autoFocus={!user} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>

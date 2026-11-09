@@ -3,38 +3,62 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowDown, ArrowUp, CalendarCheck, Minus, Pin, Plus, Trash2 } from 'lucide-react';
 import { FGTS_PCT, MONTHS_PT, PAYROLL_REGIMES, PAYROLL_REGIME_LABEL, PAYROLL_SECTIONS, PAYROLL_SECTION_LABEL, defaultPayDate, employerInssPct, type PayrollCosts, formatDateBR, todayISO, type PayrollKind, type PayrollSection, type PayrollSettings } from '@nopaper/shared';
-import { Dialog, useConfirm } from '@/components/ui/dialog';
+import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { DayPicker } from '@/components/ui/day-picker';
 import { Button, Field, IconButton, Input, Segmented, Select, Switch } from '@/components/ui/base';
 import { api, post, put, errMsg } from '@/lib/api';
 import { useCategories, useFolders } from '@/lib/queries';
 import { cn } from '@/lib/utils';
-import { SECTION_HINT, useRubricMove, type Rubric } from './data';
+import { SECTION_HINT, useRubricMove, type Employee, type Rubric } from './data';
+import { CommissionsEditor } from './Commissions';
 
-export function SettingsDialog({ open, onClose, settings, rubrics }: { open: boolean; onClose: () => void; settings: PayrollSettings; rubrics: Rubric[] }) {
+export type SettingsTab = 'bills' | 'costs' | 'commissions' | 'rubrics';
+
+export function SettingsDialog({ open, onClose, settings, rubrics, employees, initialTab = 'bills' }: { open: boolean; onClose: () => void; settings: PayrollSettings; rubrics: Rubric[]; employees: Employee[]; initialTab?: SettingsTab }) {
   const qc = useQueryClient();
   const { data: cats = [] } = useCategories();
   const { data: folders = [] } = useFolders();
   const payCats = cats.filter((c) => c.kind !== 'receivable');
-  const [tab, setTab] = useState<'bills' | 'costs' | 'rubrics'>('bills');
-  const [f, setF] = useState(settings);
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
+  const [f, setF, fForm] = useFormState(settings);
+  const [cm, setCm, cmForm] = useFormState(settings.commissions);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) setF(settings); }, [open, settings]);
+  // só ao abrir: salvar uma aba recarrega `settings` e não pode apagar o que está em edição na outra
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) { fForm.load(settings); cmForm.load(settings.commissions); } }, [open]);
+  useEffect(() => { if (open) setTab(initialTab); }, [open, initialTab]);
+  const saveCommissions = async () => {
+    const bad = cm.rules.find((r) => !r.name.trim() || !r.groups.length || !r.rubricId);
+    if (bad) { toast.error(`Complete a regra ${bad.name.trim() ? `“${bad.name.trim()}”` : 'sem nome'}: nome, grupos de produtos e rubrica.`); return; }
+    setBusy(true);
+    try {
+      await put('/api/payroll/settings/commissions', { rules: cm.rules, groups: settings.commissions.groups });
+      cmForm.markSaved(cm);
+      qc.invalidateQueries({ queryKey: ['bills'] });
+      toast.success('Regras de comissão salvas');
+    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+  };
   const nextRef = todayISO().slice(0, 7);
   const save = async () => {
     setBusy(true);
     try {
       await put('/api/payroll/settings', { ...f, folderId: f.folderId || null, paymentMethod: f.paymentMethod || null });
+      fForm.markSaved(f);
       qc.invalidateQueries({ queryKey: ['bills'] });
       toast.success('Configuração salva');
-      onClose();
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   return (
-    <Dialog open={open} onClose={onClose} size="lg" title="Configurar folha de pagamento"
-      footer={tab !== 'rubrics' ? <><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!f.categoryId} onClick={save}>Salvar</Button></> : <Button variant="ghost" onClick={onClose}>Fechar</Button>}>
-      <Segmented className="mb-4" value={tab} onChange={setTab} options={[{ value: 'bills', label: 'Contas a pagar' }, { value: 'costs', label: 'Custos' }, { value: 'rubrics', label: 'Rubricas' }]} />
-      {tab === 'costs' ? <CostsEditor value={f.costs} onChange={(costs) => setF({ ...f, costs })} /> : tab === 'bills' ? (
+    <Dialog open={open} onClose={onClose} dirty={fForm.dirty || cmForm.dirty} size="lg" title="Configurar folha de pagamento"
+      footer={tab === 'rubrics' ? <SaveFooter dirty={fForm.dirty || cmForm.dirty} readOnly onSave={save} onClose={onClose} />
+        : tab === 'commissions' ? <SaveFooter dirty={cmForm.dirty} saving={busy} onSave={saveCommissions} onClose={onClose} saveLabel="Salvar regras" />
+          : <SaveFooter dirty={fForm.dirty} saving={busy} canSave={!!f.categoryId} onSave={save} onClose={onClose} />}>
+      <Segmented className="mb-4 max-sm:hidden" value={tab} onChange={setTab} options={TABS} />
+      <Select className="mb-4 sm:hidden" aria-label="Seção" value={tab} onChange={(e) => setTab(e.target.value as SettingsTab)}>
+        {TABS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+      </Select>
+      {tab === 'commissions' ? <CommissionsEditor value={cm} onChange={setCm} knownGroups={settings.commissions.groups} rubrics={rubrics} employees={employees} />
+        : tab === 'costs' ? <CostsEditor value={f.costs} onChange={(costs) => setF({ ...f, costs })} /> : tab === 'bills' ? (
         <div className="flex flex-col gap-6">
           <section className="flex flex-col gap-4">
             <div>
@@ -89,6 +113,10 @@ export function SettingsDialog({ open, onClose, settings, rubrics }: { open: boo
     </Dialog>
   );
 }
+
+const TABS: Array<{ value: SettingsTab; label: string }> = [
+  { value: 'bills', label: 'Contas a pagar' }, { value: 'costs', label: 'Custos' }, { value: 'commissions', label: 'Comissões' }, { value: 'rubrics', label: 'Rubricas' },
+];
 
 function RubricsEditor({ rubrics }: { rubrics: Rubric[] }) {
   const qc = useQueryClient();

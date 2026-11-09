@@ -187,7 +187,7 @@ export function CardsPage() {
         </>
       )}
 
-      <CardFormDialog open={cardForm.open} card={cardForm.card} onClose={() => setCardForm({ open: false, card: null })} onSaved={(id) => set({ cartao: id, fatura: null })} onDeleted={() => set({ cartao: null, fatura: null })} />
+      <CardFormDialog open={cardForm.open} card={cardForm.card} onClose={() => setCardForm({ open: false, card: null })} onSaved={(c) => { setCardForm({ open: true, card: c }); if (c.id !== selId) set({ cartao: c.id, fatura: null }); }} onDeleted={() => set({ cartao: null, fatura: null })} />
       {card && <TxFormDialog card={card} open={txForm.open} tx={txForm.tx} onClose={() => setTxForm({ open: false, tx: null })} />}
       {pay && <PayDialog bill={pay.bill} proofOnly={pay.proofOnly} onClose={() => setPay(null)} onView={view} />}
       <FileViewer target={viewer} onClose={() => setViewer(null)} />

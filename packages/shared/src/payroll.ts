@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { money, isoDate, documentSchema } from './schemas.js';
 import { fromCents, parseMoneyInput, toCents } from './money.js';
 import { daysInMonth, toISODate, MONTHS_PT_SHORT } from './dates.js';
+import { DEFAULT_PAYROLL_COMMISSIONS, payrollCommissionsSchema } from './commissions.js';
 
 /**
  * Folha de pagamento (só em espaços do tipo Empresa).
@@ -203,6 +204,8 @@ export const employeeSchema = z.object({
   active: z.boolean().default(true),
   pixKey: optText(140),
   phone: phoneSchema,
+  /** Código do vendedor no relatório de vendas (comissões). Vazio = não recebe comissão. */
+  sellerCode: z.string().max(20).nullish().transform((v) => (v && v.trim() ? v.trim() : null)),
   bankInfo: optText(255),
   notes: optText(1000),
 });
@@ -264,6 +267,7 @@ export const payrollSettingsSchema = z.object({
   paymentMethod: optText(64),
   costs: payrollCostsSchema.default(DEFAULT_PAYROLL_COSTS),
   print: payrollPrintSchema.default({ hidden: [], order: [] }),
+  commissions: payrollCommissionsSchema.default(DEFAULT_PAYROLL_COMMISSIONS),
 });
 export type PayrollSettings = z.infer<typeof payrollSettingsSchema>;
 

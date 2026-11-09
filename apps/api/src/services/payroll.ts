@@ -1,7 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
-  DEFAULT_PAYROLL_COSTS, DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, payslipCheck, refLabelPT, formatBRL, toCents, type PayrollSettings,
+  DEFAULT_PAYROLL_COMMISSIONS, DEFAULT_PAYROLL_COSTS, DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, payslipCheck, refLabelPT, formatBRL, toCents, type PayrollSettings,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import type { DBOrTx } from '../db/client.js';
@@ -66,7 +66,7 @@ export async function getPayrollSettings(orgId: string, conn: DBOrTx = db): Prom
     .where(and(eq(schema.categories.orgId, orgId), sql`lower(${schema.categories.label}) = 'salário'`, sql`${schema.categories.kind} <> 'receivable'`));
   const [folder] = await conn.select({ id: schema.folders.id }).from(schema.folders)
     .where(and(eq(schema.folders.orgId, orgId), sql`upper(${schema.folders.label}) = 'FUNCIONARIO'`));
-  return { categoryId: cat?.id ?? null, folderId: folder?.id ?? null, payDay: 0, payMonth: 'next', paymentMethod: 'PIX', costs: DEFAULT_PAYROLL_COSTS, print: { hidden: [], order: [] } };
+  return { categoryId: cat?.id ?? null, folderId: folder?.id ?? null, payDay: 0, payMonth: 'next', paymentMethod: 'PIX', costs: DEFAULT_PAYROLL_COSTS, print: { hidden: [], order: [] }, commissions: DEFAULT_PAYROLL_COMMISSIONS };
 }
 
 export async function savePayrollSettings(orgId: string, value: PayrollSettings) {

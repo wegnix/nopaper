@@ -8,6 +8,28 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.6.0] - 2026-11-09
+
+### Novo
+- Folha de pagamento: **comissões pelo relatório de vendas**. Em Configurar → Comissões, crie as
+  regras (grupos de produtos, % sobre o valor de vendas ou R$ por unidade, metas como "30 unidades ou
+  mais paga R$ 5 por unidade" e a rubrica onde o valor entra). Todo mês, no botão **Importar vendas**
+  da Folha de pagamento, envie o PDF "Vendas Vendedor e Grupo Produtos": o mês da folha vem do período
+  do relatório (dá para trocar), a prévia mostra a conta de cada vendedor e, ao confirmar, os valores
+  entram nos lançamentos (importar de novo substitui, não duplica). Depois de importar, o mês mostra o
+  resumo das comissões e o botão **Ver comissões**, que reabre a tela para conferir, mudar as ligações
+  de vendedores ou lançar de novo após mudar uma regra (sem enviar o PDF outra vez).
+- Cadastro do funcionário: campo **Código de vendedor** (o número do relatório de vendas). Só quem tem
+  código recebe comissão; dá para ligar também na hora de importar o relatório.
+
+### Melhorado
+- Janelas de cadastro e configuração (configurar a folha, funcionário, lançamento e mês da folha,
+  contas a pagar/receber, cartão e compra no cartão, categoria, pasta, grupo, membro e usuário):
+  **Salvar** grava e mantém a janela aberta, com o aviso "Alterações não salvas"/"Tudo salvo";
+  **Fechar** fecha quando você quiser e pergunta antes de descartar o que não foi salvo. Ao criar algo,
+  a janela continua aberta já editando o que foi criado (na compra do cartão, fica pronta para a
+  próxima compra).
+
 ## [1.5.0] - 2026-11-06
 
 ### Novo

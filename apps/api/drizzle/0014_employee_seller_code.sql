@@ -1,0 +1,2 @@
+ALTER TABLE "employees" ADD COLUMN "seller_code" varchar(20);--> statement-breakpoint
+CREATE UNIQUE INDEX "employees_org_seller_uq" ON "employees" USING btree ("org_id","seller_code") WHERE "employees"."seller_code" is not null;

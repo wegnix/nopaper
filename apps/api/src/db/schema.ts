@@ -268,6 +268,8 @@ export const employees = pgTable('employees', {
   pixKey: varchar('pix_key', { length: 140 }),
   /** Telefone/WhatsApp, formatado "(11) 91234-5678". */
   phone: varchar('phone', { length: 32 }),
+  /** Código do vendedor no relatório de vendas (comissões). */
+  sellerCode: varchar('seller_code', { length: 20 }),
   bankInfo: varchar('bank_info', { length: 255 }),
   notes: text('notes'),
   /** Criado por uma importação da planilha (desfazer a importação remove se não tiver outros meses). */
@@ -275,7 +277,10 @@ export const employees = pgTable('employees', {
   createdBy: uuid('created_by'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [uniqueIndex('employees_org_name_uq').on(t.orgId, sql`lower(${t.name})`)]);
+}, (t) => [
+  uniqueIndex('employees_org_name_uq').on(t.orgId, sql`lower(${t.name})`),
+  uniqueIndex('employees_org_seller_uq').on(t.orgId, t.sellerCode).where(sql`${t.sellerCode} is not null`),
+]);
 
 /** Rubricas: holerite (proventos/descontos), fora do holerite (extras/descontos) e encargos da empresa. */
 export const payrollRubrics = pgTable('payroll_rubrics', {
@@ -334,6 +339,25 @@ export const payrollEntryLines = pgTable('payroll_entry_lines', {
   amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
   note: varchar('note', { length: 120 }),
 }, (t) => [index('payroll_lines_entry_idx').on(t.entryId), index('payroll_lines_rubric_idx').on(t.rubricId)]);
+
+/**
+ * Relatórios de vendas importados para as comissões (o mais recente de cada mês é o que vale).
+ * Guarda o relatório lido e o resultado, para rever a tela depois sem enviar o PDF de novo.
+ */
+export const payrollCommissionImports = pgTable('payroll_commission_imports', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  periodId: uuid('period_id').notNull().references(() => payrollPeriods.id, { onDelete: 'cascade' }),
+  fileName: varchar('file_name', { length: 200 }).notNull(),
+  dateFrom: date('date_from'),
+  dateTo: date('date_to'),
+  /** Vendedores e grupos do relatório (SalesSeller[]). */
+  sellers: jsonb('sellers').notNull(),
+  /** Resultado ao aplicar (applied/skipped/linked/missing). */
+  result: jsonb('result').notNull(),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+}, (t) => [index('payroll_comm_imports_period_idx').on(t.periodId, t.createdAt)]);
 
 // ------------------------------------------------------------------ importações
 export const importBatches = pgTable('import_batches', {

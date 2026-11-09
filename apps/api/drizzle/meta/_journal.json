@@ -99,6 +99,20 @@
       "when": 1793971805337,
       "tag": "0013_employee_phone",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794236094468,
+      "tag": "0014_employee_seller_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794238878665,
+      "tag": "0015_payroll_commission_imports",
+      "breakpoints": true
     }
   ]
 }

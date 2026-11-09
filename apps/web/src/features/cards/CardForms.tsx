@@ -6,7 +6,7 @@ import {
   CARD_BRANDS, CARD_BRAND_LABEL, CARD_COLOR_KEYS, CARD_COLOR_PRESETS, MONTHS_PT_SHORT, addMonthsRef, cycleForPurchase, formatBRL, formatDateBR, parseMoneyInput,
   splitInstallments, todayISO, type CardBrand, type CardColorKey,
 } from '@nopaper/shared';
-import { Dialog } from '@/components/ui/dialog';
+import { Dialog, SaveFooter, useFormState } from '@/components/ui/dialog';
 import { DayPicker } from '@/components/ui/day-picker';
 import { Button, Field, Input, Select, Spinner, Switch, Textarea } from '@/components/ui/base';
 import { del, get, post, put, errMsg } from '@/lib/api';
@@ -17,18 +17,18 @@ import { MoneyInput } from '@/features/bills/MoneyInput';
 
 export const refLabel = (ref: string) => `${MONTHS_PT_SHORT[Number(ref.slice(5, 7)) - 1]}/${ref.slice(0, 4)}`;
 
-export function CardFormDialog({ card, open, onClose, onSaved, onDeleted }: { card: Card | null; open: boolean; onClose: () => void; onSaved?: (id: string) => void; onDeleted?: () => void }) {
+export function CardFormDialog({ card, open, onClose, onSaved, onDeleted }: { card: Card | null; open: boolean; onClose: () => void; onSaved?: (c: Card) => void; onDeleted?: () => void }) {
   const qc = useQueryClient();
   const { data: cats = [] } = useCategories();
   const { data: folders = [] } = useFolders();
   const payCats = cats.filter((c) => c.kind !== 'receivable');
-  const [f, setF] = useState({ name: '', brand: 'mastercard' as CardBrand, last4: '', color: 'indigo' as CardColorKey, limitAmount: '', closingDay: 1, dueDay: 10, billCategoryId: '', billFolderId: '', holder: '', active: true });
+  const [f, setF, form] = useFormState({ name: '', brand: 'mastercard' as CardBrand, last4: '', color: 'indigo' as CardColorKey, limitAmount: '', closingDay: 1, dueDay: 10, billCategoryId: '', billFolderId: '', holder: '', active: true });
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   useEffect(() => {
     if (!open) return;
-    if (card) setF({ name: card.name, brand: card.brand as CardBrand, last4: card.last4 ?? '', color: card.color as CardColorKey, limitAmount: card.limitAmount ?? '', closingDay: card.closingDay, dueDay: card.dueDay, billCategoryId: card.billCategoryId, billFolderId: card.billFolderId ?? '', holder: card.holder ?? '', active: card.active });
-    else setF((p) => ({ ...p, name: '', last4: '', limitAmount: '', holder: '', billCategoryId: payCats.find((c) => /cart/i.test(c.label))?.id ?? payCats[0]?.id ?? '' }));
+    if (card) form.load({ name: card.name, brand: card.brand as CardBrand, last4: card.last4 ?? '', color: card.color as CardColorKey, limitAmount: card.limitAmount ?? '', closingDay: card.closingDay, dueDay: card.dueDay, billCategoryId: card.billCategoryId, billFolderId: card.billFolderId ?? '', holder: card.holder ?? '', active: card.active });
+    else form.load({ ...f, name: '', last4: '', limitAmount: '', holder: '', billFolderId: '', active: true, billCategoryId: payCats.find((c) => /cart/i.test(c.label))?.id ?? payCats[0]?.id ?? '' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, card?.id]);
   const save = async () => {
@@ -37,17 +37,15 @@ export function CardFormDialog({ card, open, onClose, onSaved, onDeleted }: { ca
       const body = { ...f, limitAmount: f.limitAmount || null, billFolderId: f.billFolderId || null, last4: f.last4 || null, holder: f.holder || null };
       const r = card ? await put<Card>(`/api/cards/${card.id}`, body) : await post<Card>('/api/cards', body);
       qc.invalidateQueries({ queryKey: ['bills'] });
-      toast.success(card ? 'Cartão atualizado' : 'Cartão cadastrado');
-      onSaved?.(r.id); onClose();
+      toast.success(card ? 'Cartão salvo' : 'Cartão cadastrado');
+      form.markSaved(f); onSaved?.(r);
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   const cycle = cycleForPurchase(todayISO(), f.closingDay, f.dueDay);
   return (
-    <Dialog open={open} onClose={onClose} title={card ? 'Editar cartão' : 'Novo cartão'} description="Nunca guardamos o número completo do cartão — só os 4 últimos dígitos para você reconhecê-lo."
-      footer={<>
-        {card && <Button variant="ghost" className="mr-auto text-danger hover:text-danger" icon={<Trash2 className="size-4" />} onClick={() => setDeleting(true)}>Apagar cartão</Button>}
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!f.name.trim() || !f.billCategoryId} onClick={save}>Salvar cartão</Button>
-      </>}>
+    <Dialog open={open} onClose={onClose} dirty={form.dirty} title={card ? 'Editar cartão' : 'Novo cartão'} description="Nunca guardamos o número completo do cartão — só os 4 últimos dígitos para você reconhecê-lo."
+      footer={<SaveFooter dirty={form.dirty} isNew={!card} saving={busy} canSave={!!f.name.trim() && !!f.billCategoryId} onSave={save} onClose={onClose} saveLabel="Salvar cartão"
+        left={card && <Button variant="ghost" className="mr-auto text-danger hover:text-danger" icon={<Trash2 className="size-4" />} onClick={() => setDeleting(true)}>Apagar cartão</Button>} />}>
       <div className="flex flex-col gap-4">
         <div className="grid sm:grid-cols-[1fr_140px] gap-4">
           <Field label="Nome" required><Input autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Ex.: BTG Black, Nubank" /></Field>
@@ -151,12 +149,13 @@ export function TxFormDialog({ card, tx, open, onClose }: { card: Card; tx: Card
   const qc = useQueryClient();
   const { data: cats = [] } = useCategories();
   const expCats = cats.filter((c) => c.kind !== 'receivable');
-  const [f, setF] = useState({ description: '', categoryId: '', amount: '', purchaseDate: todayISO(), installments: 1, notes: '', refund: false });
+  const [f, setF, form] = useFormState({ description: '', categoryId: '', amount: '', purchaseDate: todayISO(), installments: 1, notes: '', refund: false });
+  const blankTx = () => ({ description: '', categoryId: expCats[0]?.id ?? '', amount: '', purchaseDate: todayISO(), installments: 1, notes: '', refund: false });
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!open) return;
-    if (tx) setF({ description: tx.description, categoryId: tx.categoryId, amount: tx.totalAmount.replace('-', ''), purchaseDate: tx.purchaseDate, installments: tx.totalInstallments, notes: tx.notes ?? '', refund: tx.totalAmount.startsWith('-') });
-    else setF({ description: '', categoryId: expCats[0]?.id ?? '', amount: '', purchaseDate: todayISO(), installments: 1, notes: '', refund: false });
+    if (tx) form.load({ description: tx.description, categoryId: tx.categoryId, amount: tx.totalAmount.replace('-', ''), purchaseDate: tx.purchaseDate, installments: tx.totalInstallments, notes: tx.notes ?? '', refund: tx.totalAmount.startsWith('-') });
+    else form.load(blankTx());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx?.id]);
   const preview = useMemo(() => {
@@ -173,14 +172,18 @@ export function TxFormDialog({ card, tx, open, onClose }: { card: Card; tx: Card
       if (tx) await put(`/api/card-transactions/${tx.id}`, { description: f.description, categoryId: f.categoryId, notes: f.notes || null, amount, purchaseDate: f.purchaseDate, installments: f.installments, scope: 'group' });
       else await post('/api/card-transactions', { cardId: card.id, description: f.description, categoryId: f.categoryId, amount, purchaseDate: f.purchaseDate, installments: f.installments, notes: f.notes || null });
       qc.invalidateQueries({ queryKey: ['bills'] });
-      toast.success(tx ? 'Lançamento atualizado' : 'Lançamento adicionado');
-      onClose();
+      if (tx) { toast.success('Lançamento salvo'); form.markSaved(f); }
+      else {
+        // compra lançada: a janela fica pronta para a próxima (mesma data e categoria)
+        toast.success(`“${f.description}” lançado. Pode lançar a próxima compra.`);
+        form.load({ ...blankTx(), purchaseDate: f.purchaseDate, categoryId: f.categoryId });
+      }
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   return (
-    <Dialog open={open} onClose={onClose} title={tx ? 'Editar lançamento' : `Lançar no ${card.name}`}
+    <Dialog open={open} onClose={onClose} dirty={form.dirty} title={tx ? 'Editar lançamento' : `Lançar no ${card.name}`}
       description={tx && tx.totalInstallments > 1 ? 'Mudar valor, data ou parcelas recalcula todas as parcelas desta compra.' : undefined}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} disabled={!f.description.trim() || !f.categoryId || !parseMoneyInput(f.amount)} onClick={save}>{tx ? 'Salvar' : 'Lançar'}</Button></>}>
+      footer={<SaveFooter dirty={form.dirty} isNew={!tx} saving={busy} canSave={!!f.description.trim() && !!f.categoryId && !!parseMoneyInput(f.amount)} onSave={save} onClose={onClose} saveLabel={tx ? 'Salvar' : 'Lançar'} />}>
       <div className="flex flex-col gap-4">
         <Field label="Descrição" required><Input autoFocus value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Ex.: Mercado, Farmácia, Passagem" /></Field>
         <div className="grid sm:grid-cols-3 gap-4">

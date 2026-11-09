@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ChevronRight, MessageCircle, Search, Trash2, UserPlus, UsersRound } from 'lucide-react';
 import { MONTHS_PT_SHORT, formatBRL, formatDateBR, formatPhoneBR, fromCents, refLabelPT, toCents, whatsappLink } from '@nopaper/shared';
-import { Dialog, useConfirm } from '@/components/ui/dialog';
+import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button, Card, Empty, Field, Input, Segmented, Switch, Textarea } from '@/components/ui/base';
 import { DocumentField } from '@/components/ui/document-input';
@@ -46,14 +46,14 @@ export function EmployeesTab({ employees, canManage, onOpenMonth }: { employees:
               <span className={cn('grid size-11 shrink-0 place-items-center rounded-full font-display text-sm font-semibold', e.active ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-faint')}>{initials(e.name)}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{e.name}</span>
-                <span className="block truncate text-xs text-muted">{e.role || (e.active ? 'Ativo' : 'Desligado')}{e.admissionDate ? ` · desde ${formatDateBR(e.admissionDate)}` : ''}</span>
+                <span className="block truncate text-xs text-muted">{e.role || (e.active ? 'Ativo' : 'Desligado')}{e.admissionDate ? ` · desde ${formatDateBR(e.admissionDate)}` : ''}{e.sellerCode ? ` · vendedor ${e.sellerCode}` : ''}</span>
                 <span className="block truncate text-xs text-faint">{e.months ? `${plural(e.months, 'mês', 'meses')} na folha · último ${refLabelPT(e.lastRef!)}` : 'Ainda sem lançamentos'}</span>
               </span>
             </button>
           ))}
         </div>
       )}
-      <EmployeeDialog open={form.open} emp={form.emp} canManage={canManage} onClose={() => setForm({ open: false, emp: null })} onOpenMonth={(r) => { setForm({ open: false, emp: null }); onOpenMonth(r); }} />
+      <EmployeeDialog open={form.open} emp={form.emp} canManage={canManage} onClose={() => setForm({ open: false, emp: null })} onCreated={(emp) => setForm({ open: true, emp })} onOpenMonth={(r) => { setForm({ open: false, emp: null }); onOpenMonth(r); }} />
     </div>
   );
 }
@@ -64,20 +64,20 @@ interface HistoryRow { ref: string; billsEnabled: boolean; paidAt: string | null
 const isPaid = (h: HistoryRow) => h.billStatus === 'paid' || (!h.billsEnabled && h.billStatus === null);
 const sumC = (rows: HistoryRow[], f: (h: HistoryRow) => string) => rows.reduce((a, h) => a + toCents(f(h)), 0);
 
-function EmployeeDialog({ open, emp, canManage, onClose, onOpenMonth }: { open: boolean; emp: Employee | null; canManage: boolean; onClose: () => void; onOpenMonth: (ref: string) => void }) {
+function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth }: { open: boolean; emp: Employee | null; canManage: boolean; onClose: () => void; onCreated: (e: Employee) => void; onOpenMonth: (ref: string) => void }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const orgId = useSession((s) => s.orgId);
-  const blank = { name: '', document: '', role: '', admissionDate: '', terminationDate: '', active: true, pixKey: '', phone: '', bankInfo: '', notes: '' };
-  const [f, setF] = useState(blank);
+  const blank = { name: '', document: '', role: '', admissionDate: '', terminationDate: '', active: true, pixKey: '', phone: '', sellerCode: '', bankInfo: '', notes: '' };
+  const [f, setF, form] = useFormState(blank);
   const [tab, setTab] = useState<'data' | 'history'>('data');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!open) return;
     setTab('data');
-    setF(emp ? {
+    form.load(emp ? {
       name: emp.name, document: emp.document ?? '', role: emp.role ?? '', admissionDate: emp.admissionDate ?? '', terminationDate: emp.terminationDate ?? '',
-      active: emp.active, pixKey: emp.pixKey ?? '', phone: emp.phone ?? '', bankInfo: emp.bankInfo ?? '', notes: emp.notes ?? '',
+      active: emp.active, pixKey: emp.pixKey ?? '', phone: emp.phone ?? '', sellerCode: emp.sellerCode ?? '', bankInfo: emp.bankInfo ?? '', notes: emp.notes ?? '',
     } : blank);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, emp?.id]);
@@ -89,10 +89,11 @@ function EmployeeDialog({ open, emp, canManage, onClose, onOpenMonth }: { open: 
   const save = async () => {
     setBusy(true);
     try {
-      if (emp) await put(`/api/payroll/employees/${emp.id}`, f); else await post('/api/payroll/employees', f);
+      const r = emp ? await put<Employee>(`/api/payroll/employees/${emp.id}`, f) : await post<Employee>('/api/payroll/employees', f);
       qc.invalidateQueries({ queryKey: ['bills'] });
-      toast.success(emp ? 'Funcionário atualizado' : 'Funcionário cadastrado');
-      onClose();
+      toast.success(emp ? 'Funcionário salvo' : 'Funcionário cadastrado');
+      form.markSaved(f);
+      onCreated({ ...r, months: emp?.months ?? 0, lastRef: emp?.lastRef ?? null });
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   const remove = async () => {
@@ -102,12 +103,10 @@ function EmployeeDialog({ open, emp, canManage, onClose, onOpenMonth }: { open: 
   };
   const wa = whatsappLink(f.phone);
   return (
-    <Dialog open={open} onClose={onClose} size="lg" title={emp ? emp.name : 'Novo funcionário'}
-      footer={tab === 'data' ? <>
-        {emp && canManage && emp.months === 0 && <Button variant="ghost" className="mr-auto text-danger hover:text-danger" icon={<Trash2 className="size-4" />} onClick={remove}>Apagar</Button>}
-        <Button variant="ghost" onClick={onClose}>{ro ? 'Fechar' : 'Cancelar'}</Button>
-        {!ro && <Button variant="primary" loading={busy} disabled={!f.name.trim()} onClick={save}>Salvar</Button>}
-      </> : <Button variant="ghost" onClick={onClose}>Fechar</Button>}>
+    <Dialog open={open} onClose={onClose} dirty={form.dirty && !ro} size="lg" title={emp ? emp.name : 'Novo funcionário'}
+      footer={tab === 'data' ? <SaveFooter dirty={form.dirty} isNew={!emp} readOnly={ro} saving={busy} canSave={!!f.name.trim()} onSave={save} onClose={onClose}
+        left={emp && canManage && emp.months === 0 && <Button variant="ghost" className="mr-auto text-danger hover:text-danger" icon={<Trash2 className="size-4" />} onClick={remove}>Apagar</Button>} />
+        : <SaveFooter dirty={form.dirty} readOnly onSave={save} onClose={onClose} />}>
       {emp && <Segmented className="mb-4" value={tab} onChange={setTab} options={[{ value: 'data', label: 'Dados' }, { value: 'history', label: `Histórico (${emp.months})` }]} />}
       {tab === 'data' ? (
         <fieldset disabled={ro} className="grid gap-4 sm:grid-cols-2">
@@ -124,7 +123,10 @@ function EmployeeDialog({ open, emp, canManage, onClose, onOpenMonth }: { open: 
             </div>
           </Field>
           <Field label="Chave PIX" hint="Vai para a conta a pagar do salário."><Input maxLength={140} value={f.pixKey} onChange={(e) => setF({ ...f, pixKey: e.target.value })} /></Field>
-          <Field label="Banco / agência / conta" className="sm:col-span-2"><Input maxLength={255} value={f.bankInfo} onChange={(e) => setF({ ...f, bankInfo: e.target.value })} placeholder="Ex.: Bradesco 237 · ag. 0000 · cc 00000-0" /></Field>
+          <Field label="Código de vendedor" hint="O número ao lado do nome no relatório de vendas (“Vendedor: 2 …”). Vazio = não recebe comissão.">
+            <Input inputMode="numeric" maxLength={20} className="tnum" value={f.sellerCode} placeholder="Não recebe comissão" onChange={(e) => setF({ ...f, sellerCode: e.target.value })} />
+          </Field>
+          <Field label="Banco / agência / conta"><Input maxLength={255} value={f.bankInfo} onChange={(e) => setF({ ...f, bankInfo: e.target.value })} placeholder="Ex.: Bradesco 237 · ag. 0000 · cc 00000-0" /></Field>
           <Field label="Observações" className="sm:col-span-2"><Textarea maxLength={1000} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
           <div className="sm:col-span-2"><Switch checked={f.active} onChange={(active) => setF({ ...f, active })} label="Ativo" hint="Só os ativos entram automaticamente ao abrir um mês novo. O histórico de quem saiu continua." /></div>
         </fieldset>
