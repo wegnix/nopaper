@@ -93,9 +93,12 @@ export function SettingsDialog({ open, onClose, settings, rubrics, employees, in
                 <DayPicker aria-label="Dia do pagamento" value={f.payDay} onChange={(payDay) => setF({ ...f, payDay })} special={{ value: 0, label: '5º dia útil' }} />
               </div>
               <div className="flex min-w-0 flex-col gap-1.5">
-                <span className="text-[13px] font-medium text-muted">Mês do pagamento</span>
+                <span className="text-[13px] font-medium text-muted">A folha leva o nome do mês…</span>
                 <Segmented className="w-full" value={f.payMonth} onChange={(payMonth) => setF({ ...f, payMonth })}
-                  options={[{ value: 'next', label: 'Seguinte à competência' }, { value: 'same', label: 'Mesmo da competência' }]} />
+                  options={[{ value: 'same', label: 'do pagamento' }, { value: 'next', label: 'trabalhado' }]} />
+                <span className="text-xs text-faint">{f.payMonth === 'same'
+                  ? 'Folha de novembro = paga em novembro (trabalho, holerites e vendas de outubro).'
+                  : 'Folha de outubro = trabalho de outubro, paga em novembro (holerites e vendas de outubro).'}</span>
               </div>
             </div>
             <div className="flex items-start gap-3 rounded-lg bg-accent-soft/50 px-3.5 py-3">
@@ -126,7 +129,7 @@ function RubricsEditor({ rubrics }: { rubrics: Rubric[] }) {
   const moveRubric = useRubricMove();
   const move = (r: Rubric, dir: -1 | 1) => moveRubric(rubrics, rubrics.filter((x) => x.section === r.section), r, dir);
   const update = async (r: Rubric, patch: Partial<Rubric>) => {
-    try { await put(`/api/payroll/rubrics/${r.id}`, { name: r.name, section: r.section, kind: r.kind, fixed: r.fixed, active: r.active, ...patch }); refresh(); } catch (e) { toast.error(errMsg(e)); }
+    try { await put(`/api/payroll/rubrics/${r.id}`, { name: r.name, section: r.section, kind: r.kind, fixed: r.fixed, active: r.active, laborCharges: r.laborCharges, ...patch }); refresh(); } catch (e) { toast.error(errMsg(e)); }
   };
   const remove = async (r: Rubric) => {
     if (!(await confirm({ title: `Apagar a rubrica "${r.name}"?`, tone: 'danger', confirmLabel: 'Apagar' }))) return;
@@ -138,7 +141,7 @@ function RubricsEditor({ rubrics }: { rubrics: Rubric[] }) {
   };
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-xs text-faint">Rubricas com <Pin className="inline size-3" /> são copiadas para o mês seguinte ao abrir a folha (ex.: salário base, INSS). As outras começam em branco todo mês. Uma rubrica já usada pode ser renomeada ou desativada, mas não mudar de grupo. Use <ArrowUp className="inline size-3" /> <ArrowDown className="inline size-3" /> para mudar a ordem em que aparecem no lançamento e na impressão.</p>
+      <p className="text-xs text-faint">Rubricas com <Pin className="inline size-3" /> são copiadas para o mês seguinte ao abrir a folha (ex.: salário base, INSS). As outras começam em branco todo mês. Uma rubrica já usada pode ser renomeada ou desativada, mas não mudar de grupo. Vencimento marcado <b>sem FGTS</b> (pró-labore de sócio) não entra no cálculo de FGTS, 13º e férias. Use <ArrowUp className="inline size-3" /> <ArrowDown className="inline size-3" /> para mudar a ordem em que aparecem no lançamento e na impressão.</p>
       {PAYROLL_SECTIONS.map((s) => (
         <section key={s}>
           <div className="flex items-center justify-between gap-2 border-b border-line pb-2">
@@ -178,6 +181,13 @@ function RubricRow({ r, onUpdate, onRemove, onUp, onDown }: { r: Rubric; onUpdat
       {r.section !== 'employer' && (r.kind === 'deduction' ? <Minus className="size-4 shrink-0 text-danger" aria-label="desconta" /> : <Plus className="size-4 shrink-0 text-ok" aria-label="soma" />)}
       <Input aria-label="Nome" className="h-9 min-w-40 flex-1" maxLength={64} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== r.name && onUpdate({ name: name.trim() })} />
       <span className="text-xs text-faint tnum">{r.usage ? `${r.usage} uso(s)` : 'sem uso'}</span>
+      {r.section === 'payslip' && r.kind === 'earning' && (
+        <button type="button" onClick={() => onUpdate({ laborCharges: !r.laborCharges })}
+          title={r.laborCharges ? 'Conta para FGTS, 13º e férias. Clique para tirar (pró-labore de sócio).' : 'Não conta para FGTS, 13º e férias (pró-labore). Clique para voltar a contar.'}
+          className={cn('h-7 shrink-0 rounded-full border px-2.5 text-[11px] font-medium pointer-coarse:h-9', r.laborCharges ? 'border-line text-muted hover:text-ink' : 'border-accent/40 bg-accent-soft text-accent')}>
+          {r.laborCharges ? 'com FGTS' : 'sem FGTS'}
+        </button>
+      )}
       <IconButton label={r.fixed ? 'Copiada para o mês seguinte (clique para não copiar)' : 'Não é copiada (clique para copiar ao abrir o mês)'} onClick={() => onUpdate({ fixed: !r.fixed })}
         className={r.fixed ? 'text-accent' : undefined}><Pin className="size-4" /></IconButton>
       <div className="w-[92px]"><Switch checked={r.active} onChange={(active) => onUpdate({ active })} label={<span className="text-xs text-muted">{r.active ? 'Ativa' : 'Inativa'}</span>} /></div>

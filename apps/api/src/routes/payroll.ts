@@ -2,14 +2,14 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
-  billPerm, commissionByRubric, commissionNote, defaultPayDate, mergeCommissionGroups, parseSalesReport, payrollCommissionApplySchema, payrollCommissionsSchema,
+  billPerm, PAYSLIP_ADJUST_NOTE, isProLabore, parsePayslips, payrollPayslipApplySchema, payslipRubricFor, commissionByRubric, commissionNote, defaultPayDate, mergeCommissionGroups, parseSalesReport, payrollCommissionApplySchema, payrollCommissionsSchema,
   reportGroups, sellerCommission, employeeSchema, payrollEntryCreateSchema, payrollEntrySchema, payrollImportSchema,
   payrollPeriodCreateSchema, payrollPeriodUpdateSchema, payrollPrintSchema, payrollRubricOrderSchema, payrollRubricSchema, payrollSettingsSchema, personKey,
-  refLabelPT, sumMoney, toCents, type Permission,
+  refLabelPT, sumMoney, toCents, fromCents, type Permission,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { env } from '../env.js';
-import { pdfToRows } from '../services/pdf.js';
+import { pdfToCells, pdfToRows } from '../services/pdf.js';
 import { parse } from '../lib/validate.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
@@ -17,7 +17,7 @@ import { audit } from '../lib/audit.js';
 import { assertCategoryUsable, assertFolder, attachmentsFor, serialize } from '../services/bills.js';
 import {
   assertCompany, assertEntryEditable, deleteEntries, ensurePayrollDefaults, getPayrollSettings, loadEmployee, loadEntry,
-  loadPeriod, paidBillsCount, recomputeCosts, rubricsOf, savePayrollSettings, syncEntries, writeEntry,
+  loadPeriod, paidBillsCount, recomputeCosts, rewriteOpenEntries, rubricsOf, savePayrollSettings, syncEntries, writeEntry,
 } from '../services/payroll.js';
 
 /** Violação de índice único (o drizzle embrulha o erro do pg em `cause`). */
@@ -27,8 +27,8 @@ const isUniqueViolation = (err: unknown) => {
 };
 const violated = (err: unknown) => { const e = err as { constraint?: string; cause?: { constraint?: string } }; return e.constraint ?? e.cause?.constraint ?? ''; };
 /** Mensagem do índice único violado no cadastro de funcionário (nome ou código de vendedor). */
-const employeeConflict = (err: unknown, body: { name: string; sellerCode?: string | null }) =>
-  violated(err).includes('seller') ? conflict(`O código de vendedor ${body.sellerCode} já é de outro funcionário`) : conflict(`Já existe um funcionário chamado "${body.name}"`);
+const employeeConflict = (err: unknown, body: { name: string; sellerCode?: string | null; payslipCode?: string | null }) =>
+  violated(err).includes('payslip') ? conflict(`A matrícula ${body.payslipCode} (holerite) já é de outro funcionário`) : violated(err).includes('seller') ? conflict(`O código de vendedor ${body.sellerCode} já é de outro funcionário`) : conflict(`Já existe um funcionário chamado "${body.name}"`);
 
 const guard = (...p: Permission[]) => ({
   preHandler: [requirePerm(...p), async (req: FastifyRequest) => { assertCompany(req); }],
@@ -74,6 +74,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     // impressão e comissões têm rotas próprias: a tela de configuração pode estar com uma cópia velha
     body.print = before.print;
     body.commissions = before.commissions;
+    body.payslips = before.payslips;
     await savePayrollSettings(req.org!.id, body);
     // contas pendentes passam a usar a categoria/pasta/forma de pagamento novas
     const ids = await pendingEntryIds(eq(schema.payrollEntries.orgId, req.org!.id));
@@ -136,6 +137,179 @@ export default async function payrollRoutes(app: FastifyInstance) {
     return { fileName: file.filename.slice(0, 200), report };
   });
 
+  // ------------------------------------------------------------ holerites do contador (PDF)
+  /** Lê o PDF dos holerites: um por funcionário, com as linhas e o valor líquido. Não grava nada. */
+  app.post('/api/payroll/payslips/read', edit, async (req) => {
+    const file = await req.file({ limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
+    if (!file) throw badRequest('Envie o PDF dos holerites');
+    const buf = await file.toBuffer();
+    if (file.file.truncated) throw badRequest(`Arquivo maior que ${env.MAX_UPLOAD_MB} MB`);
+    if (buf.subarray(0, 5).toString('latin1') !== '%PDF-') throw badRequest('O arquivo não é um PDF. Envie o PDF dos holerites que o contador manda.');
+    let cells;
+    try { cells = await pdfToCells(buf, 200); } catch { throw badRequest('Não consegui ler este PDF. Peça o arquivo de novo ao contador e tente outra vez.'); }
+    const report = parsePayslips(cells);
+    if (!report.slips.length) throw badRequest('Não achei holerites neste PDF. Ele precisa ser o PDF original do contador ("Recibo de Pagamento de Salário"), não uma foto ou digitalização.', 'payslips_unknown');
+    return { fileName: file.filename.slice(0, 200), report };
+  });
+
+  /**
+   * Lança os holerites no mês: as rubricas do holerite de cada funcionário são substituídas pelas
+   * linhas do PDF e o valor líquido vira o de conferência. Extras/descontos por fora e outros custos
+   * ficam como estão. Salário já pago fica de fora. Ligações novas (matrícula → funcionário, linha →
+   * rubrica), cadastros e rubricas novas exigem gerenciar a folha.
+   */
+  app.post<{ Params: { id: string } }>('/api/payroll/periods/:id/payslips', edit, async (req) => {
+    const body = parse(payrollPayslipApplySchema, req.body);
+    const orgId = req.org!.id;
+    const p = await loadPeriod(orgId, req.params.id);
+    const canManage = req.org!.can('payroll.manage');
+    const needManage = (what: string) => { if (!canManage) throw forbidden(`${what} exige a permissão de gerenciar a folha.`); };
+    if (new Set(body.slips.map((s) => s.code)).size !== body.slips.length) throw badRequest('Holerite repetido no envio');
+    const out = await db.transaction(async (tx) => {
+      const settings = await getPayrollSettings(orgId, tx);
+      let rubrics = await rubricsOf(orgId, tx);
+      // ---- rubrica de cada linha: escolha da prévia → ligação salva → mesmo nome
+      const choice = new Map(body.rubrics.map((r) => [r.key, r]));
+      const map: Record<string, string> = { ...settings.payslips.map };
+      const createdRubrics: string[] = [];
+      const items = new Map<string, { key: string; name: string; kind: 'earning' | 'deduction' }>();
+      for (const s of body.slips) for (const i of s.items) {
+        const seen = items.get(i.key);
+        if (seen && seen.kind !== i.kind) throw badRequest(`"${i.name}" aparece como vencimento e como desconto no PDF. Lance este holerite à mão.`);
+        items.set(i.key, i);
+      }
+      for (const item of items.values()) {
+        const c = choice.get(item.key);
+        let rubric = c?.rubricId ? rubrics.find((r) => r.id === c.rubricId) ?? null : null;
+        if (c?.rubricId && !rubric) throw badRequest(`A rubrica escolhida para "${item.name}" não existe mais.`);
+        if (c?.createName) {
+          const same = rubrics.find((r) => personKey(r.name) === personKey(c.createName!));
+          if (same) rubric = same;
+          else {
+            needManage('Criar rubrica');
+            const max = rubrics.reduce((a, r) => Math.max(a, r.sortOrder), 0);
+            const [r] = await tx.insert(schema.payrollRubrics).values({ orgId, name: c.createName, section: 'payslip', kind: item.kind, fixed: false, laborCharges: !isProLabore(c.createName), sortOrder: max + 1 }).returning();
+            rubrics = [...rubrics, r];
+            rubric = r;
+            createdRubrics.push(r.name);
+          }
+        }
+        rubric ??= payslipRubricFor(item, rubrics, map);
+        if (!rubric) throw badRequest(`Escolha a rubrica de "${item.name}" antes de lançar.`, 'payslip_rubric');
+        if (rubric.section !== 'payslip' || rubric.kind !== item.kind) {
+          throw badRequest(`"${item.name}" é ${item.kind === 'earning' ? 'vencimento' : 'desconto'} do holerite, mas a rubrica "${rubric.name}" não é. Escolha outra.`);
+        }
+        if (map[item.key] !== rubric.id) {
+          // 1ª vez com rubrica de mesmo nome não é "decisão": qualquer um que lança pode gravar
+          if (c || map[item.key]) needManage('Mudar a rubrica de uma linha do holerite');
+          map[item.key] = rubric.id;
+        }
+      }
+      const mapChanged = JSON.stringify(map) !== JSON.stringify(settings.payslips.map);
+      // (savePayrollSettings usa a conexão global; grava depois da transação)
+
+      // ---- funcionário de cada holerite
+      const emps = await tx.select().from(schema.employees).where(eq(schema.employees.orgId, orgId));
+      const createdEmployees: string[] = [];
+      const linked: Array<{ code: string; employee: string }> = [];
+      const target = new Map<string, (typeof emps)[number]>();
+      for (const s of body.slips) {
+        let emp = s.employeeId ? emps.find((e) => e.id === s.employeeId) ?? null : null;
+        if (s.employeeId && !emp) throw badRequest('Funcionário inválido');
+        if (s.create) {
+          needManage('Cadastrar funcionário');
+          if (emps.some((e) => personKey(e.name) === personKey(s.create!.name))) throw conflict(`Já existe um funcionário chamado "${s.create.name}". Ligue o holerite a ele (ou mude o nome).`);
+          const holder = emps.find((e) => e.payslipCode === s.code);
+          if (holder) { await tx.update(schema.employees).set({ payslipCode: null }).where(eq(schema.employees.id, holder.id)); holder.payslipCode = null; }
+          const [e] = await tx.insert(schema.employees).values({
+            orgId, name: s.create.name, role: s.create.role, admissionDate: s.create.admissionDate ?? null, document: s.create.document, payslipCode: s.code,
+            payslipOnly: s.create.payslipOnly, active: true, createdBy: req.user!.id,
+          }).returning();
+          emps.push(e);
+          emp = e;
+          createdEmployees.push(e.payslipOnly ? `${e.name} (só holerite)` : e.name);
+        }
+        if (!emp) throw badRequest('Escolha o funcionário de cada holerite');
+        if ([...target.values()].some((e) => e.id === emp!.id)) throw badRequest(`${emp.name} foi escolhido para dois holerites.`);
+        if (emp.payslipCode !== s.code) {
+          needManage('Ligar um holerite a um funcionário');
+          const holder = emps.find((e) => e.payslipCode === s.code);
+          if (holder) { await tx.update(schema.employees).set({ payslipCode: null }).where(eq(schema.employees.id, holder.id)); holder.payslipCode = null; }
+          await tx.update(schema.employees).set({ payslipCode: s.code }).where(eq(schema.employees.id, emp.id));
+          emp.payslipCode = s.code;
+          linked.push({ code: s.code, employee: emp.name });
+        }
+        target.set(s.code, emp);
+      }
+
+      // ---- lançamentos
+      const rmap = new Map(rubrics.map((r) => [r.id, r]));
+      const adjust = (id: string | null | undefined, kind: 'earning' | 'deduction') => {
+        const r = id ? rmap.get(id) : rubrics.find((x) => x.section === 'extra' && x.kind === kind && personKey(x.name) === (kind === 'earning' ? 'outros proventos' : 'outros descontos'));
+        if (r && (r.section !== 'extra' || r.kind !== kind)) throw badRequest('A rubrica da diferença precisa ser de fora do holerite.');
+        return r ?? null;
+      };
+      const entries = await tx.select().from(schema.payrollEntries).where(eq(schema.payrollEntries.periodId, p.id));
+      const applied: Array<{ employee: string; net: string; total: string; created: boolean; changes: Record<string, { from: unknown; to: unknown }> }> = [];
+      const skipped: Array<{ employee: string; reason: string }> = [];
+      let unchanged = 0;
+      for (const s of body.slips) {
+        const emp = target.get(s.code)!;
+        const sum = (k: 'earning' | 'deduction') => s.items.filter((i) => i.kind === k).reduce((a, i) => a + toCents(i.amount), 0);
+        if (sum('earning') - sum('deduction') !== toCents(s.net)) throw badRequest(`O holerite de ${emp.name} não fecha com o valor líquido (${s.net}). Lance este à mão.`);
+        const entry = entries.find((e) => e.employeeId === emp.id);
+        if (entry?.billId) {
+          const [b] = await tx.select({ status: schema.bills.status }).from(schema.bills).where(eq(schema.bills.id, entry.billId));
+          if (b?.status === 'paid') { skipped.push({ employee: emp.name, reason: 'salário já pago' }); continue; }
+        }
+        const old = entry ? await tx.select().from(schema.payrollEntryLines).where(eq(schema.payrollEntryLines.entryId, entry.id)) : [];
+        // linhas do holerite, somadas por rubrica (duas linhas do PDF podem cair na mesma)
+        const slipLines = new Map<string, { rubricId: string; amount: number; notes: string[] }>();
+        for (const i of s.items) {
+          const rid = map[i.key]!;
+          const l = slipLines.get(rid) ?? { rubricId: rid, amount: 0, notes: [] };
+          l.amount += toCents(i.amount);
+          if (i.ref) l.notes.push(i.ref);
+          slipLines.set(rid, l);
+        }
+        const payslipLines = [...slipLines.values()].map((l) => ({ rubricId: l.rubricId, amount: fromCents(l.amount), note: l.notes.join(' + ').slice(0, 120) || null }));
+        const hasAgreed = s.agreedNet !== null && s.agreedNet !== undefined && !emp.payslipOnly;
+        // com combinado informado, a diferença anterior (linha com a nota) sai e entra a nova
+        const kept = old.filter((l) => rmap.get(l.rubricId)?.section !== 'payslip' && !(hasAgreed && l.note === PAYSLIP_ADJUST_NOTE))
+          .map((l) => ({ rubricId: l.rubricId, amount: l.amount, note: l.note }));
+        let lines = [...kept, ...payslipLines];
+        if (hasAgreed) {
+          const diff = toCents(s.agreedNet!) - toCents(s.net);
+          if (diff !== 0) {
+            const r = adjust(diff > 0 ? body.adjustEarningId : body.adjustDeductionId, diff > 0 ? 'earning' : 'deduction');
+            if (!r) throw badRequest(`Para pagar a ${emp.name} um valor diferente do holerite, escolha a rubrica que recebe a diferença.`, 'payslip_adjust');
+            lines = [...lines, { rubricId: r.id, amount: fromCents(Math.abs(diff)), note: PAYSLIP_ADJUST_NOTE }];
+          }
+        }
+        const sig = (ls: Array<{ rubricId: string; amount: string; note?: string | null }>) => JSON.stringify(ls.map((l) => [l.rubricId, toCents(l.amount), l.note === PAYSLIP_ADJUST_NOTE]).sort());
+        if (entry && entry.payslipNetDeclared !== null && toCents(entry.payslipNetDeclared) === toCents(s.net) && sig(old) === sig(lines)) { unchanged++; continue; }
+        const r = await writeEntry(tx, orgId, req.user!.id, {
+          entryId: entry?.id, periodId: p.id, employeeId: emp.id, payslipNet: '0', payslipNetDeclared: s.net, lines, notes: entry?.notes ?? null,
+        });
+        const changes: Record<string, { from: unknown; to: unknown }> = {};
+        if (!entry || toCents(entry.payslipNet) !== toCents(r.totals.payslipNet)) changes.payslipNet = { from: entry?.payslipNet ?? null, to: r.totals.payslipNet };
+        if (!entry || toCents(entry.total) !== toCents(r.totals.total)) changes.total = { from: entry?.total ?? null, to: r.totals.total };
+        const asText = (ls: Array<{ rubricId: string; amount: string }>) => Object.fromEntries(ls.map((l) => [rmap.get(l.rubricId)?.name ?? l.rubricId, l.amount]));
+        changes.rubricas = { from: asText(old), to: asText(lines) };
+        applied.push({ employee: emp.name, net: r.totals.payslipNet, total: r.totals.total, created: !entry, changes });
+      }
+      return { applied, skipped, unchanged, linked, createdEmployees, createdRubrics, map: mapChanged ? map : null, settings };
+    });
+    if (out.map) await savePayrollSettings(orgId, { ...(await getPayrollSettings(orgId)), payslips: { map: out.map } });
+    const result = { applied: out.applied, skipped: out.skipped, unchanged: out.unchanged, linked: out.linked, createdEmployees: out.createdEmployees, createdRubrics: out.createdRubrics };
+    await audit(req, {
+      action: 'payroll.payslips', entityType: 'payroll_period', entityId: p.id,
+      description: `Importou os holerites de "${body.fileName}" na folha de ${refLabelPT(p.ref)} (${out.applied.length} funcionário(s))`,
+      details: { fileName: body.fileName, ...result },
+    });
+    return result;
+  });
+
   app.post('/api/payroll/employees', manage, async (req) => {
     const body = parse(employeeSchema, req.body);
     try {
@@ -158,6 +332,8 @@ export default async function payrollRoutes(app: FastifyInstance) {
       if (isUniqueViolation(err)) throw employeeConflict(err, body);
       throw err;
     }
+    // "só holerite" mudou: os meses em aberto passam a (não) gerar valor a pagar
+    if (u.payslipOnly !== e.payslipOnly) await db.transaction((tx) => rewriteOpenEntries(tx, req.org!.id, e.id, req.user!.id));
     // nome/PIX novos nas contas ainda pendentes
     if (u.name !== e.name || u.pixKey !== e.pixKey) {
       const ids = await pendingEntryIds(eq(schema.payrollEntries.employeeId, e.id));
@@ -200,7 +376,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     await ensurePayrollDefaults(req.org!.id);
     const [{ max }] = await db.select({ max: sql<number>`coalesce(max(${schema.payrollRubrics.sortOrder}), 0)::int` }).from(schema.payrollRubrics).where(eq(schema.payrollRubrics.orgId, req.org!.id));
     try {
-      const [r] = await db.insert(schema.payrollRubrics).values({ ...body, kind: body.section === 'employer' ? 'earning' : body.kind, orgId: req.org!.id, sortOrder: max + 1 }).returning();
+      const [r] = await db.insert(schema.payrollRubrics).values({ ...body, kind: body.section === 'employer' ? 'earning' : body.kind, laborCharges: body.laborCharges && !isProLabore(body.name), orgId: req.org!.id, sortOrder: max + 1 }).returning();
       await audit(req, { action: 'payroll.rubric.create', entityType: 'payroll_rubric', entityId: r.id, description: `Criou a rubrica ${r.name}` });
       return r;
     } catch (err) {
@@ -235,7 +411,9 @@ export default async function payrollRoutes(app: FastifyInstance) {
     }
     try {
       const [u] = await db.update(schema.payrollRubrics).set({ ...body, kind }).where(eq(schema.payrollRubrics.id, r.id)).returning();
-      await audit(req, { action: 'payroll.rubric.update', entityType: 'payroll_rubric', entityId: r.id, description: `Editou a rubrica ${u.name}`, details: { changes: { name: { from: r.name, to: u.name }, active: { from: r.active, to: u.active }, fixed: { from: r.fixed, to: u.fixed } } } });
+      // mudou se o provento conta para FGTS/13º/férias: o custo gravado dos lançamentos acompanha
+      if (u.laborCharges !== r.laborCharges) await db.transaction((tx) => recomputeCosts(req.org!.id, tx));
+      await audit(req, { action: 'payroll.rubric.update', entityType: 'payroll_rubric', entityId: r.id, description: `Editou a rubrica ${u.name}`, details: { changes: { name: { from: r.name, to: u.name }, active: { from: r.active, to: u.active }, fixed: { from: r.fixed, to: u.fixed }, ...(u.laborCharges !== r.laborCharges ? { laborCharges: { from: r.laborCharges, to: u.laborCharges } } : {}) } } });
       return u;
     } catch (err) {
       if (isUniqueViolation(err)) throw conflict(`Já existe uma rubrica chamada "${body.name}"`);

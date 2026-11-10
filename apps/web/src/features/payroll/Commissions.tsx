@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, BadgePercent, Check, Settings2, FileText, Link2, Plus, Target, Trash2, Upload, UserRound, X } from 'lucide-react';
 import {
-  COMMISSION_BASES, COMMISSION_BASE_LABEL, commissionByRubric, commissionFormula, formatBRL, formatDateBR, personKey, refLabelPT, sellerCommission, sumMoney, toCents,
+  addMonthsRef, COMMISSION_BASES, COMMISSION_BASE_LABEL, commissionByRubric, commissionFormula, formatBRL, formatDateBR, personKey, refLabelPT, sellerCommission, sumMoney, toCents,
   type CommissionGroupRef, type CommissionRule, type PayrollCommissions, type SalesReport,
 } from '@nopaper/shared';
 import { Dialog } from '@/components/ui/dialog';
@@ -173,7 +173,9 @@ interface ApplyResult {
   missing: string[];
 }
 
-export function CommissionsDialog({ open, onClose, periods, currentRef, employees, rubrics, commissions, canManage, canEdit = true, onConfigure, onDone, initial }: {
+export function CommissionsDialog({ open, onClose, periods, currentRef, employees, rubrics, commissions, canManage, canEdit = true, onConfigure, onDone, initial , payMonth = 'next' }: {
+  /** Como o espaço conta a folha: 'same' = pelo mês do pagamento (vendas de um mês entram na folha do seguinte). */
+  payMonth?: 'same' | 'next';
   open: boolean; onClose: () => void; periods: PeriodSummary[]; currentRef: string; employees: Employee[]; rubrics: Rubric[]; commissions: PayrollCommissions;
   canManage: boolean; canEdit?: boolean; onConfigure: () => void; onDone: (ref: string) => void;
   /** Rever uma importação já feita (sem enviar o PDF de novo). */
@@ -199,11 +201,19 @@ export function CommissionsDialog({ open, onClose, periods, currentRef, employee
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial?.id]);
   const hasRef = (r: string) => periods.some((p) => p.ref === r);
+  /** Folha que paga as vendas de um mês: quem vende num mês recebe no seguinte (mesma regra dos holerites). */
+  const folhaOf = (salesRef: string) => (payMonth === 'same' ? addMonthsRef(salesRef, 1) : salesRef);
 
   const rules = commissions.rules.filter((r) => r.active);
   const rname = useMemo(() => new Map(rubrics.map((r) => [r.id, r.name])), [rubrics]);
   const target = useMemo(() => new Set(rules.map((r) => r.rubricId)), [rules]);
   const empById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+  /** Rubricas usadas por mais de uma regra ativa (os valores se somam nela). */
+  const sharedRubrics = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const r of rules) m.set(r.rubricId, [...(m.get(r.rubricId) ?? []), r.name]);
+    return [...m].filter(([, names]) => names.length > 1);
+  }, [rules]);
 
   const pick = async (f: File) => {
     setReading(true);
@@ -212,7 +222,7 @@ export function CommissionsDialog({ open, onClose, periods, currentRef, employee
       const r = await api<{ fileName: string; report: SalesReport }>('POST', '/api/payroll/commissions/read', fd);
       setLinks({});
       setFile(r);
-      const rr = r.report.to?.slice(0, 7);
+      const rr = r.report.to ? folhaOf(r.report.to.slice(0, 7)) : undefined;
       if (!initial) setRef(rr && hasRef(rr) ? rr : hasRef(currentRef) ? currentRef : periods[0]?.ref ?? currentRef);
       qc.invalidateQueries({ queryKey: ['bills'] }); // grupos novos na configuração
     } catch (e) { toast.error(errMsg(e)); } finally { setReading(false); if (fileRef.current) fileRef.current.value = ''; }
@@ -247,7 +257,8 @@ export function CommissionsDialog({ open, onClose, periods, currentRef, employee
     const m = employees.filter((e) => e.active && !usedBy(e.id, s.code) && !rows.some((r) => r.emp?.id === e.id) && (() => { const a = personKey(e.name); return a === b || b.startsWith(`${a} `) || a.startsWith(`${b} `); })());
     return m.length === 1 ? m[0] : null;
   };
-  const reportRef = file?.report.to?.slice(0, 7) ?? null;
+  const salesRef = file?.report.to?.slice(0, 7) ?? null;
+  const reportRef = salesRef ? folhaOf(salesRef) : null;
 
   const run = async () => {
     if (!file || !period) return;
@@ -316,11 +327,18 @@ export function CommissionsDialog({ open, onClose, periods, currentRef, employee
             {month.isFetching && <Spinner className="size-4" />}
           </div>
           {reportRef && !hasRef(reportRef) && (
-            <p className="flex items-start gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn"><AlertTriangle className="mt-0.5 size-4 shrink-0" />A folha de {refLabelPT(reportRef)} (mês das vendas) ainda não foi aberta. Abra o mês na Folha de pagamento ou escolha outro mês acima.</p>
+            <p className="flex items-start gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn"><AlertTriangle className="mt-0.5 size-4 shrink-0" />A folha de {refLabelPT(reportRef)} ({reportRef !== salesRef ? `onde se pagam as vendas de ${refLabelPT(salesRef!)}` : 'mês das vendas'}) ainda não foi aberta. Abra o mês na Folha de pagamento ou escolha outro mês acima.</p>
           )}
           {reportRef && hasRef(reportRef) && hasRef(ref) && reportRef !== ref && (
-            <p className="flex items-start gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn"><AlertTriangle className="mt-0.5 size-4 shrink-0" />O relatório é de {refLabelPT(reportRef)} e você escolheu a folha de {refLabelPT(ref)}. Confira se é o mês certo.</p>
+            <p className="flex items-start gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn"><AlertTriangle className="mt-0.5 size-4 shrink-0" />As vendas são de {refLabelPT(salesRef!)}{reportRef !== salesRef ? `, pagas na folha de ${refLabelPT(reportRef)},` : ''} e {initial ? 'esta é' : 'você escolheu'} a folha de {refLabelPT(ref)}. Confira se é o mês certo.</p>
           )}
+          {sharedRubrics.map(([rid, names]) => (
+            <p key={rid} className="flex flex-wrap items-start gap-x-2 gap-y-1 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span className="min-w-0 flex-1">As regras {names.join(', ')} lançam na mesma rubrica “{rname.get(rid) ?? 'rubrica'}”: os valores entram somados nela. Para cada uma ficar no seu lugar, escolha uma rubrica diferente para cada regra.</span>
+              {canManage && <button type="button" className="font-medium underline" onClick={onConfigure}>Abrir regras</button>}
+            </p>
+          ))}
           {file.report.warnings.map((w) => <p key={w} className="flex items-start gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{w}</p>)}
 
           {linked.length ? (

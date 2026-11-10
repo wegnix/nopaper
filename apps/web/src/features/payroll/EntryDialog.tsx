@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, CircleCheck, Lock, Minus, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Check, CircleCheck, Ghost, Lock, Minus, Plus, Trash2 } from 'lucide-react';
 import { FGTS_PCT, PAYROLL_SECTION_LABEL, employerInssPct, formatBRL, payrollTotals, payslipCheck, refLabelPT, toCents, type PayrollCosts, type PayrollSection } from '@nopaper/shared';
 import { Dialog, SaveFooter, useConfirm } from '@/components/ui/dialog';
 import { Button, Field, IconButton, Select, Switch, Textarea } from '@/components/ui/base';
@@ -55,12 +55,13 @@ export function EntryDialog({ open, onClose, onCreated, period, entry, employees
 
   const lineList = Object.entries(lines).map(([rubricId, v]) => ({ rubricId, amount: v.amount || '0', note: v.note }))
     .filter((l) => detailed || rmap.get(l.rubricId)?.section !== 'payslip');
-  const t = payrollTotals(detailed ? '0' : net || '0', lineList, rmap, costs);
+  const emp = employees.find((e) => e.id === (entry?.employeeId ?? employeeId));
+  const ghost = !!emp?.payslipOnly;
+  const t = payrollTotals(detailed ? '0' : net || '0', lineList, rmap, costs, { payslipOnly: ghost });
   // detalhado: a soma das rubricas tem de bater com o valor líquido do holerite
   const check = payslipCheck(detailed ? net : null, t.payslipNet);
   const mismatch = detailed && check.state === 'mismatch';
   const available = employees.filter((e) => e.active && !takenEmployeeIds.includes(e.id));
-  const emp = employees.find((e) => e.id === (entry?.employeeId ?? employeeId));
 
   const section = (s: PayrollSection) => {
     // ativas + as inativas que já têm valor neste lançamento
@@ -135,6 +136,9 @@ export function EntryDialog({ open, onClose, onCreated, period, entry, employees
         left={entry && canEdit && !paid && <Button variant="ghost" className="mr-auto text-danger hover:text-danger" icon={<Trash2 className="size-4" />} onClick={remove}>Tirar da folha</Button>} />}>
       {paid && (
         <p className="mb-4 flex items-center gap-2 rounded-lg bg-ok/10 px-3 py-2 text-sm text-ok"><Lock className="size-4 shrink-0" /> Salário já pago — para alterar, reverta o pagamento.</p>
+      )}
+      {ghost && (
+        <p className="mb-4 flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted"><Ghost className="mt-0.5 size-4 shrink-0" /> Só holerite: {emp?.name} tem holerite, mas não recebe pela empresa. O holerite fica registrado; o valor a pagar e o custo ficam zerados e não há conta a pagar. (Muda no cadastro do funcionário.)</p>
       )}
       <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
         <div className="flex min-w-0 flex-col gap-5">
@@ -232,9 +236,9 @@ export function EntryDialog({ open, onClose, onCreated, period, entry, employees
           </>}
           {toCents(t.otherCosts) > 0 && sum('Outros custos', t.otherCosts, 'muted')}
           {sum('Custo total no mês', t.companyCost, undefined, true)}
-          {!t.detailed && <p className="text-xs text-warn">Detalhe o holerite para calcular FGTS, 13º e férias — sem o bruto, o custo fica incompleto.</p>}
+          {!t.detailed && !ghost && <p className="text-xs text-warn">Detalhe o holerite para calcular FGTS, 13º e férias — sem o bruto, o custo fica incompleto.</p>}
           <p className="mt-2 text-xs text-faint leading-relaxed">
-            {period.billsEnabled
+            {ghost ? <>Só holerite: não gera conta a pagar.</> : period.billsEnabled
               ? <>O valor a pagar vira a conta “Salário {emp?.name ?? '…'} – {refLabelPT(period.ref)}” em Contas a pagar.</>
               : <>Mês do histórico importado: não gera conta a pagar.</>}
           </p>

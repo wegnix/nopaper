@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronRight, MessageCircle, Search, Trash2, UserPlus, UsersRound } from 'lucide-react';
+import { ChevronRight, Ghost, MessageCircle, Search, Trash2, UserPlus, UsersRound } from 'lucide-react';
 import { MONTHS_PT_SHORT, formatBRL, formatDateBR, formatPhoneBR, fromCents, refLabelPT, toCents, whatsappLink } from '@nopaper/shared';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -43,9 +43,9 @@ export function EmployeesTab({ employees, canManage, onOpenMonth }: { employees:
           {list.map((e) => (
             <button key={e.id} type="button" onClick={() => setForm({ open: true, emp: e })}
               className="group flex min-w-0 items-center gap-3 rounded-xl border border-line bg-surface p-4 text-left shadow-card transition hover:-translate-y-0.5 hover:border-line-strong">
-              <span className={cn('grid size-11 shrink-0 place-items-center rounded-full font-display text-sm font-semibold', e.active ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-faint')}>{initials(e.name)}</span>
+              <span className={cn('grid size-11 shrink-0 place-items-center rounded-full font-display text-sm font-semibold', e.active && !e.payslipOnly ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-faint')}>{initials(e.name)}</span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{e.name}</span>
+                <span className="flex items-center gap-1.5"><span className="truncate font-medium">{e.name}</span>{e.payslipOnly && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-muted"><Ghost className="size-3" />só holerite</span>}</span>
                 <span className="block truncate text-xs text-muted">{e.role || (e.active ? 'Ativo' : 'Desligado')}{e.admissionDate ? ` · desde ${formatDateBR(e.admissionDate)}` : ''}{e.sellerCode ? ` · vendedor ${e.sellerCode}` : ''}</span>
                 <span className="block truncate text-xs text-faint">{e.months ? `${plural(e.months, 'mês', 'meses')} na folha · último ${refLabelPT(e.lastRef!)}` : 'Ainda sem lançamentos'}</span>
               </span>
@@ -68,7 +68,7 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
   const qc = useQueryClient();
   const confirm = useConfirm();
   const orgId = useSession((s) => s.orgId);
-  const blank = { name: '', document: '', role: '', admissionDate: '', terminationDate: '', active: true, pixKey: '', phone: '', sellerCode: '', bankInfo: '', notes: '' };
+  const blank = { name: '', document: '', role: '', admissionDate: '', terminationDate: '', active: true, pixKey: '', phone: '', sellerCode: '', payslipCode: '', payslipOnly: false, bankInfo: '', notes: '' };
   const [f, setF, form] = useFormState(blank);
   const [tab, setTab] = useState<'data' | 'history'>('data');
   const [busy, setBusy] = useState(false);
@@ -77,7 +77,7 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
     setTab('data');
     form.load(emp ? {
       name: emp.name, document: emp.document ?? '', role: emp.role ?? '', admissionDate: emp.admissionDate ?? '', terminationDate: emp.terminationDate ?? '',
-      active: emp.active, pixKey: emp.pixKey ?? '', phone: emp.phone ?? '', sellerCode: emp.sellerCode ?? '', bankInfo: emp.bankInfo ?? '', notes: emp.notes ?? '',
+      active: emp.active, pixKey: emp.pixKey ?? '', phone: emp.phone ?? '', sellerCode: emp.sellerCode ?? '', payslipCode: emp.payslipCode ?? '', payslipOnly: emp.payslipOnly, bankInfo: emp.bankInfo ?? '', notes: emp.notes ?? '',
     } : blank);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, emp?.id]);
@@ -126,8 +126,12 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
           <Field label="Código de vendedor" hint="O número ao lado do nome no relatório de vendas (“Vendedor: 2 …”). Vazio = não recebe comissão.">
             <Input inputMode="numeric" maxLength={20} className="tnum" value={f.sellerCode} placeholder="Não recebe comissão" onChange={(e) => setF({ ...f, sellerCode: e.target.value })} />
           </Field>
+          <Field label="Matrícula no holerite" hint="O número antes do nome no holerite do contador. Liga o holerite importado a esta pessoa.">
+            <Input inputMode="numeric" maxLength={20} className="tnum" value={f.payslipCode} placeholder="Não informada" onChange={(e) => setF({ ...f, payslipCode: e.target.value })} />
+          </Field>
           <Field label="Banco / agência / conta"><Input maxLength={255} value={f.bankInfo} onChange={(e) => setF({ ...f, bankInfo: e.target.value })} placeholder="Ex.: Bradesco 237 · ag. 0000 · cc 00000-0" /></Field>
           <Field label="Observações" className="sm:col-span-2"><Textarea maxLength={1000} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+          <div className="sm:col-span-2"><Switch checked={f.payslipOnly} onChange={(payslipOnly) => setF({ ...f, payslipOnly })} label="Só holerite (não recebe pela empresa)" hint="Para quem tem holerite mas não é pago pela empresa (sócio que não trabalha, acordo…). O holerite fica registrado no mês, sem valor a pagar, sem conta a pagar e sem custo." /></div>
           <div className="sm:col-span-2"><Switch checked={f.active} onChange={(active) => setF({ ...f, active })} label="Ativo" hint="Só os ativos entram automaticamente ao abrir um mês novo. O histórico de quem saiu continua." /></div>
         </fieldset>
       ) : hist.isLoading ? <p className="py-10 text-center text-sm text-muted">Carregando…</p> : !hist.data?.length ? (

@@ -3,7 +3,7 @@ import { Link, Navigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  ArrowDown, ArrowUp, BadgePercent, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, HandCoins, Landmark, MoreHorizontal, Pencil, Plus, Printer,
+  ArrowDown, ArrowUp, BadgePercent, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Ghost, HandCoins, Landmark, MoreHorizontal, Pencil, Plus, Printer,
   Receipt, RotateCcw, Settings2, Trash2, UserPlus, UsersRound, Wallet,
 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
@@ -25,6 +25,7 @@ import { EmployeesTab } from './Employees';
 import { SettingsDialog, type SettingsTab } from './SettingsDialog';
 import { CommissionsDialog } from './Commissions';
 import { ImportDialog } from './ImportDialog';
+import { PayslipsDialog } from './Payslips';
 import { PayrollPrint, amountOf, extraColumnsOf, printColumnsOf, type PrintRow } from './PayrollPrint';
 
 type Tab = 'mes' | 'funcionarios' | 'historico';
@@ -41,6 +42,7 @@ export function PayrollPage() {
   const [settingsOpen, setSettingsOpen] = useState<SettingsTab | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [salesOpen, setSalesOpen] = useState(false);
+  const [slipsOpen, setSlipsOpen] = useState(false);
   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
 
   // vindo de Contas a pagar: ?lancamento=<id> → abre o mês e o lançamento
@@ -64,13 +66,14 @@ export function PayrollPage() {
       <PageHeader title="Folha de pagamento"
         description="Holerite, metas, comissões e descontos de cada funcionário, mês a mês. Cada salário vira uma conta a pagar."
         actions={(canManage || can('payroll.edit')) && <>
+          {can('payroll.edit') && <Button variant="ghost" icon={<FileText className="size-4" />} onClick={() => setSlipsOpen(true)}>Importar holerites</Button>}
           {can('payroll.edit') && <Button variant="ghost" icon={<BadgePercent className="size-4" />} onClick={() => setSalesOpen(true)}>Importar vendas</Button>}
           {canManage && <Button variant="ghost" icon={<FileSpreadsheet className="size-4" />} onClick={() => setImportOpen(true)}>Importar planilha</Button>}
           {canManage && <Button variant="secondary" icon={<Settings2 className="size-4" />} onClick={() => setSettingsOpen('bills')}>Configurar</Button>}
         </>} />
 
       <Segmented className="self-start max-sm:self-stretch" value={tab} onChange={(v) => set({ aba: v === 'mes' ? null : v })} options={[
-        { value: 'mes', label: 'Mês' }, { value: 'funcionarios', label: `Funcionários (${employees.filter((e) => e.active).length})` }, { value: 'historico', label: 'Histórico' },
+        { value: 'mes', label: 'Mês' }, { value: 'funcionarios', label: `Funcionários (${employees.filter((e) => e.active && !e.payslipOnly).length})` }, { value: 'historico', label: 'Histórico' },
       ]} />
 
       {!settings.categoryId && canManage && (
@@ -83,7 +86,9 @@ export function PayrollPage() {
 
       <SettingsDialog open={!!settingsOpen} initialTab={settingsOpen ?? 'bills'} onClose={() => setSettingsOpen(null)} settings={settings} rubrics={rubrics} employees={employees} />
       <CommissionsDialog open={salesOpen} onClose={() => setSalesOpen(false)} periods={periods.data ?? []} currentRef={ref} employees={employees} rubrics={rubrics}
-        commissions={settings.commissions} canManage={canManage} onConfigure={() => setSettingsOpen('commissions')} onDone={(r) => set({ aba: null, mes: r })} />
+        commissions={settings.commissions} payMonth={settings.payMonth} canManage={canManage} onConfigure={() => setSettingsOpen('commissions')} onDone={(r) => set({ aba: null, mes: r })} />
+      <PayslipsDialog open={slipsOpen} onClose={() => setSlipsOpen(false)} periods={periods.data ?? []} currentRef={ref} employees={employees} rubrics={rubrics}
+        costs={settings.costs} payslips={settings.payslips} payMonth={settings.payMonth} canManage={canManage} onDone={(r) => set({ aba: null, mes: r })} />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} rubrics={rubrics} existingRefs={(periods.data ?? []).map((p) => p.ref)} onDone={(r) => set({ aba: 'historico', mes: r })} />
     </div>
   );
@@ -142,7 +147,10 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
   }, [openEntryId, m, onEntryOpened]);
 
   const entries = useMemo(() => [...(m?.entries ?? [])].sort((a, b) => (empMap.get(a.employeeId)?.name ?? '').localeCompare(empMap.get(b.employeeId)?.name ?? '', 'pt-BR')), [m, empMap]);
-  const rows = entries.map((e) => ({ e, emp: empMap.get(e.employeeId), t: payrollTotals(e.payslipNet, e.lines, rmap, meta.settings.costs) }));
+  const allRows = entries.map((e) => { const emp = empMap.get(e.employeeId); return { e, emp, t: payrollTotals(e.payslipNet, e.lines, rmap, meta.settings.costs, { payslipOnly: !!emp?.payslipOnly }) }; });
+  /** Quem recebe pela empresa (totais, impressão) e quem só tem holerite (aparece à parte, no fim). */
+  const rows = allRows.filter((r) => !r.emp?.payslipOnly);
+  const ghosts = allRows.filter((r) => r.emp?.payslipOnly);
   const k = {
     total: sumMoney(rows.map((r) => r.t.total)), net: sumMoney(rows.map((r) => r.t.payslipNet)),
     // descontos maiores que os extras saem do próprio líquido: o depósito fica abaixo do holerite
@@ -170,6 +178,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
     if (e.bill.dueDate === today) return <StatusChip status="today" label="Vence hoje" />;
     return <StatusChip status="pending" label="Pendente" />;
   };
+  const ghostChip = <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-muted"><Ghost className="size-3" />só holerite</span>;
   const unpay = async (b: Bill) => {
     if (!(await confirm({ title: 'Reverter o pagamento?', body: 'O salário volta para Pendente aqui e em Contas a pagar, e o lançamento pode ser editado de novo.', confirmLabel: 'Reverter' }))) return;
     try { await post(`/api/bills/${b.id}/unpay`); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Pagamento revertido'); } catch (e) { toast.error(errMsg(e)); }
@@ -235,7 +244,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
       ) : (
         <>
           <div className="flex max-sm:snap-x max-sm:snap-mandatory max-sm:overflow-x-auto no-scrollbar sm:grid sm:grid-cols-3 xl:grid-cols-6 border-b border-line">
-            <Kpi icon={HandCoins} label="A pagar" value={k.total} sub={plural(rows.length, 'funcionário', 'funcionários')} tone="accent" first />
+            <Kpi icon={HandCoins} label="A pagar" value={k.total} sub={`${plural(rows.length, 'funcionário', 'funcionários')}${ghosts.length ? ` · ${ghosts.length} só holerite` : ''}`} tone="accent" first />
             <Kpi icon={Landmark} label="Líquido dos holerites" value={k.net} sub={toCents(k.netCut) > 0 ? `${formatBRL(k.netCut)} abatidos` : 'soma dos holerites'} />
             <Kpi icon={Banknote} label="Por fora" value={k.off} sub="metas, comissões…" />
             <Kpi icon={Plus} label="Extras" value={k.extras} sub="antes dos descontos" />
@@ -258,7 +267,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
               <Button size="sm" variant="secondary" onClick={() => setCommOpen(true)}>Ver comissões</Button>
             </div>
           )}
-          {!rows.length ? <p className="px-5 py-14 text-center text-sm text-muted">Ninguém lançado neste mês.</p> : (
+          {!allRows.length ? <p className="px-5 py-14 text-center text-sm text-muted">Ninguém lançado neste mês.</p> : (
             <>
               {/* desktop: tabela */}
               <table className="hidden w-full text-sm lg:table">
@@ -290,6 +299,21 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
                       <td className="px-3 py-3 text-right tnum text-accent">{toCents(t.offPayroll) ? formatBRL(t.offPayroll) : '—'}</td>
                       <td className="px-3 py-3">{status(e)}</td>
                       <td className="px-5 py-3"><div className="flex items-center justify-end gap-1">{payBtn(e)}{rowMenu(e)}</div></td>
+                    </tr>
+                  ))}
+                  {ghosts.map(({ e, emp, t }) => (
+                    <tr key={e.id} className="cursor-pointer text-muted hover:bg-surface-2/50" onClick={() => setEntryDlg({ open: true, entry: e })}>
+                      <td className="px-5 py-3">
+                        <p className="flex items-center gap-2 font-medium">{emp?.name ?? '—'}{ghostChip}</p>
+                        <p className="text-xs text-faint">{emp?.role ?? ''}</p>
+                        {unchecked(e, t) && <p className="flex items-center gap-1 text-xs text-warn"><AlertTriangle className="size-3" /> holerite não conferido</p>}
+                      </td>
+                      <td className="px-3 py-3 text-right tnum">{formatBRL(t.payslipNet)}</td>
+                      <td className="px-3 py-3 text-right">—</td>
+                      <td className="px-3 py-3 text-right">—</td>
+                      <td className="px-3 py-3 text-right">—</td>
+                      <td className="px-3 py-3 text-right">—</td>
+                      <td className="px-3 py-3 text-xs text-faint" colSpan={2}>não recebe pela empresa</td>
                     </tr>
                   ))}
                 </tbody>
@@ -334,6 +358,23 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
                     {(payBtn(e) || rowMenu(e)) && <div className="mt-1.5 flex items-center justify-end gap-1">{payBtn(e)}{rowMenu(e)}</div>}
                   </li>
                 ))}
+                {ghosts.map(({ e, emp, t }) => (
+                  <li key={e.id}>
+                    <button type="button" onClick={() => setEntryDlg({ open: true, entry: e })} className="flex w-full min-w-0 flex-col gap-2 rounded-xl border border-dashed border-line p-3.5 text-left text-muted">
+                      <span className="flex items-start justify-between gap-2">
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{emp?.name ?? '—'}</span>
+                          <span className="block truncate text-xs text-faint">{emp?.role ?? ''}</span>
+                        </span>
+                        {ghostChip}
+                      </span>
+                      <span className="flex items-end justify-between gap-2 text-xs tnum">
+                        <span>Holerite {formatBRL(t.payslipNet)}</span>
+                        <span className="text-faint">não recebe pela empresa</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
               </ul>
             </>
           )}
@@ -347,7 +388,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
       {period && rows.length > 0 && <PayrollPrint period={period} rows={rows} rubrics={meta.rubrics} print={printCfg} />}
       {period && rows.length > 0 && <PrintDialog open={printOpen} refStr={ref} rows={rows} rubrics={meta.rubrics} print={printCfg} onClose={() => setPrintOpen(false)} onPrint={doPrint} />}
       {period && commImport && <CommissionsDialog open={commOpen} onClose={() => setCommOpen(false)} periods={periodsList} currentRef={ref} employees={meta.employees} rubrics={meta.rubrics}
-        commissions={meta.settings.commissions} canManage={can('payroll.manage')} canEdit={canEdit} initial={{ ...commImport, ref }}
+        commissions={meta.settings.commissions} payMonth={meta.settings.payMonth} canManage={can('payroll.manage')} canEdit={canEdit} initial={{ ...commImport, ref }}
         onConfigure={onConfigure} onDone={() => undefined} />}
       {period && <EditPeriodDialog open={editPeriod} period={period} onClose={() => setEditPeriod(false)} />}
       {pay && <PayDialog bill={pay.bill} proofOnly={pay.proofOnly} onClose={() => setPay(null)} onView={view} />}

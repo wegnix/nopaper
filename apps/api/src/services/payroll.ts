@@ -1,7 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
-  DEFAULT_PAYROLL_COMMISSIONS, DEFAULT_PAYROLL_COSTS, DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, payslipCheck, refLabelPT, formatBRL, toCents, type PayrollSettings,
+  DEFAULT_PAYROLL_COMMISSIONS, DEFAULT_PAYROLL_COSTS, DEFAULT_PAYROLL_PAYSLIPS, DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, payslipCheck, refLabelPT, formatBRL, toCents, type PayrollSettings,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import type { DBOrTx } from '../db/client.js';
@@ -42,6 +42,8 @@ export async function recomputeCosts(orgId: string, conn: DBOrTx = db) {
   const map = new Map((await rubricsOf(orgId, conn)).map((r) => [r.id, r]));
   const entries = await conn.select().from(schema.payrollEntries).where(eq(schema.payrollEntries.orgId, orgId));
   if (!entries.length) return 0;
+  const ghosts = new Set((await conn.select({ id: schema.employees.id }).from(schema.employees)
+    .where(and(eq(schema.employees.orgId, orgId), eq(schema.employees.payslipOnly, true)))).map((e) => e.id));
   const lines = await conn.select({ entryId: schema.payrollEntryLines.entryId, rubricId: schema.payrollEntryLines.rubricId, amount: schema.payrollEntryLines.amount })
     .from(schema.payrollEntryLines).innerJoin(schema.payrollEntries, eq(schema.payrollEntries.id, schema.payrollEntryLines.entryId))
     .where(eq(schema.payrollEntries.orgId, orgId));
@@ -49,6 +51,7 @@ export async function recomputeCosts(orgId: string, conn: DBOrTx = db) {
   for (const l of lines) byEntry.set(l.entryId, [...(byEntry.get(l.entryId) ?? []), l]);
   let n = 0;
   for (const e of entries) {
+    if (ghosts.has(e.employeeId)) continue; // só holerite: custo sempre zero
     const t = payrollTotals(e.payslipNet, byEntry.get(e.id) ?? [], map, settings.costs);
     if (toCents(t.employerCost) !== toCents(e.employerCost) || toCents(t.companyCost) !== toCents(e.companyCost)) {
       await conn.update(schema.payrollEntries).set({ employerCost: t.employerCost, companyCost: t.companyCost }).where(eq(schema.payrollEntries.id, e.id));
@@ -66,7 +69,7 @@ export async function getPayrollSettings(orgId: string, conn: DBOrTx = db): Prom
     .where(and(eq(schema.categories.orgId, orgId), sql`lower(${schema.categories.label}) = 'salário'`, sql`${schema.categories.kind} <> 'receivable'`));
   const [folder] = await conn.select({ id: schema.folders.id }).from(schema.folders)
     .where(and(eq(schema.folders.orgId, orgId), sql`upper(${schema.folders.label}) = 'FUNCIONARIO'`));
-  return { categoryId: cat?.id ?? null, folderId: folder?.id ?? null, payDay: 0, payMonth: 'next', paymentMethod: 'PIX', costs: DEFAULT_PAYROLL_COSTS, print: { hidden: [], order: [] }, commissions: DEFAULT_PAYROLL_COMMISSIONS };
+  return { categoryId: cat?.id ?? null, folderId: folder?.id ?? null, payDay: 0, payMonth: 'next', paymentMethod: 'PIX', costs: DEFAULT_PAYROLL_COSTS, print: { hidden: [], order: [] }, commissions: DEFAULT_PAYROLL_COMMISSIONS, payslips: DEFAULT_PAYROLL_PAYSLIPS };
 }
 
 export async function savePayrollSettings(orgId: string, value: PayrollSettings) {
@@ -115,7 +118,8 @@ export async function writeEntry(tx: DBOrTx, orgId: string, userId: string | nul
   const lines = data.lines.filter((l) => toCents(l.amount) !== 0);
   for (const l of lines) if (!map.has(l.rubricId)) throw badRequest('Rubrica inválida');
   const { costs } = await getPayrollSettings(orgId, tx);
-  const t = payrollTotals(data.payslipNet, lines, map, costs);
+  const [emp] = await tx.select({ payslipOnly: schema.employees.payslipOnly }).from(schema.employees).where(eq(schema.employees.id, data.employeeId));
+  const t = payrollTotals(data.payslipNet, lines, map, costs, { payslipOnly: !!emp?.payslipOnly });
   // holerite detalhado: as rubricas têm de fechar com o valor líquido do holerite (sem furo)
   const declared = t.detailed ? data.payslipNetDeclared ?? null : null;
   const check = payslipCheck(declared, t.payslipNet);
@@ -176,6 +180,29 @@ export async function syncEntryBill(tx: DBOrTx, entryId: string, userId: string 
     ...values, orgId: e.orgId, type: 'payable', recurrenceType: 'once', payrollEntryId: e.id, createdBy: userId,
   }).returning();
   await tx.update(schema.payrollEntries).set({ billId: b.id }).where(eq(schema.payrollEntries.id, e.id));
+}
+
+/**
+ * Regrava os totais dos lançamentos em aberto de um funcionário (mudou o "só holerite" no cadastro).
+ * Ficam como estão: salário já pago e meses do histórico importado.
+ */
+export async function rewriteOpenEntries(tx: DBOrTx, orgId: string, employeeId: string, userId: string | null) {
+  const rows = await tx.select({ e: schema.payrollEntries, billStatus: schema.bills.status }).from(schema.payrollEntries)
+    .innerJoin(schema.payrollPeriods, eq(schema.payrollPeriods.id, schema.payrollEntries.periodId))
+    .leftJoin(schema.bills, eq(schema.bills.id, schema.payrollEntries.billId))
+    .where(and(eq(schema.payrollEntries.employeeId, employeeId), eq(schema.payrollPeriods.billsEnabled, true)));
+  let n = 0;
+  for (const { e, billStatus } of rows) {
+    if (billStatus === 'paid') continue;
+    const lines = await tx.select().from(schema.payrollEntryLines).where(eq(schema.payrollEntryLines.entryId, e.id));
+    const detailed = e.payslipNetDeclared !== null;
+    await writeEntry(tx, orgId, userId, {
+      entryId: e.id, periodId: e.periodId, employeeId, payslipNet: e.payslipNet, payslipNetDeclared: detailed ? e.payslipNetDeclared : null,
+      lines: lines.map((l) => ({ rubricId: l.rubricId, amount: l.amount, note: l.note })), notes: e.notes,
+    });
+    n++;
+  }
+  return n;
 }
 
 /** Ressincroniza as contas de um conjunto de lançamentos (mudou o mês, o funcionário ou a configuração). */

@@ -1,0 +1,2 @@
+ALTER TABLE "payroll_rubrics" ADD COLUMN "labor_charges" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+UPDATE "payroll_rubrics" SET "labor_charges" = false WHERE "section" = 'payslip' AND "kind" = 'earning' AND lower("name") ~ 'pr[oó][- ]?labore';

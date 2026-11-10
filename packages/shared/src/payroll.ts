@@ -3,6 +3,7 @@ import { money, isoDate, documentSchema } from './schemas.js';
 import { fromCents, parseMoneyInput, toCents } from './money.js';
 import { daysInMonth, toISODate, MONTHS_PT_SHORT } from './dates.js';
 import { DEFAULT_PAYROLL_COMMISSIONS, payrollCommissionsSchema } from './commissions.js';
+import { DEFAULT_PAYROLL_PAYSLIPS, payrollPayslipsSchema } from './payslips.js';
 
 /**
  * Folha de pagamento (só em espaços do tipo Empresa).
@@ -61,7 +62,7 @@ export function employerInssPct(c: PayrollCosts): number {
   return Math.round((20 + c.ratPct + (c.regime === 'normal' ? c.thirdPartyPct : 0)) * 100) / 100;
 }
 
-export interface PayrollRubricLike { id: string; section: PayrollSection | string; kind: PayrollKind | string }
+export interface PayrollRubricLike { id: string; section: PayrollSection | string; kind: PayrollKind | string; /** false = provento sem FGTS, 13º e férias (pró-labore). */ laborCharges?: boolean | null }
 export interface PayrollLineLike { rubricId: string; amount: string }
 
 export interface PayrollTotals {
@@ -110,26 +111,41 @@ export function payslipCheck(declared: string | null | undefined, computedNet: s
  * Calcula os totais de um lançamento. `typedNet` vale quando não há rubricas do holerite.
  * Os custos legais (FGTS, INSS patronal, reservas) só existem com o holerite detalhado, porque
  * dependem do bruto (total de vantagens).
+ * `payslipOnly` (cadastro do funcionário): tem holerite, mas não recebe pela empresa — o holerite
+ * fica registrado e o valor a pagar e os custos são zero.
  */
-export function payrollTotals(typedNet: string | null | undefined, lines: PayrollLineLike[], rubrics: PayrollRubricLike[] | Map<string, PayrollRubricLike>, costs: PayrollCosts = DEFAULT_PAYROLL_COSTS): PayrollTotals {
+export function payrollTotals(
+  typedNet: string | null | undefined, lines: PayrollLineLike[], rubrics: PayrollRubricLike[] | Map<string, PayrollRubricLike>,
+  costs: PayrollCosts = DEFAULT_PAYROLL_COSTS, opts: { payslipOnly?: boolean } = {},
+): PayrollTotals {
   const map = rubrics instanceof Map ? rubrics : new Map(rubrics.map((r) => [r.id, r]));
-  let pe = 0, pd = 0, ee = 0, ed = 0, emp = 0, detailed = false;
+  let pe = 0, pd = 0, ee = 0, ed = 0, emp = 0, noCharges = 0, detailed = false;
   for (const l of lines) {
     const r = map.get(l.rubricId);
     if (!r) continue;
     const c = toCents(l.amount);
-    if (r.section === 'payslip') { detailed = true; if (r.kind === 'deduction') pd += c; else pe += c; }
+    if (r.section === 'payslip') { detailed = true; if (r.kind === 'deduction') pd += c; else { pe += c; if (r.laborCharges === false) noCharges += c; } }
     else if (r.section === 'extra') { if (r.kind === 'deduction') ed += c; else ee += c; }
     else emp += c;
   }
   const net = detailed ? pe - pd : toCents(typedNet);
+  if (opts.payslipOnly) {
+    // só holerite: o documento existe, mas a empresa não paga nada nem tem custo com ele
+    const z = fromCents(0);
+    return {
+      payslipEarnings: fromCents(pe), payslipDeductions: fromCents(pd), payslipNet: fromCents(net), extraEarnings: fromCents(ee), extraDeductions: fromCents(ed),
+      total: z, offPayroll: z, onPayroll: z, fgts: z, employerInss: z, otherCosts: z, employerCost: z,
+      provision13: z, provisionVacation: z, provisionCharges: z, provisions: z, companyCost: z, detailed,
+    };
+  }
   const total = net + ee - ed;
   const off = Math.max(0, total - net);
-  const base = detailed ? pe : 0;
+  // pró-labore (rubrica sem encargos trabalhistas) não tem FGTS, 13º nem férias; o INSS patronal incide
+  const base = detailed ? pe - noCharges : 0;
   const pct = (c: number, p: number) => Math.round((c * p) / 100);
   const inssPct = employerInssPct(costs);
   const fgts = pct(base, FGTS_PCT);
-  const inss = pct(base, inssPct);
+  const inss = pct(detailed ? pe : 0, inssPct);
   const p13 = costs.provisions ? Math.round(base / 12) : 0;
   const pVac = costs.provisions ? Math.round(base / 9) : 0; // 1/12 de férias + 1/3 constitucional
   const pCharges = pct(p13 + pVac, FGTS_PCT + inssPct);
@@ -206,6 +222,10 @@ export const employeeSchema = z.object({
   phone: phoneSchema,
   /** Código do vendedor no relatório de vendas (comissões). Vazio = não recebe comissão. */
   sellerCode: z.string().max(20).nullish().transform((v) => (v && v.trim() ? v.trim() : null)),
+  /** Matrícula no holerite do contador (liga o holerite importado ao funcionário). */
+  payslipCode: z.string().max(20).nullish().transform((v) => (v && v.trim() ? v.trim() : null)),
+  /** Tem holerite, mas não recebe pela empresa (sócio que não trabalha, acordo…): a pagar e custo ficam zerados. */
+  payslipOnly: z.boolean().default(false),
   bankInfo: optText(255),
   notes: optText(1000),
 });
@@ -218,6 +238,8 @@ export const payrollRubricSchema = z.object({
   /** Valor copiado para o mês seguinte ao abrir a folha (ex.: salário base, INSS). */
   fixed: z.boolean().default(false),
   active: z.boolean().default(true),
+  /** Provento do holerite que conta para FGTS, 13º e férias. Desligado para pró-labore. */
+  laborCharges: z.boolean().default(true),
 });
 
 /**
@@ -268,6 +290,7 @@ export const payrollSettingsSchema = z.object({
   costs: payrollCostsSchema.default(DEFAULT_PAYROLL_COSTS),
   print: payrollPrintSchema.default({ hidden: [], order: [] }),
   commissions: payrollCommissionsSchema.default(DEFAULT_PAYROLL_COMMISSIONS),
+  payslips: payrollPayslipsSchema.default(DEFAULT_PAYROLL_PAYSLIPS),
 });
 export type PayrollSettings = z.infer<typeof payrollSettingsSchema>;
 

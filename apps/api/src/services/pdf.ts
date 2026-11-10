@@ -1,3 +1,5 @@
+import type { PdfCell } from '@nopaper/shared';
+
 // pdfjs 6 usa Promise.withResolvers (Node 22+). O Docker já usa Node 22; isto cobre o dev em Node 20.
 const P = Promise as unknown as { withResolvers?: () => unknown };
 if (typeof P.withResolvers !== 'function') {
@@ -36,34 +38,40 @@ export async function pdfToText(buf: Buffer, maxPages = 10): Promise<string> {
 
 /**
  * Linhas do PDF como aparecem na página: textos agrupados pela altura e ordenados da esquerda para
- * a direita (respeita página girada). Serve para relatórios em tabela, em que a ordem interna do
- * PDF não segue as colunas (ex.: relatório de vendas do sistema da loja, gerado pelo Jasper).
+ * a direita (respeita página girada), com a posição horizontal de cada texto. Serve para documentos
+ * em colunas, em que a ordem interna do PDF não segue a leitura (relatório de vendas do Jasper,
+ * holerites do contador — lá a coluna do valor diz se é vencimento ou desconto).
  */
-export async function pdfToRows(buf: Buffer, maxPages = 30): Promise<string[][]> {
+export async function pdfToCells(buf: Buffer, maxPages = 30): Promise<PdfCell[][]> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const task = pdfjs.getDocument({ data: new Uint8Array(buf), useSystemFonts: false, disableFontFace: true, verbosity: 0 });
   const doc = await task.promise;
-  const out: string[][] = [];
+  const out: PdfCell[][] = [];
   try {
     for (let p = 1; p <= Math.min(doc.numPages, maxPages); p++) {
       const page = await doc.getPage(p);
       const m = page.getViewport({ scale: 1 }).transform;
       const content = await page.getTextContent();
-      const rows: Array<{ y: number; items: Array<{ x: number; s: string }> }> = [];
-      for (const it of content.items as Array<{ str?: string; transform?: number[] }>) {
+      const rows: Array<{ y: number; items: PdfCell[] }> = [];
+      for (const it of content.items as Array<{ str?: string; transform?: number[]; width?: number }>) {
         const s = it.str?.trim();
         if (!s || !it.transform) continue;
         const [x0, y0] = [it.transform[4], it.transform[5]];
         const x = m[0] * x0 + m[2] * y0 + m[4], y = m[1] * x0 + m[3] * y0 + m[5];
         let row = rows.find((r) => Math.abs(r.y - y) <= 2);
         if (!row) rows.push((row = { y, items: [] }));
-        row.items.push({ x, s });
+        row.items.push({ x, w: it.width ?? 0, s });
       }
       rows.sort((a, b) => a.y - b.y);
-      for (const r of rows) out.push(r.items.sort((a, b) => a.x - b.x).map((i) => i.s));
+      for (const r of rows) out.push(r.items.sort((a, b) => a.x - b.x));
     }
   } finally {
     await task.destroy();
   }
   return out;
+}
+
+/** O mesmo, só com os textos. */
+export async function pdfToRows(buf: Buffer, maxPages = 30): Promise<string[][]> {
+  return (await pdfToCells(buf, maxPages)).map((r) => r.map((c) => c.s));
 }

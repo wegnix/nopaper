@@ -285,6 +285,10 @@ export const employees = pgTable('employees', {
   phone: varchar('phone', { length: 32 }),
   /** Código do vendedor no relatório de vendas (comissões). */
   sellerCode: varchar('seller_code', { length: 20 }),
+  /** Matrícula no holerite do contador (importar holerites). */
+  payslipCode: varchar('payslip_code', { length: 20 }),
+  /** Tem holerite, mas não recebe pela empresa: valor a pagar e custo zerados, sem conta a pagar. */
+  payslipOnly: boolean('payslip_only').notNull().default(false),
   bankInfo: varchar('bank_info', { length: 255 }),
   notes: text('notes'),
   /** Criado por uma importação da planilha (desfazer a importação remove se não tiver outros meses). */
@@ -295,6 +299,7 @@ export const employees = pgTable('employees', {
 }, (t) => [
   uniqueIndex('employees_org_name_uq').on(t.orgId, sql`lower(${t.name})`),
   uniqueIndex('employees_org_seller_uq').on(t.orgId, t.sellerCode).where(sql`${t.sellerCode} is not null`),
+  uniqueIndex('employees_org_payslip_uq').on(t.orgId, t.payslipCode).where(sql`${t.payslipCode} is not null`),
 ]);
 
 /** Rubricas: holerite (proventos/descontos), fora do holerite (extras/descontos) e encargos da empresa. */
@@ -306,6 +311,8 @@ export const payrollRubrics = pgTable('payroll_rubrics', {
   kind: varchar('kind', { length: 16 }).notNull().default('earning'), // earning | deduction
   fixed: boolean('fixed').notNull().default(false),
   active: boolean('active').notNull().default(true),
+  /** Provento do holerite que conta para FGTS, 13º e férias (false = pró-labore). */
+  laborCharges: boolean('labor_charges').notNull().default(true),
   sortOrder: smallint('sort_order').notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

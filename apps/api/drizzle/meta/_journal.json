@@ -134,6 +134,20 @@
       "when": 1794334373077,
       "tag": "0018_card_tx_card_category",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794340057252,
+      "tag": "0019_employee_payslip",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794342276959,
+      "tag": "0020_rubric_labor_charges",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,32 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.9.0] - 2026-11-10
+
+### Novo
+- **Importar holerites** (Folha de pagamento → **Importar holerites**): envie o PDF que o contador manda
+  com os holerites de todos. Cada holerite entra detalhado no lançamento do funcionário (salário,
+  diferença salarial, horas extras, INSS, consignado…), já conferido com o valor líquido — não precisa
+  mais digitar. As duas vias de cada holerite contam uma vez só, e metas, comissões e descontos por fora
+  não mudam. Na 1ª vez você confere quem é quem (a matrícula fica salva no cadastro) e a rubrica de cada
+  linha do holerite (as que faltam são criadas); nos meses seguintes é só enviar e lançar. Antes de
+  gravar, a tela mostra o que muda em cada pessoa. Quem recebe um valor diferente do holerite (ex.: sócia
+  com pró-labore que recebe como funcionária) tem o campo **Líquido combinado**: a diferença entra por
+  fora e é lembrada ao importar de novo. Salário já pago não é alterado.
+- **Só holerite**: para quem tem holerite mas não recebe pela empresa (sócio que não trabalha, acordo…).
+  Marque no cadastro do funcionário ou direto na importação: o holerite fica registrado no mês, sem
+  valor a pagar, sem conta a pagar e sem custo, e a pessoa fica fora dos totais e da impressão da folha.
+- Cadastro do funcionário: campo **Matrícula no holerite**.
+
+### Alterado
+- **Importar vendas (comissões)** e **Importar holerites** sugerem a folha certa quando a folha do espaço é
+  contada pelo mês do pagamento: vendas e holerites de outubro entram na folha de novembro (quem trabalha
+  num mês recebe no seguinte). O mês continua podendo ser trocado na janela.
+- Dois modelos de holerite são reconhecidos: “Recibo de Pagamento de Salário” e “Demonstrativo de Pagamento
+  de Salário” (neste, o CPF do holerite já preenche o cadastro de quem for criado na importação).
+- **Pró-labore sem FGTS**: vencimento do holerite marcado como **sem FGTS** (Configurar → Rubricas) não entra
+  no cálculo de FGTS, 13º e férias do custo da empresa. A rubrica “Pró-labore” já nasce assim.
+
 ## [1.8.0] - 2026-11-10
 
 ### Novo
