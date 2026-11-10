@@ -43,6 +43,14 @@ export function PayrollPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [salesOpen, setSalesOpen] = useState(false);
   const [slipsOpen, setSlipsOpen] = useState(false);
+  /** Holerites enviados pelo contador (?holerite=<id do documento>): abre a importação já com eles. */
+  const [slipsDoc, setSlipsDoc] = useState<string | null>(null);
+  const slipsParam = sp.get('holerite');
+  useEffect(() => {
+    if (!slipsParam) return;
+    setSlipsDoc(slipsParam); setSlipsOpen(true); set({ holerite: null, aba: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slipsParam]);
   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
 
   // vindo de Contas a pagar: ?lancamento=<id> → abre o mês e o lançamento
@@ -66,7 +74,7 @@ export function PayrollPage() {
       <PageHeader title="Folha de pagamento"
         description="Holerite, metas, comissões e descontos de cada funcionário, mês a mês. Cada salário vira uma conta a pagar."
         actions={(canManage || can('payroll.edit')) && <>
-          {can('payroll.edit') && <Button variant="ghost" icon={<FileText className="size-4" />} onClick={() => setSlipsOpen(true)}>Importar holerites</Button>}
+          {can('payroll.edit') && <Button variant="ghost" icon={<FileText className="size-4" />} onClick={() => { setSlipsDoc(null); setSlipsOpen(true); }}>Importar holerites</Button>}
           {can('payroll.edit') && <Button variant="ghost" icon={<BadgePercent className="size-4" />} onClick={() => setSalesOpen(true)}>Importar vendas</Button>}
           {canManage && <Button variant="ghost" icon={<FileSpreadsheet className="size-4" />} onClick={() => setImportOpen(true)}>Importar planilha</Button>}
           {canManage && <Button variant="secondary" icon={<Settings2 className="size-4" />} onClick={() => setSettingsOpen('bills')}>Configurar</Button>}
@@ -87,7 +95,7 @@ export function PayrollPage() {
       <SettingsDialog open={!!settingsOpen} initialTab={settingsOpen ?? 'bills'} onClose={() => setSettingsOpen(null)} settings={settings} rubrics={rubrics} employees={employees} />
       <CommissionsDialog open={salesOpen} onClose={() => setSalesOpen(false)} periods={periods.data ?? []} currentRef={ref} employees={employees} rubrics={rubrics}
         commissions={settings.commissions} payMonth={settings.payMonth} canManage={canManage} onConfigure={() => setSettingsOpen('commissions')} onDone={(r) => set({ aba: null, mes: r })} />
-      <PayslipsDialog open={slipsOpen} onClose={() => setSlipsOpen(false)} periods={periods.data ?? []} currentRef={ref} employees={employees} rubrics={rubrics}
+      <PayslipsDialog open={slipsOpen} docId={slipsDoc} onClose={() => setSlipsOpen(false)} periods={periods.data ?? []} currentRef={ref} employees={employees} rubrics={rubrics}
         costs={settings.costs} payslips={settings.payslips} payMonth={settings.payMonth} canManage={canManage} onDone={(r) => set({ aba: null, mes: r })} />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} rubrics={rubrics} existingRefs={(periods.data ?? []).map((p) => p.ref)} onDone={(r) => set({ aba: 'historico', mes: r })} />
     </div>

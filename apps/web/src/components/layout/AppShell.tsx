@@ -13,15 +13,20 @@ import { useSidebar } from '@/lib/sidebar';
 import { endSession, useIdleLogout } from '@/lib/idle';
 import { Logo } from './Logo';
 import { NAV, NAV_BOTTOM, navVisible, type NavItem } from './nav';
+import { useAccountantOnly, useAccountingPending } from '@/features/accounting/data';
 import { CommandPalette } from './CommandPalette';
 import { NewOrgDialog } from './NewOrgDialog';
 
 function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigate?: () => void; collapsed?: boolean }) {
   const can = useCan();
   const kind = useOrg()?.kind;
+  const pendingDocs = useAccountingPending();
+  const badge = (i: NavItem) => (i.to === '/contador' ? pendingDocs : 0);
+  // contador: o Início dele já é a área do contador
+  const accountantOnly = useAccountantOnly();
   return (
     <>
-      {items.filter((i) => navVisible(i, can, kind)).map((i) => (
+      {items.filter((i) => navVisible(i, can, kind) && !(accountantOnly && i.to === '/contador')).map((i) => (
         <Tooltip key={i.to} content={collapsed ? i.label : null} side="right">
           <NavLink
             to={i.to} end={i.to === '/'} onClick={onNavigate} aria-label={collapsed ? i.label : undefined}
@@ -35,6 +40,7 @@ function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNaviga
                 {isActive && <motion.span layoutId="nav-active" className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-accent" transition={{ type: 'spring', stiffness: 500, damping: 40 }} />}
                 <i.icon className={cn('size-[18px] shrink-0', isActive && 'text-accent')} />
                 <span className={cn('flex-1 truncate whitespace-nowrap transition-opacity duration-150', collapsed && 'opacity-0')}>{i.label}</span>
+                {badge(i) > 0 && <span className={cn('grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white tnum', collapsed && 'absolute right-1 top-1 h-4 min-w-4 px-1 text-[10px]')} aria-label={`${badge(i)} para conferir`}>{badge(i)}</span>}
                 {i.soon && !collapsed && <span className="rounded px-1.5 text-[10px] font-semibold text-faint border border-line">em breve</span>}
               </>
             )}
@@ -130,15 +136,17 @@ export function AppShell() {
   const { theme, toggle } = useTheme();
   const loc = useLocation();
   const nav = useNavigate();
+  /** Contador: sem busca (não há o que buscar). */
+  const accountantOnly = useAccountantOnly();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((v) => !v); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); if (!accountantOnly) setPalette((v) => !v); }
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') { e.preventDefault(); useSidebar.getState().toggle(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [accountantOnly]);
   useEffect(() => setDrawer(false), [loc.pathname]);
   // servidor atualizado e este front ainda é o antigo (aba aberta ou PWA em cache): oferece recarregar
   const serverVersion = useSession((s) => s.serverVersion);
@@ -183,14 +191,14 @@ export function AppShell() {
         <header className="safe-top shrink-0 border-b border-line">
          <div className="flex h-14 md:h-16 items-center gap-2 md:gap-3 px-2 sm:px-4 md:px-6">
           <button className="lg:hidden grid size-11 shrink-0 place-items-center rounded-lg text-muted hover:bg-surface-2 active:bg-surface-2" onClick={() => setDrawer(true)} aria-label="Abrir menu"><Menu className="size-6" /></button>
-          <button
+          {!accountantOnly && <button
             onClick={() => setPalette(true)}
             className="flex h-10 min-w-0 flex-1 max-w-md items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 text-sm text-faint hover:border-line-strong transition-colors"
           >
             <Search className="size-4 shrink-0" />
             <span className="flex-1 truncate text-left">Buscar ou ir para…</span>
             <kbd className="hidden sm:inline rounded border border-line px-1.5 text-[11px]">Ctrl K</kbd>
-          </button>
+          </button>}
           <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
             <button onClick={toggle} className="grid size-11 sm:size-9 place-items-center rounded-lg text-muted hover:text-ink hover:bg-surface-2" aria-label="Alternar tema">
               {theme === 'dark' ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}

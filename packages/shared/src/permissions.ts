@@ -41,6 +41,9 @@ export const PERMISSIONS = {
   'payroll.edit': { group: 'Folha de pagamento', label: 'Lançar e editar a folha do mês', hint: 'Cada lançamento vira uma conta a pagar; pagar usa “Dar baixa” de contas a pagar.', requires: ['payroll.view'] },
   'payroll.manage': { group: 'Folha de pagamento', label: 'Funcionários, rubricas, configuração e importação', requires: ['payroll.view'] },
 
+  'accounting.upload': { group: 'Contador', label: 'Enviar documentos (área do contador)', hint: 'Holerites, guias de impostos, mensalidade do escritório… Vê só os próprios envios.' },
+  'accounting.review': { group: 'Contador', label: 'Conferir e lançar os documentos do contador', hint: 'Vê tudo o que foi enviado e recebe o aviso. Lançar a conta usa “Cadastrar contas a pagar”; os holerites, “Lançar a folha”.' },
+
   'reports.view': { group: 'Relatórios', label: 'Ver relatórios e o gráfico anual do início' },
 
   'alerts.manage': { group: 'Espaço', label: 'Configurar alertas (Telegram / e-mail)' },
@@ -75,6 +78,9 @@ export const DEFAULT_OPERATOR_PERMISSIONS: Permission[] = [
   'receivable.view', 'receivable.create', 'receivable.edit', 'receivable.pay', 'receivable.delete',
   'cards.view', 'cards.manage', 'cards.edit', 'bank.view', 'bank.import', 'reports.view',
 ];
+
+/** Grupo "Contador" padrão: só envia documentos. */
+export const DEFAULT_ACCOUNTANT_PERMISSIONS: Permission[] = ['accounting.upload'];
 
 /** Permissões de um grupo "Leitura" padrão. */
 export const DEFAULT_READONLY_PERMISSIONS: Permission[] = [

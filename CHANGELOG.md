@@ -8,6 +8,43 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.10.0] - 2026-11-10
+
+### Novo
+- **Área do contador** (menu **Contador**): o contador entra no NoPaper como membro do espaço, no grupo
+  **Contador** (criado em todos os espaços), e só enxerga essa tela. Por ela envia os PDFs do mês, vários
+  de uma vez, escolhendo o tipo — **Holerites**, **Mensalidade do escritório**, **DAS**, **DARF**, **DAE**,
+  **GARE / DARE / GNRE** ou **Outro documento** —, o mês de referência e uma observação, e acompanha se
+  cada envio já foi conferido. Para ele o NoPaper é só essa tela (o Início), sem busca e sem outros
+  menus, com o **histórico de envios** separado por mês, com busca e filtros por tipo e mês. Esse histórico
+  é o registro fiel do que ele mandou: se o espaço tirar um documento da lista, o registro e o arquivo continuam com
+  ele. O contador também pode **remover** o que enviou: se ninguém conferiu, o documento é apagado; se já
+  foi conferido, sai só do histórico dele.
+- **Conferir e lançar**: quem tem a permissão “Conferir e lançar os documentos do contador” vê tudo o que
+  chegou, com o valor e o vencimento já lidos das guias. **Lançar conta** abre a nova conta a pagar com a
+  descrição sugerida (ex.: “DAS – Out/2026”), valor, vencimento e código de barras preenchidos e o arquivo
+  anexado; **Importar na folha** abre a importação dos holerites com o PDF enviado. Também dá para marcar
+  como lançado, dispensar ou tirar da lista (o contador continua com o registro do envio).
+- **Aviso de documento novo**: selo no menu e faixa no Início para quem confere; e, com os alertas do
+  espaço ligados, mensagem na hora por Telegram e e-mail (Configurações → Alertas → “Avisar quando o
+  contador enviar documentos”).
+
+- **Remover conta de usuário** (Plataforma → Usuários): além de desativar (agora com botão direto na lista,
+  que bloqueia o acesso e pode ser desfeito), dá para **remover** a conta. Ela sai de todos os espaços e das
+  listas, e o e-mail e o usuário ficam livres; nada do que a pessoa fez é apagado — contas lançadas, anexos
+  e a auditoria continuam com o nome dela. Dono de espaço e o último administrador da plataforma não podem
+  ser removidos.
+
+- **Membros**: ao adicionar um membro, dá para **escolher uma conta que já existe** em vez de digitar o
+  e-mail (administrador da plataforma vê todas as contas; os demais, as pessoas com quem já dividem algum
+  espaço).
+- **Plataforma → Usuários → Editar**: nova seção **Espaços**, para colocar a conta num espaço, escolher os
+  grupos dela em cada um ou tirá-la de lá, sem precisar entrar no espaço.
+
+### Corrigido
+- PDFs cheios de números (holerites, relatórios) não são mais confundidos com boleto na leitura automática
+  de anexos.
+
 ## [1.9.0] - 2026-11-10
 
 ### Novo

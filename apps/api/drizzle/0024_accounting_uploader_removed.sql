@@ -1,0 +1,1 @@
+ALTER TABLE "accounting_documents" ADD COLUMN "uploader_removed_at" timestamp with time zone;

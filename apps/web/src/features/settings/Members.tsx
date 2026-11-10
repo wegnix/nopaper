@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Crown, Pencil, Trash2, UserPlus } from 'lucide-react';
-import { Button, Card, Checkbox, Field, IconButton, Input, Switch } from '@/components/ui/base';
+import { Button, Card, Checkbox, Field, IconButton, Input, Switch, Segmented, Select } from '@/components/ui/base';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { del, get, post, put, errMsg } from '@/lib/api';
 import { useCan, useOrg, useSession } from '@/lib/session';
@@ -22,13 +22,22 @@ function MemberForm({ member, onClose, onSaved }: { member: Partial<Member>; onC
   const qc = useQueryClient();
   const [f, setF, form] = useFormState({ email: member.email ?? '', name: member.name ?? '', username: '', password: '', groupIds: new Set(member.groupIds ?? []), active: member.active ?? true });
   const [busy, setBusy] = useState(false);
+  // contas que já existem (e ainda não são deste espaço): dá para escolher em vez de digitar o e-mail
+  const orgId = useSession((s) => s.orgId);
+  const candidates = useQuery({ enabled: !member.id, queryKey: ['members', orgId, 'candidates'], queryFn: () => get<{ items: Array<{ id: string; name: string; email: string; username: string }> }>('/api/members/candidates').then((r) => r.items) });
+  const hasCandidates = !!candidates.data?.length;
+  const [mode, setMode] = useState<'existing' | 'new' | null>(null);
+  const how = mode ?? (hasCandidates ? 'existing' : 'new');
   const save = async () => {
     setBusy(true);
     try {
       if (member.id) await put(`/api/members/${member.id}`, { groupIds: [...f.groupIds], active: f.active });
       else {
-        const r = await post<{ id: string }>('/api/members', { email: f.email, name: f.name || undefined, username: f.username || undefined, password: f.password || undefined, groupIds: [...f.groupIds] });
-        onSaved({ ...member, id: r.id, email: f.email, name: f.name || f.email, groupIds: [...f.groupIds], active: true, isOwner: false });
+        const picked = how === 'existing' ? candidates.data?.find((c) => c.email === f.email) : undefined;
+        const r = await post<{ id: string }>('/api/members', how === 'existing' ? { email: f.email, groupIds: [...f.groupIds] }
+          : { email: f.email, name: f.name || undefined, username: f.username || undefined, password: f.password || undefined, groupIds: [...f.groupIds] });
+        qc.invalidateQueries({ queryKey: ['members', orgId, 'candidates'] });
+        onSaved({ ...member, id: r.id, email: f.email, name: picked?.name || f.name || f.email, groupIds: [...f.groupIds], active: true, isOwner: false });
       }
       qc.invalidateQueries({ queryKey: ['members'] }); qc.invalidateQueries({ queryKey: ['groups'] });
       toast.success(member.id ? 'Membro salvo' : 'Membro adicionado');
@@ -36,10 +45,21 @@ function MemberForm({ member, onClose, onSaved }: { member: Partial<Member>; onC
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   return (
-    <Dialog open onClose={onClose} dirty={form.dirty} title={member.id ? member.name : 'Adicionar membro'} description={member.id ? member.email : 'Se a pessoa já tem conta no NoPaper, basta o e-mail. Senão, defina nome e senha inicial.'}
+    <Dialog open onClose={onClose} dirty={form.dirty} title={member.id ? member.name : 'Adicionar membro'} description={member.id ? member.email : hasCandidates ? 'Escolha uma conta que já existe ou crie uma conta nova para a pessoa.' : 'Se a pessoa já tem conta no NoPaper, basta o e-mail. Senão, defina nome e senha inicial.'}
       footer={<SaveFooter dirty={form.dirty} isNew={!member.id} saving={busy} canSave={!!member.id || !!f.email.trim()} onSave={save} onClose={onClose} saveLabel={member.id ? 'Salvar' : 'Adicionar'} />}>
       <div className="flex flex-col gap-4">
-        {!member.id && <>
+        {!member.id && hasCandidates && (
+          <Segmented className="self-start max-sm:self-stretch" value={how} onChange={(v) => { setMode(v); setF({ ...f, email: '' }); }} options={[{ value: 'existing', label: 'Conta que já existe' }, { value: 'new', label: 'Conta nova' }]} />
+        )}
+        {!member.id && how === 'existing' && (
+          <Field label="Conta" hint="Contas ativas que ainda não são deste espaço.">
+            <Select value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })}>
+              <option value="">Escolha a pessoa…</option>
+              {candidates.data?.map((c) => <option key={c.id} value={c.email}>{c.name} — {c.email}</option>)}
+            </Select>
+          </Field>
+        )}
+        {!member.id && how === 'new' && <>
           <Field label="E-mail"><Input type="email" autoFocus value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Nome (se for conta nova)"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
@@ -74,7 +94,7 @@ export function MembersPage() {
   const qc = useQueryClient();
   const groupName = (id: string) => groups.find((g) => g.id === id)?.name;
   const remove = async (m: Member) => {
-    if (!(await confirm({ title: `Remover ${m.name}?`, body: 'A pessoa perde o acesso a este espaço. A conta dela no NoPaper continua existindo.', confirmLabel: 'Remover', tone: 'danger' }))) return;
+    if (!(await confirm({ title: `Remover ${m.name}?`, body: 'A pessoa perde o acesso a este espaço. O que ela lançou e o histórico continuam. A conta dela no NoPaper continua existindo (para remover a conta: Plataforma → Usuários).', confirmLabel: 'Remover', tone: 'danger' }))) return;
     try { await del(`/api/members/${m.id}`); qc.invalidateQueries({ queryKey: ['members'] }); } catch (e) { toast.error(errMsg(e)); }
   };
   return (

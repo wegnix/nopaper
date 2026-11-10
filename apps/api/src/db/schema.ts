@@ -22,6 +22,11 @@ export const users = pgTable('users', {
   /** Pode criar espaços novos (superadmin sempre pode). Definido em Plataforma → Usuários. */
   canCreateOrgs: boolean('can_create_orgs').notNull().default(false),
   active: boolean('active').notNull().default(true),
+  /**
+   * Conta removida: a linha fica (o nome continua aparecendo no que a pessoa lançou e na auditoria),
+   * mas sem acesso, fora das listas, e com e-mail/usuário trocados para liberar os originais.
+   */
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   telegramChatId: varchar('telegram_chat_id', { length: 64 }),
   preferences: jsonb('preferences').$type<Record<string, unknown>>().notNull().default({}),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
@@ -493,3 +498,42 @@ export const backupRuns = pgTable('backup_runs', {
   startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
   finishedAt: timestamp('finished_at', { withTimezone: true }),
 });
+
+// ------------------------------------------------------------------ área do contador
+/**
+ * Documentos enviados pelo contador (holerites, guias de impostos, mensalidade, outros). O arquivo
+ * fica em STORAGE_DIR como os anexos. Quem confere marca como lançado (com a conta a pagar criada,
+ * se houver) ou dispensa.
+ */
+export const accountingDocuments = pgTable('accounting_documents', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  /** payslip | office_fee | das | darf | dae | state_tax | other */
+  kind: varchar('kind', { length: 16 }).notNull(),
+  /** Competência AAAA-MM. */
+  competence: varchar('competence', { length: 7 }),
+  note: varchar('note', { length: 500 }),
+  originalName: varchar('original_name', { length: 255 }).notNull(),
+  mime: varchar('mime', { length: 100 }).notNull(),
+  size: integer('size').notNull(),
+  storageKey: varchar('storage_key', { length: 255 }).notNull(),
+  sha256: varchar('sha256', { length: 64 }).notNull(),
+  /** Lido do arquivo no envio (valor, vencimento, código de barras; holerites: quantos). */
+  detected: jsonb('detected'),
+  /** new | done | dismissed */
+  status: varchar('status', { length: 12 }).notNull().default('new'),
+  billId: uuid('bill_id').references(() => bills.id, { onDelete: 'set null' }),
+  handledBy: uuid('handled_by'),
+  handledAt: timestamp('handled_at', { withTimezone: true }),
+  handleNote: varchar('handle_note', { length: 500 }),
+  uploadedBy: uuid('uploaded_by'),
+  /**
+   * Tirado da lista de quem confere (por quem confere, ou cancelado por quem enviou). Nada é apagado:
+   * quem enviou continua vendo o registro e o arquivo no histórico dele.
+   */
+  hiddenAt: timestamp('hidden_at', { withTimezone: true }),
+  hiddenBy: uuid('hidden_by'),
+  /** Quem enviou tirou do próprio histórico. Com os dois lados fora, a linha e o arquivo são apagados. */
+  uploaderRemovedAt: timestamp('uploader_removed_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [index('accounting_docs_org_idx').on(t.orgId, t.status, t.createdAt)]);

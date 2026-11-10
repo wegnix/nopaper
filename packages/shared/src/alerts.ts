@@ -18,6 +18,8 @@ export const alertConfigSchema = z.object({
   receivable: typeRule.default({ enabled: false, daysBefore: [0], overdue: true }),
   /** Incluir contas de categorias restritas (os destinatários podem não ser administradores). */
   includeRestricted: z.boolean().default(false),
+  /** Avisar na hora quando o contador enviar documentos (área do contador). */
+  accounting: z.boolean().default(true),
   telegram: z.object({
     enabled: z.boolean().default(false),
     chats: z.array(z.object({ id: z.string().max(32), name: z.string().max(120) })).max(10).default([]),

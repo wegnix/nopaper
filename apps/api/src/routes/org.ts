@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { isNull, and, eq, inArray, sql } from 'drizzle-orm';
 import { orgCreateSchema, orgUpdateSchema, memberAddSchema, memberUpdateSchema, groupSchema, usernameFromEmail, PERMISSIONS, type Permission } from '@nopaper/shared';
 import { assertUsernameFree } from './auth.js';
 import { db, schema } from '../db/client.js';
@@ -56,13 +56,30 @@ export default async function orgRoutes(app: FastifyInstance) {
     return { items: rows.map((r) => ({ ...r, groupIds: links.filter((l) => l.membershipId === r.id).map((l) => l.groupId) })) };
   });
 
+  /**
+   * Contas que já existem e ainda não são deste espaço, para escolher ao adicionar um membro.
+   * Administrador da plataforma vê todas; os demais, só as pessoas com quem já dividem algum espaço
+   * (não dá para listar as contas de espaços alheios).
+   */
+  app.get('/api/members/candidates', { preHandler: requirePerm('members.manage') }, async (req) => {
+    const u = schema.users;
+    const rows = await db.select({ id: u.id, name: u.name, email: u.email, username: u.username }).from(u)
+      .where(and(
+        eq(u.active, true), isNull(u.deletedAt),
+        sql`not exists (select 1 from memberships m where m.user_id = ${u.id} and m.org_id = ${req.org!.id})`,
+        req.user!.isSuperadmin ? undefined
+          : sql`exists (select 1 from memberships m join memberships mine on mine.org_id = m.org_id and mine.user_id = ${req.user!.id} and mine.active where m.user_id = ${u.id})`,
+      )).orderBy(u.name).limit(500);
+    return { items: rows };
+  });
+
   app.post('/api/members', { preHandler: requirePerm('members.manage') }, async (req) => {
     const body = parse(memberAddSchema, req.body);
     const orgId = req.org!.id;
     await assertGroupsInOrg(orgId, body.groupIds);
     await assertCanAssignGroups(req, body.groupIds, []);
     const result = await db.transaction(async (tx) => {
-      let [u] = await tx.select().from(schema.users).where(sql`lower(${schema.users.email}) = ${body.email}`);
+      let [u] = await tx.select().from(schema.users).where(and(sql`lower(${schema.users.email}) = ${body.email}`, isNull(schema.users.deletedAt)));
       const created = !u;
       if (!u) {
         if (!body.password || !body.name) throw badRequest('Usuário novo: informe nome e senha inicial');

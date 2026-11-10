@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CalendarClock, CreditCard } from 'lucide-react';
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, CalendarClock, CreditCard, FileUp } from 'lucide-react';
 import { MONTHS_PT, formatBRL, formatDateBR, fromCents, toCents, todayISO, type BillType } from '@nopaper/shared';
 import { Card, PageHeader } from '@/components/ui/base';
 import { CategoryChip, StatusChip } from '@/components/ui/chips';
@@ -8,6 +8,9 @@ import { get, qs } from '@/lib/api';
 import { useCategories } from '@/lib/queries';
 import { useCan, useSession, useOrg } from '@/lib/session';
 import { CountUp } from '@/features/bills/KpiRibbon';
+import { useAccountantOnly, useAccountingPending } from '@/features/accounting/data';
+import { AccountingPage } from '@/features/accounting/AccountingPage';
+import { plural } from '@/lib/utils';
 import { displayStatus } from '@/features/bills/labels';
 import type { Bill, Card as CardT, Summary } from '@/lib/types';
 import { MonthlyChart, type Report } from '@/features/reports/ReportsPage';
@@ -41,6 +44,8 @@ export function DashboardPage() {
   const today = p.data?.today ?? todayISO();
   const month = MONTHS_PT[Number(today.slice(5, 7)) - 1];
   const balance = fromCents(toCents(r.data?.forecast.total ?? '0') - toCents(p.data?.forecast.total ?? '0'));
+  const pendingDocs = useAccountingPending();
+  const accountantOnly = useAccountantOnly();
   const hour = new Date().getHours();
   const hello = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
 
@@ -55,9 +60,19 @@ export function DashboardPage() {
 
   const attention = [...(ovP.data ?? []), ...(upP.data ?? [])].slice(0, 8);
 
+  // contador (só envia documentos): o início dele é a área do contador
+  if (accountantOnly) return <AccountingPage />;
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
       <PageHeader title={`${hello}, ${user?.name.split(' ')[0]}`} description={`${org?.name} · ${month} de ${today.slice(0, 4)}`} />
+
+      {pendingDocs > 0 && (
+        <Link to="/contador" className="flex items-center gap-3 rounded-xl border border-accent/30 bg-accent-soft/50 px-4 py-3 text-sm transition hover:bg-accent-soft">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-white"><FileUp className="size-4" /></span>
+          <span className="min-w-0 flex-1"><b className="font-medium">O contador enviou {plural(pendingDocs, 'documento', 'documentos')}</b><span className="block text-xs text-muted">Confira e lance na área do contador.</span></span>
+          <span className="shrink-0 text-xs font-medium text-accent">abrir</span>
+        </Link>
+      )}
 
       <div className="grid gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-3">
         {canP && (

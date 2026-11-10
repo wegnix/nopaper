@@ -171,7 +171,8 @@ export function findBoletoInText(text: string): string | null {
   const banco = /(\d{5})\.?(\d{5})\s+(\d{5})\.?(\d{6})\s+(\d{5})\.?(\d{6})\s+(\d)\s+(\d{14})/g;
   for (const m of text.matchAll(banco)) {
     const d = m.slice(1).join('');
-    if (validateLinhaBancaria(d)) return formatLinhaBancaria(d);
+    // além dos DVs dos campos, o DV geral tem de fechar (números de relatórios passavam nos 3 primeiros)
+    if (validateLinhaBancaria(d) && parseBoleto(d)?.valid) return formatLinhaBancaria(d);
   }
   const conc = /(\d{11})[\s-]?(\d)\s+(\d{11})[\s-]?(\d)\s+(\d{11})[\s-]?(\d)\s+(\d{11})[\s-]?(\d)/g;
   for (const m of text.matchAll(conc)) {
@@ -182,7 +183,9 @@ export function findBoletoInText(text: string): string | null {
     const max = Math.min(digits.length, 5000);
     for (let i = 0; i + 47 <= max; i++) {
       const w = digits.slice(i, i + 47);
-      if (validateLinhaBancaria(w) && w.slice(33).replace(/0/g, '') !== '') return formatLinhaBancaria(w);
+      // janela solta no meio dos números do texto: além dos DVs dos campos, o DV geral tem de fechar
+      // (holerites e relatórios cheios de números passavam só nos 3 primeiros por coincidência)
+      if (validateLinhaBancaria(w) && w.slice(33).replace(/0/g, '') !== '' && parseBoleto(w)?.valid) return formatLinhaBancaria(w);
     }
     for (let i = 0; i + 48 <= max; i++) {
       const w = digits.slice(i, i + 48);

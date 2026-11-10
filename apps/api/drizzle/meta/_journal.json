@@ -148,6 +148,34 @@
       "when": 1794342276959,
       "tag": "0020_rubric_labor_charges",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794350286206,
+      "tag": "0021_accounting_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794351628379,
+      "tag": "0022_user_deleted_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794353328017,
+      "tag": "0023_accounting_hidden",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794353762500,
+      "tag": "0024_accounting_uploader_removed",
+      "breakpoints": true
     }
   ]
 }

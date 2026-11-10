@@ -5,7 +5,8 @@ import { Dialog } from '@/components/ui/dialog';
 import { Button, Spinner } from '@/components/ui/base';
 import { get, errMsg } from '@/lib/api';
 
-interface Target { attachmentId: string; slot: AttachmentSlot; title: string }
+/** Anexo de uma conta (attachmentId + slot) ou outro arquivo com URL assinada própria (`urlPath` + `label`). */
+interface Target { attachmentId?: string; slot?: AttachmentSlot; urlPath?: string; label?: string; title: string }
 const isAndroid = /Android/i.test(navigator.userAgent);
 
 export function FileViewer({ target, onClose }: { target: Target | null; onClose: () => void }) {
@@ -13,7 +14,7 @@ export function FileViewer({ target, onClose }: { target: Target | null; onClose
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setData(null); setError(null);
-    if (target) get<{ url: string; downloadUrl: string; mime: string; name: string }>(`/api/attachments/${target.attachmentId}/url`).then(setData).catch((e) => setError(errMsg(e)));
+    if (target) get<{ url: string; downloadUrl: string; mime: string; name: string }>(target.urlPath ?? `/api/attachments/${target.attachmentId}/url`).then(setData).catch((e) => setError(errMsg(e)));
   }, [target]);
 
   const print = () => {
@@ -23,7 +24,7 @@ export function FileViewer({ target, onClose }: { target: Target | null; onClose
   return (
     <Dialog
       open={!!target} onClose={onClose} size="xl"
-      title={target ? `${ATTACHMENT_SLOT_LABEL[target.slot]} · ${target.title}` : ''}
+      title={target ? `${target.label ?? (target.slot ? ATTACHMENT_SLOT_LABEL[target.slot] : 'Arquivo')} · ${target.title}` : ''}
       description={data?.name}
       className="sm:h-[92dvh]"
       footer={data && <>

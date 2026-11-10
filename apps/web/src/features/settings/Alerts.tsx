@@ -132,6 +132,7 @@ export function AlertsPage() {
           {can('payable.view') && rule('payable', 'Contas a pagar')}
           {can('receivable.view') && rule('receivable', 'Contas a receber')}
         </div>
+        <div className="mt-4"><Switch checked={f.accounting} onChange={(accounting) => setF({ ...f, accounting })} label="Avisar quando o contador enviar documentos" hint="Na hora do envio (holerites, guias, boletos), pelos mesmos canais." /></div>
         {can('bills.view_restricted') && (
           <div className="mt-4"><Switch checked={f.includeRestricted} onChange={(includeRestricted) => setF({ ...f, includeRestricted })} label="Incluir categorias restritas" hint="Cuidado: quem recebe os alertas passa a ver essas contas" /></div>
         )}

@@ -1,8 +1,9 @@
-import { ArrowDownLeft, ArrowUpRight, BarChart3, CreditCard, Landmark, LayoutDashboard, Settings, UsersRound, type LucideIcon } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, BarChart3, CreditCard, FileUp, Landmark, LayoutDashboard, Settings, UsersRound, type LucideIcon } from 'lucide-react';
 import type { Permission } from '@nopaper/shared';
 
 /** `companyOnly`: só aparece em espaço do tipo Empresa. */
-export interface NavItem { to: string; label: string; icon: LucideIcon; perm?: Permission; soon?: boolean; companyOnly?: boolean }
+/** `anyPerm`: aparece para quem tem qualquer uma das permissões. */
+export interface NavItem { to: string; label: string; icon: LucideIcon; perm?: Permission; anyPerm?: Permission[]; soon?: boolean; companyOnly?: boolean }
 export const NAV: NavItem[] = [
   { to: '/', label: 'Início', icon: LayoutDashboard },
   { to: '/pagar', label: 'Contas a pagar', icon: ArrowUpRight, perm: 'payable.view' },
@@ -10,10 +11,11 @@ export const NAV: NavItem[] = [
   { to: '/cartoes', label: 'Cartões', icon: CreditCard, perm: 'cards.view' },
   { to: '/bancos', label: 'Contas bancárias', icon: Landmark, perm: 'bank.view' },
   { to: '/folha', label: 'Folha de pagamento', icon: UsersRound, perm: 'payroll.view', companyOnly: true },
+  { to: '/contador', label: 'Contador', icon: FileUp, anyPerm: ['accounting.upload', 'accounting.review'] },
   { to: '/relatorios', label: 'Relatórios', icon: BarChart3, perm: 'reports.view' },
 ];
 export const NAV_BOTTOM: NavItem[] = [{ to: '/config', label: 'Configurações', icon: Settings }];
 
 /** Item visível para a pessoa neste espaço. */
 export const navVisible = (i: NavItem, can: (p: Permission) => boolean, kind: 'personal' | 'company' | undefined) =>
-  (!i.perm || can(i.perm)) && (!i.companyOnly || kind === 'company');
+  (!i.perm || can(i.perm)) && (!i.anyPerm || i.anyPerm.some(can)) && (!i.companyOnly || kind === 'company');

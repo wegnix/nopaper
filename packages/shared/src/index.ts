@@ -13,6 +13,7 @@ export * from './document.js';
 export * from './payroll.js';
 export * from './commissions.js';
 export * from './payslips.js';
+export * from './accounting.js';
 export * from './bank.js';
 export * from './cardOfx.js';
 export * from './spending.js';

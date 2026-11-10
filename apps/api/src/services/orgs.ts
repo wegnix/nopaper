@@ -1,4 +1,4 @@
-import { DEFAULT_OPERATOR_PERMISSIONS, DEFAULT_READONLY_PERMISSIONS, type ColorKey, type OrgKind } from '@nopaper/shared';
+import { DEFAULT_OPERATOR_PERMISSIONS, DEFAULT_ACCOUNTANT_PERMISSIONS, DEFAULT_READONLY_PERMISSIONS, type ColorKey, type OrgKind } from '@nopaper/shared';
 import type { DBOrTx } from '../db/client.js';
 import { schema } from '../db/client.js';
 import { seedCardCategories } from './cardCategories.js';
@@ -53,6 +53,7 @@ export async function createOrganization(tx: DBOrTx, opts: { name: string; kind:
     { orgId: org.id, name: 'Administradores', description: 'Acesso total à organização', isAdmin: true, permissions: [] },
     { orgId: org.id, name: 'Operadores', description: 'Lançam e pagam contas, sem administração', permissions: DEFAULT_OPERATOR_PERMISSIONS },
     { orgId: org.id, name: 'Leitura', description: 'Apenas visualização', permissions: DEFAULT_READONLY_PERMISSIONS },
+    { orgId: org.id, name: 'Contador', description: 'Só envia documentos (holerites, guias, boletos) pela área do contador', permissions: DEFAULT_ACCOUNTANT_PERMISSIONS },
   ]).returning();
   await tx.insert(schema.membershipGroups).values({ membershipId: m.id, groupId: admin.id });
   const cats: Array<[DefaultCategory, Kind]> = [

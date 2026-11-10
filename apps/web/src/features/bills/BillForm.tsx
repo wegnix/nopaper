@@ -29,6 +29,10 @@ interface Props {
   onRestructure: (b: Bill) => void;
   onStopRecurrence: (b: Bill) => void;
   onView: (b: Bill, slot: AttachmentSlot) => void;
+  /** Conta nova já com um arquivo para ler (ex.: guia enviada pelo contador) e textos sugeridos. */
+  seed?: { file: File; description?: string; notes?: string; /** Tipo do anexo quando a leitura não tiver certeza. */ slot?: AttachmentSlot } | null;
+  /** Chamado quando a conta nova é criada. */
+  onCreated?: (b: Bill) => void;
 }
 
 const confLabel = { high: 'alta', medium: 'média', low: 'baixa' };
@@ -48,7 +52,7 @@ async function uploadAttachment(billId: string, file: File, slot: AttachmentSlot
   return api<{ bill: Bill; classification: Classification | null; slot: AttachmentSlot }>('POST', `/api/bills/${billId}/attachments?slot=${slot}`, fd);
 }
 
-export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecurrence, onView }: Props) {
+export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecurrence, onView, seed, onCreated }: Props) {
   const l = L[type];
   const [current, setCurrent] = useState<Bill | null>(bill);
   /** Depois de criar, a janela continua aberta editando a conta criada. */
@@ -90,13 +94,14 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
       form.load(fromBill(bill));
       setRec(initialRec(bill.recurrenceType, bill.isIndefinite));
     } else {
-      form.load({ ...blank(), categoryId: cats[0]?.id ?? '' });
+      form.load({ ...blank(), categoryId: cats[0]?.id ?? '', description: seed?.description ?? '', notes: seed?.notes ?? '' });
       setRec(initialRec());
+      if (seed) void analyze(seed.file, seed.slot);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, bill?.id]);
   // categorias chegaram depois de abrir: escolhe a 1ª sem contar como alteração
-  useEffect(() => { if (open && !f.categoryId && cats[0]) form.load({ ...f, categoryId: cats[0].id }); }, [cats, open, f.categoryId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open && !f.categoryId && cats[0]) form.load({ ...f, categoryId: cats[0].id, description: f.description || (!bill && seed?.description) || '', notes: f.notes || (!bill && seed?.notes) || '' }); }, [cats, open, f.categoryId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const boleto = useMemo(() => (f.barcode.replace(/\D/g, '').length >= 44 ? parseBoleto(f.barcode) : null), [f.barcode]);
   const pix = useMemo(() => (f.pixKey.trim() ? parsePix(f.pixKey) : null), [f.pixKey]);
@@ -126,12 +131,12 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
     }));
   };
 
-  const analyze = async (file: File) => {
+  const analyze = async (file: File, prefer?: AttachmentSlot) => {
     setAnalyzing(true);
     try {
       const fd = new FormData(); fd.append('file', file);
       const c = await api<Classification>('POST', '/api/documents/analyze', fd);
-      setPending({ file, slot: c.kind === 'unknown' ? null : c.kind, cls: c });
+      setPending({ file, slot: prefer && c.confidence !== 'high' ? prefer : c.kind === 'unknown' ? null : c.kind, cls: c });
       if (c.kind !== 'unknown') applyClassification(c);
     } catch (e) { toast.error(errMsg(e)); } finally { setAnalyzing(false); }
   };
@@ -176,7 +181,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
         }
         toast.success(r.items.length > 1 ? `${r.items.length} lançamentos criados — editando o primeiro` : 'Conta criada');
         setPending(null);
-        if (head) { setCurrent(head); form.load(fromBill(head)); setRec(initialRec(head.recurrenceType, head.isIndefinite)); }
+        if (head) { setCurrent(head); form.load(fromBill(head)); setRec(initialRec(head.recurrenceType, head.isIndefinite)); onCreated?.(head); }
       } else if (current) {
         const folderChanged = (current.folderId ?? '') !== f.folderId;
         const r = await put<Bill & { cascaded: number }>(`/api/bills/${current.id}`, {

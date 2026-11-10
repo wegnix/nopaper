@@ -30,7 +30,9 @@ const sentence = (v: string | null) => (v ? v.charAt(0).toUpperCase() + v.slice(
  * no mês. Só grava em "Lançar". Quem não está no cadastro pode entrar como "só holerite" (tem o
  * documento, mas não recebe pela empresa).
  */
-export function PayslipsDialog({ open, onClose, periods, currentRef, employees, rubrics, costs, payslips, payMonth, canManage, onDone }: {
+export function PayslipsDialog({ open, onClose, periods, currentRef, employees, rubrics, costs, payslips, payMonth, canManage, onDone, docId }: {
+  /** Documento da área do contador para ler no lugar de escolher um arquivo; ao lançar, ele fica como "lançado". */
+  docId?: string | null;
   open: boolean; onClose: () => void; periods: PeriodSummary[]; currentRef: string; employees: Employee[]; rubrics: Rubric[];
   costs: PayrollCosts; payslips: PayrollPayslipsSettings; payMonth: 'same' | 'next'; canManage: boolean; onDone: (ref: string) => void;
 }) {
@@ -51,6 +53,13 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
   const [openAgreed, setOpenAgreed] = useState<Record<string, boolean>>({});
   const [adjust, setAdjust] = useState<{ earning: string; deduction: string }>({ earning: '', deduction: '' });
   useEffect(() => { if (open) { setFile(null); setLinks({}); setChoice({}); setAgreed({}); setOpenAgreed({}); setRef(currentRef); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open]);
+  // veio da área do contador: lê o documento enviado assim que a janela abre (e os meses carregam)
+  const autoLoaded = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) { autoLoaded.current = null; return; }
+    if (docId && periods.length && autoLoaded.current !== docId) { autoLoaded.current = docId; void pick(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, docId, periods.length]);
   const hasRef = (r: string) => periods.some((p) => p.ref === r);
   /**
    * Folha que recebe um holerite: o salário é pago no mês seguinte à competência. Se a folha do espaço
@@ -63,11 +72,12 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
   const extraOf = (kind: 'earning' | 'deduction') => rubrics.filter((r) => r.section === 'extra' && r.kind === kind && r.active);
   const adjustId = (kind: 'earning' | 'deduction') => adjust[kind] || extraOf(kind).find((r) => personKey(r.name) === (kind === 'earning' ? 'outros proventos' : 'outros descontos'))?.id || '';
 
-  const pick = async (f: File) => {
+  const pick = async (f: File | null) => {
     setReading(true);
     try {
-      const fd = new FormData(); fd.append('file', f);
-      const r = await api<{ fileName: string; report: PayslipReport }>('POST', '/api/payroll/payslips/read', fd);
+      const fd = new FormData(); if (f) fd.append('file', f);
+      const r = f ? await api<{ fileName: string; report: PayslipReport }>('POST', '/api/payroll/payslips/read', fd)
+        : await post<{ fileName: string; report: PayslipReport }>(`/api/accounting/documents/${docId}/payslips`);
       setLinks({}); setChoice({}); setAgreed({}); setOpenAgreed({});
       setFile(r);
       const rr = r.report.ref ? folhaOf(r.report.ref) : null;
@@ -161,6 +171,7 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
         }),
         adjustEarningId: adjustId('earning') || null, adjustDeductionId: adjustId('deduction') || null,
       });
+      if (docId) await put(`/api/accounting/documents/${docId}`, { status: 'done' }).then(() => qc.invalidateQueries({ queryKey: ['accounting'] })).catch(() => undefined);
       qc.invalidateQueries({ queryKey: ['bills'] });
       toast.success(r.applied.length ? `Holerites lançados: ${plural(r.applied.length, 'funcionário', 'funcionários')}` : 'Nada mudou: os holerites já estavam lançados');
       if (r.createdEmployees.length) toast.info(`Cadastrado${r.createdEmployees.length > 1 ? 's' : ''}: ${r.createdEmployees.join(', ')}`);
