@@ -16,7 +16,7 @@ export default async function catalogRoutes(app: FastifyInstance) {
     const rows = await db.select({
       id: schema.categories.id, label: schema.categories.label, color: schema.categories.color,
       kind: schema.categories.kind, isRestricted: schema.categories.isRestricted, isSystem: schema.categories.isSystem,
-      usage: sql<number>`(select count(*)::int from ${schema.bills} b where b.category_id = ${schema.categories.id})`,
+      usage: sql<number>`(select count(*)::int from bills b where b.category_id = categories.id)`,
     }).from(schema.categories)
       .where(and(eq(schema.categories.orgId, req.org!.id), seeRestricted ? undefined : eq(schema.categories.isRestricted, false)))
       .orderBy(schema.categories.label);
@@ -69,7 +69,7 @@ export default async function catalogRoutes(app: FastifyInstance) {
   app.get('/api/folders', { preHandler: anyView }, async (req) => {
     const rows = await db.select({
       id: schema.folders.id, name: schema.folders.name, label: schema.folders.label, color: schema.folders.color,
-      usage: sql<number>`(select count(*)::int from ${schema.bills} b where b.folder_id = ${schema.folders.id})`,
+      usage: sql<number>`(select count(*)::int from bills b where b.folder_id = folders.id)`,
     }).from(schema.folders).where(eq(schema.folders.orgId, req.org!.id)).orderBy(schema.folders.label);
     return { items: rows.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' })) };
   });

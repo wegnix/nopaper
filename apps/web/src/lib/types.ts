@@ -1,6 +1,7 @@
 import type { AttachmentSlot, BillType, ColorKey, RecurrenceType } from '@nopaper/shared';
 
 export interface Category { id: string; label: string; color: ColorKey; kind: 'payable' | 'receivable' | 'both'; isRestricted: boolean; isSystem: boolean; usage: number }
+export interface CardCategory { id: string; label: string; color: ColorKey; ruleKey: string | null; usage: number }
 export interface Folder { id: string; name: string; label: string; color: ColorKey; usage: number }
 export interface AttachmentSummary { id: string; name: string; mime: string; size: number }
 export interface Bill {
@@ -28,7 +29,7 @@ export interface Card {
   limitUsed: string; currentRef: string; currentTotal: string; currentClosing: string; currentDue: string;
 }
 export interface CardTx {
-  id: string; cardId: string; statementId: string; groupId: string; description: string; categoryId: string;
+  id: string; cardId: string; statementId: string; groupId: string; description: string; categoryId: string | null;
   amount: string; totalAmount: string; purchaseDate: string; installmentNumber: number; totalInstallments: number; notes: string | null;
 }
 export interface StatementView {

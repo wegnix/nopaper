@@ -228,6 +228,19 @@ export const cardStatements = pgTable('card_statements', {
   createdAt: createdAt(),
 }, (t) => [uniqueIndex('card_statements_card_ref_uq').on(t.cardId, t.ref)]);
 
+/** Categorias das compras no cartão (detalham a fatura; independentes das categorias de contas). */
+export const cardCategories = pgTable('card_categories', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  label: varchar('label', { length: 64 }).notNull(),
+  color: varchar('color', { length: 16 }).notNull().default('slate'),
+  /** Regra automática (SPENDING_KEYS) que manda compras para esta categoria; null = só pelo histórico. */
+  ruleKey: varchar('rule_key', { length: 24 }),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index('card_categories_org_idx').on(t.orgId)]);
+
 export const cardTransactions = pgTable('card_transactions', {
   id: id(),
   orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
@@ -236,7 +249,8 @@ export const cardTransactions = pgTable('card_transactions', {
   /** Agrupa as parcelas de uma mesma compra. */
   groupId: uuid('group_id').notNull(),
   description: varchar('description', { length: 255 }).notNull(),
-  categoryId: uuid('category_id').notNull().references(() => categories.id, { onDelete: 'restrict' }),
+  /** Categoria do cartão (não a de contas a pagar); null só em lançamento antigo ainda não classificado. */
+  categoryId: uuid('card_category_id').references(() => cardCategories.id, { onDelete: 'restrict' }),
   /** Positivo = compra; negativo = estorno/crédito. */
   amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
   /** Valor total da compra (todas as parcelas). */
@@ -253,6 +267,7 @@ export const cardTransactions = pgTable('card_transactions', {
   index('card_tx_statement_idx').on(t.statementId),
   index('card_tx_group_idx').on(t.groupId),
   index('card_tx_org_date_idx').on(t.orgId, t.purchaseDate),
+  index('card_tx_category_idx').on(t.categoryId),
 ]);
 
 // ------------------------------------------------------------------ folha de pagamento (espaço Empresa)
@@ -432,7 +447,7 @@ export const bankTransactions = pgTable('bank_transactions', {
 export const importBatches = pgTable('import_batches', {
   id: id(),
   orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
-  /** payable | receivable | payroll */
+  /** payable | receivable | payroll | card (fatura OFX) */
   type: varchar('type', { length: 16 }).notNull(),
   fileName: varchar('file_name', { length: 200 }).notNull(),
   rowCount: integer('row_count').notNull(),

@@ -1,23 +1,25 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DropdownMenu } from 'radix-ui';
 import { toast } from 'sonner';
-import { ArrowLeftRight, Check, ChevronLeft, ChevronRight, CreditCard, MoreHorizontal, Pencil, Plus, Receipt, RotateCcw, Trash2, Wallet } from 'lucide-react';
-import { MONTHS_PT, addMonthsRef, formatBRL, formatDateBR, toCents, type AttachmentSlot } from '@nopaper/shared';
+import { ArrowLeftRight, Check, ChevronLeft, ChevronRight, CreditCard, FileUp, Tags, X, MoreHorizontal, Pencil, Plus, Receipt, RotateCcw, Trash2, Wallet } from 'lucide-react';
+import { COLOR_PRESETS, MONTHS_PT, addMonthsRef, formatBRL, formatDateBR, isColorKey, toCents, type AttachmentSlot } from '@nopaper/shared';
 import { Button, Card, Empty, PageHeader, Spinner } from '@/components/ui/base';
 import { CategoryChip, StatusChip } from '@/components/ui/chips';
 import { useConfirm } from '@/components/ui/dialog';
 import { api, get, post, errMsg } from '@/lib/api';
-import { useCategories } from '@/lib/queries';
+import { useCardCategories } from '@/lib/queries';
 import { useCan, useSession } from '@/lib/session';
-import { cn } from '@/lib/utils';
+import { cn, isTouch } from '@/lib/utils';
 import type { Bill, Card as CardT, CardTx, StatementView } from '@/lib/types';
 import { CountUp } from '@/features/bills/KpiRibbon';
 import { PayDialog } from '@/features/bills/dialogs';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
 import { CardVisual } from './CardVisual';
 import { CardFormDialog, TxFormDialog, refLabel } from './CardForms';
+import { CardOfxDialog } from './CardImport';
+import { CardCategoryManager } from './CardCategories';
 
 const STATUS = { open: { status: 'pending' as const, label: 'Aberta' }, closed: { status: 'today' as const, label: 'Fechada · a pagar' }, paid: { status: 'paid' as const, label: 'Paga' } };
 
@@ -30,7 +32,7 @@ export function CardsPage() {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const [sp, setSp] = useSearchParams();
-  const { data: cats = [] } = useCategories();
+  const { data: cats = [] } = useCardCategories();
   const catMap = useMemo(() => new Map(cats.map((c) => [c.id, c])), [cats]);
 
   const cardsQ = useQuery({ queryKey: ['bills', orgId, 'cards'], queryFn: () => get<{ items: CardT[] }>('/api/cards').then((r) => r.items) });
@@ -49,12 +51,19 @@ export function CardsPage() {
   const [cardForm, setCardForm] = useState<{ open: boolean; card: CardT | null }>({ open: false, card: null });
   const [txForm, setTxForm] = useState<{ open: boolean; tx: CardTx | null }>({ open: false, tx: null });
   const [pay, setPay] = useState<{ bill: Bill; proofOnly: boolean } | null>(null);
+  const [ofxOpen, setOfxOpen] = useState(false);
   const [viewer, setViewer] = useState<FileViewerTarget | null>(null);
 
+  const [catsOpen, setCatsOpen] = useState(false);
+  const [catFilter, setCatFilter] = useState<string | null>(null);
+  useEffect(() => { setCatFilter(null); }, [card?.id, ref]);
+  const shownItems = useMemo(() => (catFilter ? (st?.items ?? []).filter((t) => t.categoryId === catFilter) : st?.items ?? []), [st, catFilter]);
+  // gasto por categoria do cartão: estorno abate na própria categoria; % sobre as categorias com saldo positivo
   const byCat = useMemo(() => {
     const m = new Map<string, number>();
-    for (const t of st?.items ?? []) m.set(t.categoryId, (m.get(t.categoryId) ?? 0) + toCents(t.amount));
-    return [...m.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+    for (const t of st?.items ?? []) m.set(t.categoryId ?? '', (m.get(t.categoryId ?? '') ?? 0) + toCents(t.amount));
+    const rows = [...m.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+    return { rows, total: rows.reduce((a, [, v]) => a + v, 0) };
   }, [st]);
 
   const unpay = async (b: Bill) => {
@@ -80,7 +89,10 @@ export function CardsPage() {
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
       <PageHeader title="Cartões de crédito" description="Lance as compras no cartão; cada fatura vira uma conta a pagar automaticamente."
-        actions={canManage && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCardForm({ open: true, card: null })}>Novo cartão</Button>} />
+        actions={<>
+          <Button variant="ghost" icon={<Tags className="size-4" />} onClick={() => setCatsOpen(true)}>Categorias</Button>
+          {canManage && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCardForm({ open: true, card: null })}>Novo cartão</Button>}
+        </>} />
 
       {!cards.length ? (
         <Card><Empty icon={<CreditCard className="size-5" />} title="Nenhum cartão cadastrado" action={canManage && <Button variant="primary" onClick={() => setCardForm({ open: true, card: null })}>Cadastrar cartão</Button>}>
@@ -111,6 +123,7 @@ export function CardsPage() {
                   {st?.bill && st.bill.status === 'pending' && canPay && <Button variant="ok" icon={<Check className="size-4" />} onClick={() => setPay({ bill: st.bill!, proofOnly: false })}>Pagar fatura</Button>}
                   {st?.bill && st.bill.status === 'paid' && canPay && <Button variant="ghost" icon={<RotateCcw className="size-4" />} onClick={() => unpay(st.bill!)}>Reverter pagamento</Button>}
                   {st?.bill && st.bill.status === 'paid' && canPay && <Button variant="ghost" icon={<Receipt className="size-4" />} onClick={() => setPay({ bill: st.bill!, proofOnly: true })}>Comprovante</Button>}
+                  {canEdit && card.active && <Button variant="ghost" icon={<FileUp className="size-4" />} onClick={() => setOfxOpen(true)}>Importar fatura</Button>}
                   {canEdit && card.active && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setTxForm({ open: true, tx: null })}>Lançar compra</Button>}
                 </div>
               </div>
@@ -133,21 +146,27 @@ export function CardsPage() {
                       ) : <span>A conta a pagar desta fatura é criada no primeiro lançamento e entra em Contas a pagar no mês do vencimento.</span>}
                     </p>
                   )}
+                  {catFilter && (
+                    <div className="flex items-center gap-2 border-b border-line bg-accent-soft/40 px-4 py-2 text-xs md:px-5">
+                      <span>Mostrando só <b>{catMap.get(catFilter)?.label ?? 'Sem categoria'}</b> · {shownItems.length} lançamento(s)</span>
+                      <button className="ml-auto inline-flex items-center gap-1 font-medium text-accent hover:underline" onClick={() => setCatFilter(null)}><X className="size-3.5" />Mostrar todos</button>
+                    </div>
+                  )}
                   {stQ.isLoading ? <div className="grid place-items-center py-16"><Spinner /></div> : !st?.items.length ? (
                     <p className="px-5 py-14 text-center text-sm text-muted">Nenhum lançamento nesta fatura.</p>
                   ) : (
                     <ul className="divide-y divide-line">
-                      {st.items.map((t) => (
+                      {shownItems.map((t) => (
                         <li key={t.id} className="group flex items-center gap-3 px-4 md:px-5 py-3">
                           <span className="w-12 shrink-0 text-xs text-faint tnum">{formatDateBR(t.purchaseDate).slice(0, 5)}</span>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium">{t.description}</p>
-                            <p className="text-xs text-faint">
+                            <p className="text-xs text-faint max-sm:line-clamp-2">
                               {t.totalInstallments > 1 ? `parcela ${t.installmentNumber}/${t.totalInstallments} · total ${formatBRL(t.totalAmount)}` : 'à vista'}
                               {t.notes && ` · ${t.notes}`}
                             </p>
                           </div>
-                          <CategoryChip category={catMap.get(t.categoryId)} className="hidden sm:inline-flex" />
+                          <CategoryChip category={t.categoryId ? catMap.get(t.categoryId) : undefined} className="hidden sm:inline-flex" />
                           <span className={cn('shrink-0 text-right tnum text-sm font-medium sm:w-28', t.amount.startsWith('-') && 'text-ok')}>{formatBRL(t.amount)}</span>
                           {canEdit && (
                             <DropdownMenu.Root>
@@ -169,16 +188,34 @@ export function CardsPage() {
                   )}
                 </div>
                 <aside className="min-w-0 border-t lg:border-t-0 lg:border-l border-line p-4 sm:p-5">
-                  <h3 className="font-display font-semibold">Por categoria</h3>
-                  <ul className="mt-4 flex flex-col gap-3">
-                    {byCat.map(([id, cents]) => (
-                      <li key={id}>
-                        <div className="flex justify-between gap-2 text-sm"><span className="truncate">{catMap.get(id)?.label ?? '—'}</span><span className="shrink-0 tnum text-muted">{formatBRL(cents / 100)}</span></div>
-                        <div className="mt-1.5 h-1.5 rounded-full bg-surface-2 overflow-hidden"><div className="h-full rounded-full bg-accent transition-[width] duration-700" style={{ width: `${(cents / byCat[0][1]) * 100}%` }} /></div>
-                      </li>
-                    ))}
-                    {!byCat.length && <li className="text-sm text-faint">Sem gastos nesta fatura.</li>}
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-display font-semibold">Gastos por categoria</h3>
+                    <button className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline" onClick={() => setCatsOpen(true)}><Tags className="size-3.5" />Categorias</button>
+                  </div>
+                  <ul className="mt-3 -mx-2 flex flex-col gap-0.5">
+                    {byCat.rows.map(([id, cents]) => {
+                      const c = catMap.get(id);
+                      const color = COLOR_PRESETS[c && isColorKey(c.color) ? c.color : 'slate'].base;
+                      return (
+                        <li key={id || 'none'}>
+                          <button type="button" onClick={() => setCatFilter(catFilter === id ? null : id)}
+                            className={cn('w-full rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-surface-2', catFilter === id && 'bg-accent-soft/60 hover:bg-accent-soft/60')}>
+                            <div className="flex items-baseline justify-between gap-2 text-sm">
+                              <span className="flex min-w-0 items-center gap-2"><span className="size-2 shrink-0 rounded-full" style={{ background: color }} /><span className="truncate">{c?.label ?? 'Sem categoria'}</span></span>
+                              <span className="shrink-0 tnum text-muted">{formatBRL(cents / 100)}</span>
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-accent transition-[width] duration-700" style={{ width: `${(cents / byCat.rows[0][1]) * 100}%` }} /></div>
+                              <span className="w-12 shrink-0 text-right text-xs tnum text-faint">{(Math.round((cents / byCat.total) * 10000) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span>
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                    {!byCat.rows.length && <li className="px-2 text-sm text-faint">Sem gastos nesta fatura.</li>}
                   </ul>
+                  {byCat.rows.length > 0 && <p className="mt-3 flex justify-between border-t border-line pt-3 text-sm"><span className="text-muted">Total consumido</span><b className="tnum">{formatBRL(byCat.total / 100)}</b></p>}
+                  {byCat.rows.length > 1 && <p className="mt-2 text-xs text-faint">{isTouch() ? 'Toque' : 'Clique'} numa categoria para ver só as compras dela.</p>}
                   {st?.bill && <p className="mt-6 text-xs text-faint">Conta a pagar vinculada: “{st.bill.description}”, {st.bill.status === 'paid' ? `paga em ${formatDateBR(st.bill.paidAt)}` : 'pendente'}.</p>}
                 </aside>
               </div>
@@ -188,6 +225,8 @@ export function CardsPage() {
       )}
 
       <CardFormDialog open={cardForm.open} card={cardForm.card} onClose={() => setCardForm({ open: false, card: null })} onSaved={(c) => { setCardForm({ open: true, card: c }); if (c.id !== selId) set({ cartao: c.id, fatura: null }); }} onDeleted={() => set({ cartao: null, fatura: null })} />
+      <CardCategoryManager open={catsOpen} onClose={() => setCatsOpen(false)} canManage={canManage} />
+      {card && canEdit && <CardOfxDialog open={ofxOpen} onClose={() => setOfxOpen(false)} cards={cards} cardId={card.id} onDone={(cartao, fatura) => set({ cartao, fatura })} />}
       {card && <TxFormDialog card={card} open={txForm.open} tx={txForm.tx} onClose={() => setTxForm({ open: false, tx: null })} />}
       {pay && <PayDialog bill={pay.bill} proofOnly={pay.proofOnly} onClose={() => setPay(null)} onView={view} />}
       <FileViewer target={viewer} onClose={() => setViewer(null)} />

@@ -21,7 +21,7 @@ export interface Report {
   byCategory: Array<{ categoryId: string; total: string; paid: string; count: number }>;
   byFolder: Array<{ folderId: string | null; total: string; count: number }>;
   top: Array<{ description: string; total: string; count: number }>;
-  cards: Array<{ categoryId: string; total: string; count: number }> | null;
+  cards: Array<{ categoryId: string | null; label: string; color: string; total: string; count: number }> | null;
 }
 
 export function ReportsPage() {
@@ -158,11 +158,11 @@ export function ReportsPage() {
             <Card className="p-4 sm:p-5">
               <div className="flex flex-wrap items-baseline gap-x-3">
                 <h2 className="font-display font-semibold">Dentro das faturas de cartão</h2>
-                <p className="text-xs text-faint">Compras por categoria nas faturas que vencem em {year}. Já estão somadas acima como “Fatura”.</p>
+                <p className="text-xs text-faint">Compras por categoria do cartão nas faturas que vencem em {year}. Já estão somadas acima como “Fatura”.</p>
               </div>
               <BarList className="mt-4" total={r.cards.reduce((a, c) => a + toCents(c.total), 0)}
                 rows={r.cards.map((c) => ({
-                  key: c.categoryId, label: catMap.get(c.categoryId)?.label ?? '—', color: catMap.get(c.categoryId)?.color,
+                  key: c.categoryId ?? 'none', label: c.label, color: c.color,
                   cents: toCents(c.total), sub: `${c.count} ${c.count === 1 ? 'lançamento' : 'lançamentos'}`,
                 }))} columns />
             </Card>

@@ -69,6 +69,8 @@ export async function syncStatementBill(tx: DBOrTx, statementId: string, userId:
 export interface TxInput {
   description: string; categoryId: string; amount: string; purchaseDate: string; installments: number;
   firstRef?: string | null; notes?: string | null; importBatchId?: string | null;
+  /** Compra que começou antes (fatura importada a partir da parcela n): cria só n..N, a partir de firstRef. */
+  startInstallment?: number;
 }
 
 /** Cria a compra (e suas parcelas) nas faturas corretas; retorna ids das faturas afetadas. */
@@ -77,8 +79,9 @@ export async function createPurchase(tx: DBOrTx, card: CardRow, userId: string |
   const parts = splitInstallments(input.amount, input.installments);
   const touched = new Set<string>();
   const rows = [];
-  for (let i = 0; i < parts.length; i++) {
-    const st = await ensureStatement(tx, card, addMonthsRef(first, i));
+  const start = Math.min(Math.max(1, input.startInstallment ?? 1), parts.length) - 1;
+  for (let i = start; i < parts.length; i++) {
+    const st = await ensureStatement(tx, card, addMonthsRef(first, i - start));
     touched.add(st.id);
     rows.push({
       orgId: card.orgId, cardId: card.id, statementId: st.id, groupId, description: input.description,

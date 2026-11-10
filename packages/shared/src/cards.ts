@@ -69,6 +69,7 @@ export const cardSchema = z.object({
 export const cardTxSchema = z.object({
   cardId: z.string().uuid(),
   description: z.string().trim().min(1, 'Informe a descrição').max(255),
+  /** Categoria do cartão (card_categories), não a de contas a pagar. */
   categoryId: z.string().uuid('Escolha a categoria'),
   /** Valor total da compra (negativo = estorno). */
   amount: money.refine((v) => v !== '0.00', 'Valor deve ser diferente de zero'),
@@ -81,6 +82,8 @@ export const cardTxSchema = z.object({
 export const cardTxUpdateSchema = z.object({
   description: z.string().trim().min(1).max(255).optional(),
   categoryId: z.string().uuid().optional(),
+  /** Com categoryId: muda também as outras compras da mesma loja (todos os cartões do espaço). */
+  applyToShop: z.boolean().default(false),
   notes: z.string().max(1000).nullish(),
   /** Mudar valor/data/parcelas recria o grupo inteiro. */
   amount: money.optional(),

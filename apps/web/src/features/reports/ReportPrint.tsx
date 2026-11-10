@@ -127,13 +127,12 @@ export function ReportPrint({ report: r, catMap, folderMap }: { report: Report; 
         return (
           <section className="pd-block">
             <h2>Dentro das faturas de cartão</h2>
-            <p className="pd-note">Compras por categoria nas faturas que vencem em {r.year}. Já estão somadas acima como “Fatura”.</p>
+            <p className="pd-note">Compras por categoria do cartão nas faturas que vencem em {r.year}. Já estão somadas acima como “Fatura”.</p>
             <table>
               <thead><tr><th>Categoria</th><th className="num">Lançamentos</th><th className="num">Total</th><th className="num">%</th></tr></thead>
               <tbody>
                 {r.cards.map((c) => {
-                  const cat = catMap.get(c.categoryId);
-                  return <tr key={c.categoryId}><td>{dot(cat?.color)}{cat?.label ?? '—'}</td><td className="num">{c.count}</td><td className="num">{formatBRL(c.total)}</td><td className="num">{pct(toCents(c.total), cardsTotal)}%</td></tr>;
+                  return <tr key={c.categoryId ?? 'none'}><td>{dot(c.color)}{c.label}</td><td className="num">{c.count}</td><td className="num">{formatBRL(c.total)}</td><td className="num">{pct(toCents(c.total), cardsTotal)}%</td></tr>;
                 })}
               </tbody>
               <tfoot><tr><td>Total</td><td className="num">{r.cards.reduce((a, c) => a + c.count, 0)}</td><td className="num">{formatBRL(cardsTotal / 100)}</td><td className="num">100%</td></tr></tfoot>

@@ -8,6 +8,30 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.8.0] - 2026-11-10
+
+### Novo
+- **Importar a fatura do cartão em OFX** (Cartões → **Importar fatura**): escolha o arquivo exportado
+  no app do banco e confira antes de importar. A fatura é sugerida pelas datas das compras; a descrição
+  vem limpa (sem a cidade) e pode ser editada; a categoria é sugerida pelo que você usou antes na mesma
+  loja. Compra parcelada (ex.: 02/12) entra nesta fatura e as parcelas seguintes já vão para as próximas.
+  Estornos abatem da fatura; o pagamento da fatura anterior fica de fora. O que já está lançado é
+  reconhecido e não entra de novo, e cada importação pode ser desfeita (enquanto nenhuma fatura com
+  lançamentos dela estiver paga). Parcela futura nunca cai em fatura já paga.
+- **Categorias do cartão**: as compras no cartão agora têm categorias próprias (Cartões → **Categorias**),
+  separadas das de Contas a pagar — lá a fatura inteira continua com a categoria escolhida no cadastro do
+  cartão. Crie, renomeie, mude a cor ou apague (as compras vão para outra categoria). Todo espaço começa com
+  uma lista pronta (Supermercado, Combustível, Compras online, Assinaturas, Saúde e farmácia, Seguros…) e as
+  compras já existentes foram classificadas pelo nome da loja (a categoria de contas a pagar que elas tinham
+  deixa de ser usada nas compras; confira e ajuste em Editar, se quiser).
+- **Gastos por categoria na fatura**: valor, percentual e total consumido de cada categoria do cartão; clique
+  numa categoria para ver só as compras dela. Também no Relatório, em "Dentro das faturas de cartão".
+- A categoria da compra é sugerida pelo nome da loja (na importação da fatura e ao lançar à mão) e, depois, pelo
+  que você usou antes na mesma loja. Ao trocar a categoria de uma compra, dá para mudar junto as outras da mesma loja.
+
+### Corrigido
+- Janelas Categorias e Pastas de Contas a pagar/receber mostravam "0 conta(s)" em todas.
+
 ## [1.7.0] - 2026-11-09
 
 ### Novo

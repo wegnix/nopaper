@@ -3,14 +3,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, CalendarCheck, Trash2 } from 'lucide-react';
 import {
-  CARD_BRANDS, CARD_BRAND_LABEL, CARD_COLOR_KEYS, CARD_COLOR_PRESETS, MONTHS_PT_SHORT, addMonthsRef, cycleForPurchase, formatBRL, formatDateBR, parseMoneyInput,
+  CARD_BRANDS, CARD_BRAND_LABEL, CARD_COLOR_KEYS, CARD_COLOR_PRESETS, MONTHS_PT_SHORT, addMonthsRef, classifySpending, cycleForPurchase, formatBRL, formatDateBR, parseMoneyInput,
   splitInstallments, todayISO, type CardBrand, type CardColorKey,
 } from '@nopaper/shared';
 import { Dialog, SaveFooter, useFormState } from '@/components/ui/dialog';
 import { DayPicker } from '@/components/ui/day-picker';
 import { Button, Field, Input, Select, Spinner, Switch, Textarea } from '@/components/ui/base';
 import { del, get, post, put, errMsg } from '@/lib/api';
-import { useCategories, useFolders } from '@/lib/queries';
+import { useCardCategories, useCategories, useFolders } from '@/lib/queries';
 import type { Card, CardTx } from '@/lib/types';
 import { ColorPicker } from '@/features/bills/Catalog';
 import { MoneyInput } from '@/features/bills/MoneyInput';
@@ -147,14 +147,22 @@ function DeleteCardDialog({ card, open, onClose, onDeleted }: { card: Card; open
 
 export function TxFormDialog({ card, tx, open, onClose }: { card: Card; tx: CardTx | null; open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
-  const { data: cats = [] } = useCategories();
-  const expCats = cats.filter((c) => c.kind !== 'receivable');
-  const [f, setF, form] = useFormState({ description: '', categoryId: '', amount: '', purchaseDate: todayISO(), installments: 1, notes: '', refund: false });
-  const blankTx = () => ({ description: '', categoryId: expCats[0]?.id ?? '', amount: '', purchaseDate: todayISO(), installments: 1, notes: '', refund: false });
+  const { data: expCats = [] } = useCardCategories();
+  const [f, setF, form] = useFormState({ description: '', categoryId: '', amount: '', purchaseDate: todayISO(), installments: 1, notes: '', refund: false, applyToShop: true });
+  const fallbackCat = () => expCats.find((c) => c.ruleKey === 'other')?.id ?? expCats[0]?.id ?? '';
+  const blankTx = () => ({ description: '', categoryId: fallbackCat(), amount: '', purchaseDate: todayISO(), installments: 1, notes: '', refund: false, applyToShop: true });
+  // compra nova: a categoria segue o nome da loja até a pessoa escolher uma
+  const [catTouched, setCatTouched] = useState(false);
+  const setDescription = (description: string) => {
+    if (tx || catTouched) return setF({ ...f, description });
+    const rule = expCats.find((c) => c.ruleKey === classifySpending(description));
+    setF({ ...f, description, categoryId: rule?.id ?? fallbackCat() });
+  };
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!open) return;
-    if (tx) form.load({ description: tx.description, categoryId: tx.categoryId, amount: tx.totalAmount.replace('-', ''), purchaseDate: tx.purchaseDate, installments: tx.totalInstallments, notes: tx.notes ?? '', refund: tx.totalAmount.startsWith('-') });
+    setCatTouched(false);
+    if (tx) form.load({ description: tx.description, categoryId: tx.categoryId ?? '', amount: tx.totalAmount.replace('-', ''), purchaseDate: tx.purchaseDate, installments: tx.totalInstallments, notes: tx.notes ?? '', refund: tx.totalAmount.startsWith('-'), applyToShop: true });
     else form.load(blankTx());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx?.id]);
@@ -169,14 +177,15 @@ export function TxFormDialog({ card, tx, open, onClose }: { card: Card; tx: Card
     setBusy(true);
     const amount = (f.refund ? '-' : '') + (parseMoneyInput(f.amount) ?? '0');
     try {
-      if (tx) await put(`/api/card-transactions/${tx.id}`, { description: f.description, categoryId: f.categoryId, notes: f.notes || null, amount, purchaseDate: f.purchaseDate, installments: f.installments, scope: 'group' });
+      const catChanged = !!tx && f.categoryId !== tx.categoryId;
+      if (tx) await put(`/api/card-transactions/${tx.id}`, { description: f.description, categoryId: f.categoryId, notes: f.notes || null, amount, purchaseDate: f.purchaseDate, installments: f.installments, scope: 'group', applyToShop: catChanged && f.applyToShop });
       else await post('/api/card-transactions', { cardId: card.id, description: f.description, categoryId: f.categoryId, amount, purchaseDate: f.purchaseDate, installments: f.installments, notes: f.notes || null });
       qc.invalidateQueries({ queryKey: ['bills'] });
       if (tx) { toast.success('Lançamento salvo'); form.markSaved(f); }
       else {
         // compra lançada: a janela fica pronta para a próxima (mesma data e categoria)
         toast.success(`“${f.description}” lançado. Pode lançar a próxima compra.`);
-        form.load({ ...blankTx(), purchaseDate: f.purchaseDate, categoryId: f.categoryId });
+        form.load({ ...blankTx(), purchaseDate: f.purchaseDate }); setCatTouched(false);
       }
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
@@ -185,13 +194,18 @@ export function TxFormDialog({ card, tx, open, onClose }: { card: Card; tx: Card
       description={tx && tx.totalInstallments > 1 ? 'Mudar valor, data ou parcelas recalcula todas as parcelas desta compra.' : undefined}
       footer={<SaveFooter dirty={form.dirty} isNew={!tx} saving={busy} canSave={!!f.description.trim() && !!f.categoryId && !!parseMoneyInput(f.amount)} onSave={save} onClose={onClose} saveLabel={tx ? 'Salvar' : 'Lançar'} />}>
       <div className="flex flex-col gap-4">
-        <Field label="Descrição" required><Input autoFocus value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Ex.: Mercado, Farmácia, Passagem" /></Field>
+        <Field label="Descrição" required><Input autoFocus value={f.description} onChange={(e) => setDescription(e.target.value)} placeholder="Ex.: Mercado, Farmácia, Passagem" /></Field>
         <div className="grid sm:grid-cols-3 gap-4">
           <Field label={f.installments > 1 ? 'Valor total da compra' : 'Valor'} required><MoneyInput value={f.amount} onChange={(amount) => setF({ ...f, amount })} /></Field>
           <Field label="Data da compra" required><Input type="date" value={f.purchaseDate} onChange={(e) => setF({ ...f, purchaseDate: e.target.value })} /></Field>
           <Field label="Parcelas"><Select value={f.installments} onChange={(e) => setF({ ...f, installments: Number(e.target.value) })}>{Array.from({ length: 24 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n === 1 ? 'À vista' : `${n}x`}</option>)}</Select></Field>
         </div>
-        <Field label="Categoria" required><Select value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })}>{expCats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</Select></Field>
+        <Field label="Categoria" required hint={!tx && !catTouched ? 'Sugerida pelo nome da loja.' : undefined}>
+          <Select value={f.categoryId} onChange={(e) => { setCatTouched(true); setF({ ...f, categoryId: e.target.value }); }}>{expCats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</Select>
+        </Field>
+        {tx && f.categoryId !== tx.categoryId && (
+          <label className="-mt-2 flex items-center gap-2 text-sm text-muted"><input type="checkbox" className="accent-[var(--np-accent)]" checked={f.applyToShop} onChange={(e) => setF({ ...f, applyToShop: e.target.checked })} /> Mudar também as outras compras de “{f.description.split('*')[0].trim() || f.description}”</label>
+        )}
         <Field label="Observações"><Textarea rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
         <label className="flex items-center gap-2 text-sm text-muted"><input type="checkbox" className="accent-[var(--np-accent)]" checked={f.refund} onChange={(e) => setF({ ...f, refund: e.target.checked })} /> É um estorno ou crédito (abate da fatura)</label>
         {preview && (

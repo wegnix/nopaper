@@ -1,0 +1,3 @@
+ALTER TABLE "card_transactions" ADD COLUMN "card_category_id" uuid;--> statement-breakpoint
+ALTER TABLE "card_transactions" ADD CONSTRAINT "card_transactions_card_category_id_card_categories_id_fk" FOREIGN KEY ("card_category_id") REFERENCES "public"."card_categories"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "card_tx_category_idx" ON "card_transactions" USING btree ("card_category_id");

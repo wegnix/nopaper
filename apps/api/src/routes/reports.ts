@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { and, eq, gte, lte, lt, notInArray, sql, desc } from 'drizzle-orm';
 import { BILL_TYPES, fromCents } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
+import { ensureCardCategories } from '../services/cardCategories.js';
 import { parse } from '../lib/validate.js';
 import { forbidden } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
@@ -47,17 +48,17 @@ export default async function reportRoutes(app: FastifyInstance) {
     ]);
 
     // gastos dentro das faturas de cartão (por categoria da compra), faturas que vencem no ano
-    let cards: Array<{ categoryId: string; total: string; count: number }> | null = null;
+    let cards: Array<{ categoryId: string | null; label: string; color: string; total: string; count: number }> | null = null;
     if (q.type === 'payable' && req.org!.can('cards.view')) {
-      const hidden = req.org!.can('bills.view_restricted') ? [] : await restrictedCategoryIds(orgId);
+      await ensureCardCategories(orgId);
       const ct = schema.cardTransactions;
       const c = sql<number>`coalesce(sum(round(${ct.amount} * 100)), 0)::bigint`;
-      const rows = await db.select({ categoryId: ct.categoryId, total: c, count: sql<number>`count(*)::int` })
+      const rows = await db.select({ categoryId: ct.categoryId, label: schema.cardCategories.label, color: schema.cardCategories.color, total: c, count: sql<number>`count(*)::int` })
         .from(ct).innerJoin(schema.cardStatements, eq(schema.cardStatements.id, ct.statementId))
-        .where(and(eq(ct.orgId, orgId), gte(schema.cardStatements.dueDate, from), lte(schema.cardStatements.dueDate, to),
-          hidden.length ? notInArray(ct.categoryId, hidden) : undefined))
-        .groupBy(ct.categoryId).orderBy(desc(c));
-      cards = rows.filter((r) => Number(r.total) > 0).map((r) => ({ categoryId: r.categoryId, total: m(r.total), count: r.count }));
+        .leftJoin(schema.cardCategories, eq(schema.cardCategories.id, ct.categoryId))
+        .where(and(eq(ct.orgId, orgId), gte(schema.cardStatements.dueDate, from), lte(schema.cardStatements.dueDate, to)))
+        .groupBy(ct.categoryId, schema.cardCategories.label, schema.cardCategories.color).orderBy(desc(c));
+      cards = rows.filter((r) => Number(r.total) > 0).map((r) => ({ categoryId: r.categoryId, label: r.label ?? 'Sem categoria', color: r.color ?? 'slate', total: m(r.total), count: r.count }));
     }
 
     const mm = new Map(months.map((r) => [r.month, r]));

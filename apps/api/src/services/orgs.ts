@@ -1,6 +1,7 @@
 import { DEFAULT_OPERATOR_PERMISSIONS, DEFAULT_READONLY_PERMISSIONS, type ColorKey, type OrgKind } from '@nopaper/shared';
 import type { DBOrTx } from '../db/client.js';
 import { schema } from '../db/client.js';
+import { seedCardCategories } from './cardCategories.js';
 
 type Kind = 'payable' | 'receivable' | 'both';
 type DefaultFolder = { label: string; name: string; color: ColorKey };
@@ -62,5 +63,6 @@ export async function createOrganization(tx: DBOrTx, opts: { name: string; kind:
     orgId: org.id, label, color, kind, isRestricted: !!restricted, isSystem: false, createdBy: opts.ownerId,
   })));
   await tx.insert(schema.folders).values(DEFAULT_FOLDERS[opts.kind].map((f) => ({ orgId: org.id, ...f, createdBy: opts.ownerId })));
+  await seedCardCategories(tx, org.id, opts.ownerId);
   return org;
 }
