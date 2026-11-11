@@ -18,6 +18,7 @@ import { MoneyInput } from './MoneyInput';
 import { RecurrenceEditor, initialRec, needsRows, recPayload, type RecState } from './RecurrenceEditor';
 import { DocDrop } from './DocDrop';
 import { CopyButton, SLOT_META } from './attachments';
+import { BarcodeButton, PixQrButton } from './PayCode';
 import { L, RECURRENCE_LABEL } from './labels';
 import { DatePicker } from '@/components/ui/date-picker';
 
@@ -100,8 +101,10 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, bill?.id]);
-  // categorias chegaram depois de abrir: escolhe a 1ª sem contar como alteração
-  useEffect(() => { if (open && !f.categoryId && cats[0]) form.load({ ...f, categoryId: cats[0].id, description: f.description || (!bill && seed?.description) || '', notes: f.notes || (!bill && seed?.notes) || '' }); }, [cats, open, f.categoryId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // conta nova e as categorias chegaram depois de abrir: escolhe a 1ª sem contar como alteração.
+  // Só em conta nova: ao editar, este efeito roda junto com o de cima ainda com o `f` vazio e
+  // apagava os dados recém-carregados (a 1ª edição depois de abrir a página vinha em branco).
+  useEffect(() => { if (open && !bill && !f.categoryId && cats[0]) form.load({ ...f, categoryId: cats[0].id, description: f.description || seed?.description || '', notes: f.notes || seed?.notes || '' }); }, [cats, open, f.categoryId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const boleto = useMemo(() => (f.barcode.replace(/\D/g, '').length >= 44 ? parseBoleto(f.barcode) : null), [f.barcode]);
   const pix = useMemo(() => (f.pixKey.trim() ? parsePix(f.pixKey) : null), [f.pixKey]);
@@ -307,6 +310,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
             <div className="flex gap-1">
               <Input className="font-mono text-[13px]" value={f.barcode} maxLength={120} onChange={(e) => setF({ ...f, barcode: e.target.value })} placeholder="00000.00000 00000.000000 00000.000000 0 00000000000000" />
               {f.barcode && <CopyButton text={f.barcode.replace(/\D/g, '')} className="size-10" />}
+              {boleto && <BarcodeButton barcode={f.barcode} className="size-10" />}
             </div>
             {boleto && (boleto.valid ? (
               <SmartHint tone="ok" icon={<Barcode className="size-3.5" />}>
@@ -322,6 +326,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
             <div className="flex gap-1">
               <Input className="font-mono text-[13px]" value={f.pixKey} onChange={(e) => setF({ ...f, pixKey: e.target.value })} placeholder="CPF, e-mail, celular, chave aleatória ou 000201…" />
               {f.pixKey && <CopyButton text={f.pixKey} className="size-10" />}
+              {pix && (pix.isBrCode || pix.keyType) && <PixQrButton pix={f.pixKey} amount={f.status === 'paid' ? null : f.amount} name={f.description} className="size-10" />}
             </div>
             {pix && (pix.isBrCode ? (
               pix.crcValid ? (

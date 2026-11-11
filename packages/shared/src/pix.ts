@@ -68,6 +68,7 @@ export function detectPixKeyType(raw: string): PixKeyType | null {
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k)) return 'random';
   if (/^\+55\d{10,11}$/.test(k.replace(/[\s()-]/g, ''))) return 'phone';
   const d = k.replace(/\D/g, '');
+  if (/^\(\d{2}\)[\d\s-]+$/.test(k) && (d.length === 10 || d.length === 11)) return 'phone';
   if (/^[\d.\-/\s]+$/.test(k)) {
     if (d.length === 11 && cpfValid(d)) return 'cpf';
     if (d.length === 14 && cnpjValid(d)) return 'cnpj';
@@ -120,4 +121,56 @@ export function parsePix(input: string): PixInfo {
     dynamicUrl,
     crcValid,
   };
+}
+
+// ---------------------------------------------------------------- QR Code a partir da chave
+
+/** Tipos possíveis de uma chave digitada (11 dígitos pode ser CPF **ou** celular). */
+export function pixKeyCandidates(raw: string): PixKeyType[] {
+  const k = raw.trim();
+  const first = detectPixKeyType(k);
+  if (!first) return [];
+  // DDD + 9 + 8 dígitos que por acaso também fecha como CPF: só a pessoa sabe qual é
+  // (com a máscara do CPF ou do telefone não há dúvida)
+  if (first === 'cpf' && /^[1-9]{2}9\d{8}$/.test(k)) return ['cpf', 'phone'];
+  return [first];
+}
+
+/** Chave no formato que o BR Code exige (CPF/CNPJ só dígitos, celular +55…, o resto em minúsculas). */
+export function normalizePixKey(raw: string, type: PixKeyType): string | null {
+  const k = raw.trim();
+  const d = k.replace(/\D/g, '');
+  let out: string;
+  if (type === 'cpf' || type === 'cnpj') out = d;
+  else if (type === 'phone') out = `+${d.length > 11 && d.startsWith('55') ? d : `55${d}`}`;
+  else out = k.toLowerCase();
+  return /^[\x21-\x7e]{1,77}$/.test(out) ? out : null;
+}
+
+const tlv = (id: string, value: string) => `${id}${String(value.length).padStart(2, '0')}${value}`;
+
+/** Texto livre → o que cabe nos campos de nome/cidade do BR Code (maiúsculas sem acento). */
+function brCodeText(s: string, max: number, fallback: string): string {
+  const t = s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max).trim();
+  return t || fallback;
+}
+
+/**
+ * Monta um PIX "copia e cola" estático para uma chave. O nome é só um rótulo: o banco mostra o
+ * titular de verdade da chave antes de confirmar. `amount` vazio/zero = quem paga digita o valor.
+ */
+export function buildPixBrCode(opts: { key: string; keyType: PixKeyType; amount?: string | null; name?: string | null; city?: string | null }): string | null {
+  const key = normalizePixKey(opts.key, opts.keyType);
+  if (!key) return null;
+  const amount = opts.amount && /^\d{1,11}(\.\d{1,2})?$/.test(opts.amount) && Number(opts.amount) > 0 ? Number(opts.amount).toFixed(2) : null;
+  const body = tlv('00', '01')
+    + tlv('26', tlv('00', 'br.gov.bcb.pix') + tlv('01', key))
+    + tlv('52', '0000') + tlv('53', '986')
+    + (amount ? tlv('54', amount) : '')
+    + tlv('58', 'BR')
+    + tlv('59', brCodeText(opts.name ?? '', 25, 'RECEBEDOR'))
+    + tlv('60', brCodeText(opts.city ?? '', 15, 'BRASIL'))
+    + tlv('62', tlv('05', '***'))
+    + '6304';
+  return body + crc16(body);
 }

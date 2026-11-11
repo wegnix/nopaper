@@ -8,6 +8,18 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.14.0] - 2026-11-11
+
+### Novo
+- **QR Code do PIX e código de barras do boleto na tela**: nas contas com PIX ou boleto, ao lado do botão de
+  copiar, há um botão que abre o código grande para ler com a câmera do app do banco — sem digitar nada.
+  Com chave PIX (CPF, CNPJ, e-mail, celular ou aleatória) o QR Code já leva o valor da conta (dá para
+  desligar e digitar o valor no banco); com PIX copia e cola, mostra o próprio código. O boleto aparece em
+  barras, com a linha digitável logo abaixo. Está na lista de contas e na janela da conta.
+
+### Corrigido
+- A primeira conta aberta para editar depois de carregar a página vinha com os campos em branco.
+
 ## [1.13.3] - 2026-11-11
 
 ### Melhorado

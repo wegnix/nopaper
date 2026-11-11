@@ -205,3 +205,24 @@ export function findBoletoInText(text: string): string | null {
   }).join('');
   return dedup !== all ? slide(dedup) : null;
 }
+
+// ---------------------------------------------------------------- desenho do código de barras
+
+const ITF: Record<string, string> = {
+  0: 'NNWWN', 1: 'WNNNW', 2: 'NWNNW', 3: 'WWNNN', 4: 'NNWNW', 5: 'WNWNN', 6: 'NWWNN', 7: 'NNNWW', 8: 'WNNWN', 9: 'NWNWN',
+};
+
+/**
+ * Código de barras do boleto (Intercalado 2 de 5): larguras em módulos, alternando
+ * barra, espaço, barra… (começa por barra). `wide` = quantos módulos tem o traço largo.
+ */
+export function itfWidths(digits: string, wide = 3): number[] {
+  if (!/^\d+$/.test(digits) || digits.length % 2 !== 0) return [];
+  const out = [1, 1, 1, 1];
+  for (let i = 0; i < digits.length; i += 2) {
+    const bars = ITF[digits[i]], spaces = ITF[digits[i + 1]];
+    for (let k = 0; k < 5; k++) out.push(bars[k] === 'W' ? wide : 1, spaces[k] === 'W' ? wide : 1);
+  }
+  out.push(wide, 1, 1);
+  return out;
+}

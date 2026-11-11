@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { Barcode, Check, Copy, FileText, QrCode, Receipt } from 'lucide-react';
+import { Barcode, Check, Copy, FileText, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AttachmentSlot } from '@nopaper/shared';
 import { cn, copyText } from '@/lib/utils';
 import { Tooltip } from '@/components/ui/base';
 import type { Bill } from '@/lib/types';
+import { BarcodeButton, PixIcon, PixQrButton } from './PayCode';
 
 export function CopyButton({ text, label = 'Copiar', className, toastMsg }: { text: string; label?: string; className?: string; toastMsg?: string }) {
   const [done, setDone] = useState(false);
@@ -54,14 +55,16 @@ export function AttachmentChips({ bill, onOpen }: { bill: Bill; onOpen: (slot: A
       <span key="b" className="inline-flex items-center">
         <Pill tone={SLOT_META.boleto.tone} icon={<Barcode className="size-3" />} onClick={a.boleto ? () => onOpen('boleto') : undefined} title={a.boleto ? 'Ver boleto' : 'Código de barras'}>Boleto</Pill>
         {bill.barcode && <CopyButton text={bill.barcode.replace(/\D/g, '')} label="Copiar código de barras" toastMsg="Código de barras copiado" />}
+        {bill.barcode && <BarcodeButton barcode={bill.barcode} />}
       </span>,
     );
   }
   if (bill.pixKey) {
     items.push(
       <span key="p" className="inline-flex items-center">
-        <Pill tone={pixTone} icon={<QrCode className="size-3" />} title="PIX">Pix</Pill>
+        <Pill tone={pixTone} icon={<PixIcon className="size-3" />} title="PIX">Pix</Pill>
         <CopyButton text={bill.pixKey} label="Copiar PIX" toastMsg="PIX copiado" />
+        <PixQrButton pix={bill.pixKey} amount={bill.status === 'paid' ? null : bill.amount} name={bill.description} />
       </span>,
     );
   }
