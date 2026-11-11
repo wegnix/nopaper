@@ -37,7 +37,7 @@ export default async function orgRoutes(app: FastifyInstance) {
     const body = parse(orgUpdateSchema, req.body);
     const [before] = await db.select().from(schema.organizations).where(eq(schema.organizations.id, req.org!.id));
     const [org] = await db.update(schema.organizations).set(body).where(eq(schema.organizations.id, req.org!.id)).returning();
-    await audit(req, { action: 'org.update', entityType: 'organization', entityId: org.id, description: `Editou os dados do espaço ${org.name}`, details: { changes: diff(before, org, ['name', 'kind', 'document', 'timezone']) } });
+    await audit(req, { action: 'org.update', entityType: 'organization', entityId: org.id, description: `Editou os dados do espaço ${org.name}`, details: { changes: diff(before, org, ['name', 'legalName', 'kind', 'document', 'timezone']) } });
     return { org };
   });
 

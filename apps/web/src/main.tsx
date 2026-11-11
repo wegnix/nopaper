@@ -12,6 +12,7 @@ import { AppShell } from './components/layout/AppShell';
 import { ConfirmProvider } from './components/ui/dialog';
 import { LogoLoader } from './components/brand/Brand';
 import { ForcePasswordPage, LoginPage } from './pages/Auth';
+import { SignPage } from './pages/SignPage';
 import { DashboardPage } from './pages/Dashboard';
 import { BillsPage } from './features/bills/BillsPage';
 import { CardsPage } from './features/cards/CardsPage';
@@ -78,6 +79,7 @@ function App() {
       <Routes>
         <Route path="/login" element={status === 'authed' ? <Navigate to="/" replace /> : <LoginPage />} />
         <Route path="/cadastro" element={<Navigate to="/login" replace />} />
+        <Route path="/assinar/:token" element={<SignPage />} />
         <Route element={<RequireAuth><AppShell /></RequireAuth>}>
           <Route index element={<DashboardPage />} />
           <Route path="pagar" element={<BillsPage type="payable" />} />

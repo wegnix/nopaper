@@ -42,11 +42,11 @@ export async function pdfToText(buf: Buffer, maxPages = 10): Promise<string> {
  * em colunas, em que a ordem interna do PDF não segue a leitura (relatório de vendas do Jasper,
  * holerites do contador — lá a coluna do valor diz se é vencimento ou desconto).
  */
-export async function pdfToCells(buf: Buffer, maxPages = 30): Promise<PdfCell[][]> {
+export async function pdfToPageCells(buf: Buffer, maxPages = 30): Promise<PdfCell[][][]> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const task = pdfjs.getDocument({ data: new Uint8Array(buf), useSystemFonts: false, disableFontFace: true, verbosity: 0 });
   const doc = await task.promise;
-  const out: PdfCell[][] = [];
+  const out: PdfCell[][][] = [];
   try {
     for (let p = 1; p <= Math.min(doc.numPages, maxPages); p++) {
       const page = await doc.getPage(p);
@@ -63,12 +63,17 @@ export async function pdfToCells(buf: Buffer, maxPages = 30): Promise<PdfCell[][
         row.items.push({ x, w: it.width ?? 0, s });
       }
       rows.sort((a, b) => a.y - b.y);
-      for (const r of rows) out.push(r.items.sort((a, b) => a.x - b.x));
+      out.push(rows.map((r) => r.items.sort((a, b) => a.x - b.x)));
     }
   } finally {
     await task.destroy();
   }
   return out;
+}
+
+/** As linhas de todas as páginas, em sequência. */
+export async function pdfToCells(buf: Buffer, maxPages = 30): Promise<PdfCell[][]> {
+  return (await pdfToPageCells(buf, maxPages)).flat();
 }
 
 /** O mesmo, só com os textos. */

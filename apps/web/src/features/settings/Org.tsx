@@ -7,7 +7,7 @@ import { DocumentField } from '@/components/ui/document-input';
 import { get, put, errMsg } from '@/lib/api';
 import { useSession } from '@/lib/session';
 
-interface Org { id: string; name: string; kind: 'personal' | 'company'; document: string | null; timezone: string }
+interface Org { id: string; name: string; legalName: string | null; kind: 'personal' | 'company'; document: string | null; timezone: string }
 
 const BR_ZONES: Array<[string, string]> = [
   ['America/Sao_Paulo', 'Brasília (SP, RJ, MG, Sul, GO, DF, BA, Nordeste…)'],
@@ -38,7 +38,7 @@ export function OrgPage() {
   const save = async () => {
     setBusy(true);
     try {
-      const r = await put<{ org: Org }>('/api/org', { name: f.name, kind: f.kind, document: f.document, timezone: f.timezone });
+      const r = await put<{ org: Org }>('/api/org', { name: f.name, legalName: f.kind === 'company' ? f.legalName : null, kind: f.kind, document: f.document, timezone: f.timezone });
       setF(r.org);
       const s = useSession.getState();
       useSession.setState({ orgs: s.orgs.map((o) => (o.id === f.id ? { ...o, name: f.name, kind: f.kind } : o)) });
@@ -49,7 +49,12 @@ export function OrgPage() {
     <Card className="p-5">
       <h2 className="font-display text-lg font-semibold">Dados do espaço</h2>
       <div className="mt-4 grid sm:grid-cols-2 gap-4">
-        <Field label="Nome"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+        <Field label={f.kind === 'company' ? 'Nome fantasia' : 'Nome'} hint={f.kind === 'company' ? 'Como a empresa aparece no sistema.' : undefined}><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+        {f.kind === 'company' && (
+          <Field label="Razão social" hint="Nome oficial da empresa (do CNPJ). Vai nos documentos: termo de aceite e comprovante de assinatura dos holerites.">
+            <Input maxLength={160} value={f.legalName ?? ''} onChange={(e) => setF({ ...f, legalName: e.target.value })} placeholder="Ex.: Exemplo e Exemplo LTDA" />
+          </Field>
+        )}
         <DocumentField label={f.kind === 'personal' ? 'CPF (ou CNPJ, se MEI)' : 'CNPJ (ou CPF)'} value={f.document ?? ''} onChange={(document) => setF({ ...f, document })} />
         <Field label="Tipo"><Segmented value={f.kind} onChange={(kind) => setF({ ...f, kind })} options={[{ value: 'personal', label: 'Pessoal' }, { value: 'company', label: 'Empresa' }]} /></Field>
         <Field label="Fuso horário" hint="Define o que é “hoje” para vencimentos e alertas.">

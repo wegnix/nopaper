@@ -3,7 +3,7 @@ import { Link, Navigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  ArrowDown, ArrowUp, BadgePercent, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Ghost, HandCoins, Landmark, MoreHorizontal, Pencil, Plus, Printer,
+  ArrowDown, ArrowUp, BadgePercent, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Ghost, HandCoins, Landmark, MoreHorizontal, PenLine, Pencil, Plus, Printer,
   Receipt, RotateCcw, Settings2, Trash2, UserPlus, UsersRound, Wallet,
 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
@@ -21,6 +21,7 @@ import { PayDialog } from '@/features/bills/dialogs';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
 import { useCommissionImport, useMonth, usePayrollMeta, usePeriods, type Entry, type Period, type PeriodSummary, type Rubric } from './data';
 import { EntryDialog } from './EntryDialog';
+import { SignaturesDialog } from './Signatures';
 import { EmployeesTab } from './Employees';
 import { SettingsDialog, type SettingsTab } from './SettingsDialog';
 import { CommissionsDialog } from './Commissions';
@@ -121,6 +122,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
   const [pay, setPay] = useState<{ bill: Bill; proofOnly: boolean } | null>(null);
   const [viewer, setViewer] = useState<FileViewerTarget | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
+  const [signOpen, setSignOpen] = useState(false);
   // último relatório de vendas importado neste mês (comissões): dá para rever a tela
   const commImport = useCommissionImport(period?.id ?? null).data ?? null;
   const periodsList = usePeriods().data ?? [];
@@ -238,6 +240,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
           </span>
         )}
         <div className="ml-auto flex flex-wrap gap-2 max-sm:ml-0 max-sm:w-full max-sm:[&>button]:flex-1">
+          {period && <Button variant="ghost" icon={<PenLine className="size-4" />} onClick={() => setSignOpen(true)}>Assinaturas</Button>}
           {period && rows.length > 0 && <Button variant="ghost" icon={<Printer className="size-4" />} onClick={() => setPrintOpen(true)}>Imprimir</Button>}
           {period && canEdit && <Button variant="ghost" icon={<Pencil className="size-4" />} onClick={() => setEditPeriod(true)}>Editar mês</Button>}
           {period && canEdit && <Button variant="primary" icon={<UserPlus className="size-4" />} onClick={() => setEntryDlg({ open: true, entry: null })}>Lançar funcionário</Button>}
@@ -395,6 +398,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
       <OpenMonthDialog open={openDlg} refStr={ref} suggested={m?.suggestedPayDate ?? null} onClose={() => setOpenDlg(false)} />
       {period && rows.length > 0 && <PayrollPrint period={period} rows={rows} rubrics={meta.rubrics} print={printCfg} />}
       {period && rows.length > 0 && <PrintDialog open={printOpen} refStr={ref} rows={rows} rubrics={meta.rubrics} print={printCfg} onClose={() => setPrintOpen(false)} onPrint={doPrint} />}
+      {period && <SignaturesDialog open={signOpen} onClose={() => setSignOpen(false)} periodId={period.id} refStr={ref} />}
       {period && commImport && <CommissionsDialog open={commOpen} onClose={() => setCommOpen(false)} periods={periodsList} currentRef={ref} employees={meta.employees} rubrics={meta.rubrics}
         commissions={meta.settings.commissions} payMonth={meta.settings.payMonth} canManage={can('payroll.manage')} canEdit={canEdit} initial={{ ...commImport, ref }}
         onConfigure={onConfigure} onDone={() => undefined} />}

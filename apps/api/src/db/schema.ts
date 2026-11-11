@@ -58,6 +58,8 @@ export const organizations = pgTable('organizations', {
   name: varchar('name', { length: 120 }).notNull(),
   kind: varchar('kind', { length: 16 }).notNull().default('company'), // personal | company
   document: varchar('document', { length: 32 }),
+  /** Razão social: vai nos documentos legais (termo e comprovante de assinatura). `name` = nome fantasia. */
+  legalName: varchar('legal_name', { length: 160 }),
   timezone: varchar('timezone', { length: 64 }).notNull().default('America/Sao_Paulo'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -295,6 +297,10 @@ export const employees = pgTable('employees', {
   /** Tem holerite, mas não recebe pela empresa: valor a pagar e custo zerados, sem conta a pagar. */
   payslipOnly: boolean('payslip_only').notNull().default(false),
   bankInfo: varchar('bank_info', { length: 255 }),
+  /** Aceite do termo de assinatura eletrônica de holerites (uma vez por funcionário). */
+  esignAcceptedAt: timestamp('esign_accepted_at', { withTimezone: true }),
+  esignTermVersion: varchar('esign_term_version', { length: 8 }),
+  esignAcceptedIp: varchar('esign_accepted_ip', { length: 64 }),
   notes: text('notes'),
   /** Criado por uma importação da planilha (desfazer a importação remove se não tiver outros meses). */
   importBatchId: uuid('import_batch_id'),
@@ -539,3 +545,52 @@ export const accountingDocuments = pgTable('accounting_documents', {
   uploaderRemovedAt: timestamp('uploader_removed_at', { withTimezone: true }),
   createdAt: createdAt(),
 }, (t) => [index('accounting_docs_org_idx').on(t.orgId, t.status, t.createdAt)]);
+
+// ------------------------------------------------------------------ assinatura eletrônica de holerites
+/**
+ * Um holerite (página do PDF do contador) enviado para o funcionário assinar por link pessoal.
+ * O link só abre com o CPF; assinado, `signedKey` guarda o PDF com a página de comprovante.
+ * Nome, CPF e valores ficam copiados aqui: o documento assinado não depende do cadastro depois.
+ */
+export const payslipSignatures = pgTable('payslip_signatures', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  /** Mês da folha em que foi enviado (a tela lista por ele). */
+  periodId: uuid('period_id').references(() => payrollPeriods.id, { onDelete: 'set null' }),
+  employeeId: uuid('employee_id').references(() => employees.id, { onDelete: 'set null' }),
+  employeeName: varchar('employee_name', { length: 120 }).notNull(),
+  employeeDocument: varchar('employee_document', { length: 32 }).notNull(),
+  /** Competência do holerite (AAAA-MM). */
+  competence: varchar('competence', { length: 7 }).notNull(),
+  net: numeric('net', { precision: 14, scale: 2 }).notNull(),
+  /** Holerite lido do PDF (linhas e totais) para mostrar no celular. */
+  slip: jsonb('slip').notNull(),
+  /** sha256 do token do link; o token em si fica cifrado (para copiar o link de novo). */
+  tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+  tokenEnc: text('token_enc').notNull(),
+  /** payslip (holerite do mês) | term (termo de aceite, um por funcionário: competence = 'TERMO') */
+  kind: varchar('kind', { length: 12 }).notNull().default('payslip'),
+  /** pending | signed */
+  status: varchar('status', { length: 12 }).notNull().default('pending'),
+  storageKey: varchar('storage_key', { length: 255 }).notNull(),
+  sha256: varchar('sha256', { length: 64 }).notNull(),
+  size: integer('size').notNull(),
+  signedKey: varchar('signed_key', { length: 255 }),
+  signedSha256: varchar('signed_sha256', { length: 64 }),
+  signedSize: integer('signed_size'),
+  signedAt: timestamp('signed_at', { withTimezone: true }),
+  signerIp: varchar('signer_ip', { length: 64 }),
+  signerUa: varchar('signer_ua', { length: 400 }),
+  termVersion: varchar('term_version', { length: 8 }),
+  viewedAt: timestamp('viewed_at', { withTimezone: true }),
+  failedAttempts: integer('failed_attempts').notNull().default(0),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  accountingDocId: uuid('accounting_doc_id').references(() => accountingDocuments.id, { onDelete: 'set null' }),
+  sentToAccountantAt: timestamp('sent_to_accountant_at', { withTimezone: true }),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex('payslip_signatures_token_uq').on(t.tokenHash),
+  uniqueIndex('payslip_signatures_emp_comp_uq').on(t.orgId, t.employeeId, t.competence),
+  index('payslip_signatures_period_idx').on(t.orgId, t.periodId),
+]);

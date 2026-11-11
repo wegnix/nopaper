@@ -24,6 +24,7 @@ import updateRoutes from './routes/updates.js';
 import payrollRoutes from './routes/payroll.js';
 import bankRoutes from './routes/bank.js';
 import accountingRoutes from './routes/accounting.js';
+import esignRoutes from './routes/esign.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -81,5 +82,6 @@ export async function buildApp() {
   await app.register(payrollRoutes);
   await app.register(bankRoutes);
   await app.register(accountingRoutes);
+  await app.register(esignRoutes);
   return app;
 }

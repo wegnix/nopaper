@@ -8,6 +8,28 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.13.0] - 2026-11-11
+
+### Novo
+- **Assinatura digital do holerite** (Folha → mês → **Assinaturas**; espaços Empresa): envie o PDF dos
+  holerites do contador e o sistema separa o de cada funcionário e cria um link pessoal para cada um. Mande
+  o link pelo WhatsApp (botão pronto) ou copie. O funcionário abre no celular, informa o CPF, confere o
+  holerite e assina com o dedo. A assinatura e a data entram no próprio campo do holerite (nas duas vias) e
+  o documento ganha uma página de comprovante (nome, CPF, data e hora, aparelho, código do documento); depois
+  disso não pode mais ser alterado. O funcionário baixa a via dele pelo mesmo link; a via da empresa fica
+  na folha e pode ser enviada ao contador com um clique. A janela mostra quem já assinou, quem abriu e quem
+  falta. Cinco CPFs errados bloqueiam o link por 15 minutos. Precisa do CPF e da matrícula do holerite no
+  cadastro do funcionário.
+- **Termo de aceite de assinatura eletrônica**: antes do primeiro holerite, cada funcionário assina, uma vez,
+  um termo em que concorda em receber e assinar os holerites eletronicamente. É um documento próprio, com a
+  razão social e o CNPJ da empresa e o nome e o CPF do funcionário, assinado do mesmo jeito (link, CPF,
+  assinatura com o dedo), com comprovante e envio ao contador. Ele é criado junto com o primeiro holerite —
+  se o funcionário abrir o link do holerite antes, o sistema leva ao termo e depois volta — ou pelo botão
+  **Gerar para quem falta**.
+- **Razão social** em Configurações → Espaço → Dados do espaço (espaços Empresa): o nome que já existia passa
+  a ser o **nome fantasia**; a razão social é a que vai nos documentos (termo de aceite e comprovantes).
+  Para enviar holerites para assinatura é preciso preencher a razão social e o CNPJ.
+
 ## [1.12.0] - 2026-11-11
 
 ### Novo

@@ -183,6 +183,20 @@
       "when": 1794354980201,
       "tag": "0025_accounting_direction",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794402355478,
+      "tag": "0026_payslip_signatures",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794404682306,
+      "tag": "0027_esign_term_legal_name",
+      "breakpoints": true
     }
   ]
 }

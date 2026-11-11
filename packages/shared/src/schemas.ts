@@ -99,6 +99,8 @@ export const orgCreateSchema = z.object({
   name: z.string().trim().min(2).max(120),
   kind: orgKindSchema.default('company'),
   document: documentSchema.optional(),
+  /** Razão social (o `name` é o nome fantasia / como o espaço aparece no sistema). Usada em documentos. */
+  legalName: z.string().trim().max(160).nullish().transform((v) => (v ? v : null)),
 });
 export const orgUpdateSchema = orgCreateSchema.partial().extend({
   timezone: z.string().max(64).optional(),
