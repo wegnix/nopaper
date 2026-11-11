@@ -12,6 +12,7 @@ import { Button, Select, Spinner } from '@/components/ui/base';
 import { api, post, put, errMsg } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
 import { useMonth, type Employee, type Entry, type Period, type PeriodSummary, type Rubric } from './data';
+import { AccountantPayslipDocs } from './AccountantDocs';
 
 interface ApplyResult {
   applied: Array<{ employee: string; net: string; total: string; created: boolean }>;
@@ -42,6 +43,8 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
   const period: Period | null = month.data?.period ?? null;
   const entries = month.data?.entries ?? [];
   const fileRef = useRef<HTMLInputElement>(null);
+  /** Documento da área do contador que está sendo lido (veio pelo link "Importar na folha" ou foi escolhido aqui). */
+  const [doc, setDoc] = useState<string | null>(docId ?? null);
   const [file, setFile] = useState<{ fileName: string; report: PayslipReport } | null>(null);
   const [reading, setReading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -52,12 +55,12 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
   /** Cartões com o campo "valor combinado" aberto. */
   const [openAgreed, setOpenAgreed] = useState<Record<string, boolean>>({});
   const [adjust, setAdjust] = useState<{ earning: string; deduction: string }>({ earning: '', deduction: '' });
-  useEffect(() => { if (open) { setFile(null); setLinks({}); setChoice({}); setAgreed({}); setOpenAgreed({}); setRef(currentRef); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open]);
+  useEffect(() => { if (open) { setDoc(docId ?? null); setFile(null); setLinks({}); setChoice({}); setAgreed({}); setOpenAgreed({}); setRef(currentRef); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open]);
   // veio da área do contador: lê o documento enviado assim que a janela abre (e os meses carregam)
   const autoLoaded = useRef<string | null>(null);
   useEffect(() => {
     if (!open) { autoLoaded.current = null; return; }
-    if (docId && periods.length && autoLoaded.current !== docId) { autoLoaded.current = docId; void pick(null); }
+    if (docId && periods.length && autoLoaded.current !== docId) { autoLoaded.current = docId; void pick(null, docId); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, docId, periods.length]);
   const hasRef = (r: string) => periods.some((p) => p.ref === r);
@@ -72,12 +75,12 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
   const extraOf = (kind: 'earning' | 'deduction') => rubrics.filter((r) => r.section === 'extra' && r.kind === kind && r.active);
   const adjustId = (kind: 'earning' | 'deduction') => adjust[kind] || extraOf(kind).find((r) => personKey(r.name) === (kind === 'earning' ? 'outros proventos' : 'outros descontos'))?.id || '';
 
-  const pick = async (f: File | null) => {
-    setReading(true);
+  const pick = async (f: File | null, fromDoc: string | null = null) => {
+    setReading(true); setDoc(fromDoc);
     try {
       const fd = new FormData(); if (f) fd.append('file', f);
       const r = f ? await api<{ fileName: string; report: PayslipReport }>('POST', '/api/payroll/payslips/read', fd)
-        : await post<{ fileName: string; report: PayslipReport }>(`/api/accounting/documents/${docId}/payslips`);
+        : await post<{ fileName: string; report: PayslipReport }>(`/api/accounting/documents/${fromDoc}/payslips`);
       setLinks({}); setChoice({}); setAgreed({}); setOpenAgreed({});
       setFile(r);
       const rr = r.report.ref ? folhaOf(r.report.ref) : null;
@@ -171,7 +174,7 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
         }),
         adjustEarningId: adjustId('earning') || null, adjustDeductionId: adjustId('deduction') || null,
       });
-      if (docId) await put(`/api/accounting/documents/${docId}`, { status: 'done' }).then(() => qc.invalidateQueries({ queryKey: ['accounting'] })).catch(() => undefined);
+      if (doc) await put(`/api/accounting/documents/${doc}`, { status: 'done' }).then(() => qc.invalidateQueries({ queryKey: ['accounting'] })).catch(() => undefined);
       qc.invalidateQueries({ queryKey: ['bills'] });
       toast.success(r.applied.length ? `Holerites lançados: ${plural(r.applied.length, 'funcionário', 'funcionários')}` : 'Nada mudou: os holerites já estavam lançados');
       if (r.createdEmployees.length) toast.info(`Cadastrado${r.createdEmployees.length > 1 ? 's' : ''}: ${r.createdEmployees.join(', ')}`);
@@ -209,12 +212,16 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
       </> : <Button variant="ghost" onClick={onClose}>Fechar</Button>}>
       <input ref={fileRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
       {!file ? (
-        <button type="button" onClick={() => fileRef.current?.click()} disabled={reading}
-          className="flex w-full flex-col items-center gap-3 rounded-xl border-2 border-dashed border-line px-6 py-12 text-center transition hover:border-accent hover:bg-accent-soft/30">
-          {reading ? <Spinner className="size-6" /> : <span className="grid size-12 place-items-center rounded-2xl bg-accent-soft text-accent"><Upload className="size-5" /></span>}
-          <span className="font-medium">{reading ? 'Lendo os holerites…' : 'Escolher o PDF dos holerites'}</span>
-          <span className="text-xs text-faint">Um arquivo com os holerites de todos do mês (as duas vias de cada um contam uma vez só).</span>
-        </button>
+        <div className="flex flex-col gap-4">
+          {/* o que o contador já mandou pelo NoPaper: usa direto, sem baixar e subir de novo */}
+          <AccountantPayslipDocs enabled={open && !docId} folhaRef={currentRef} payMonth={payMonth} busy={reading ? doc ?? 'x' : null} action="Usar este" onPick={(d) => pick(null, d.id)} />
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={reading}
+            className="flex w-full flex-col items-center gap-3 rounded-xl border-2 border-dashed border-line px-6 py-10 text-center transition hover:border-accent hover:bg-accent-soft/30">
+            {reading ? <Spinner className="size-6" /> : <span className="grid size-12 place-items-center rounded-2xl bg-accent-soft text-accent"><Upload className="size-5" /></span>}
+            <span className="font-medium">{reading ? 'Lendo os holerites…' : 'Escolher o PDF dos holerites no computador'}</span>
+            <span className="text-xs text-faint">Um arquivo com os holerites de todos do mês (as duas vias de cada um contam uma vez só).</span>
+          </button>
+        </div>
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-surface-2/60 px-3.5 py-2.5 text-sm">

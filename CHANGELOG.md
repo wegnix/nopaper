@@ -8,6 +8,18 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.13.3] - 2026-11-11
+
+### Melhorado
+- **Holerites do contador direto na folha**: quando o contador envia o PDF dos holerites pelo NoPaper, não é
+  mais preciso baixar o arquivo e subir de novo. As janelas **Importar holerites** e **Assinaturas** da
+  folha mostram a lista "Enviados pelo contador" (o do mês da folha aparece primeiro, marcado "desta
+  folha"): um clique usa aquele arquivo para lançar os valores ou para enviar aos funcionários assinarem.
+  Escolher um arquivo do computador continua disponível.
+- **Tipo "Termos" nos envios ao contador**: os termos de aceite assinados pelos funcionários chegam ao contador
+  como **Termos** (antes caíam em "Outro documento"), e o tipo também pode ser escolhido ao enviar um
+  arquivo: Notas fiscais | Termos | Outro. Os termos já enviados foram reclassificados.
+
 ## [1.13.2] - 2026-11-11
 
 ### Novo

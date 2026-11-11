@@ -218,6 +218,13 @@
       "when": 1794411825679,
       "tag": "0030_storage_quota",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1794415876974,
+      "tag": "0031_accounting_term_kind",
+      "breakpoints": true
     }
   ]
 }

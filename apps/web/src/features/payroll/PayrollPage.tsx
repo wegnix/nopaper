@@ -398,7 +398,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
       <OpenMonthDialog open={openDlg} refStr={ref} suggested={m?.suggestedPayDate ?? null} onClose={() => setOpenDlg(false)} />
       {period && rows.length > 0 && <PayrollPrint period={period} rows={rows} rubrics={meta.rubrics} print={printCfg} />}
       {period && rows.length > 0 && <PrintDialog open={printOpen} refStr={ref} rows={rows} rubrics={meta.rubrics} print={printCfg} onClose={() => setPrintOpen(false)} onPrint={doPrint} />}
-      {period && <SignaturesDialog open={signOpen} onClose={() => setSignOpen(false)} periodId={period.id} refStr={ref} />}
+      {period && <SignaturesDialog open={signOpen} onClose={() => setSignOpen(false)} periodId={period.id} refStr={ref} payMonth={meta.settings.payMonth} />}
       {period && commImport && <CommissionsDialog open={commOpen} onClose={() => setCommOpen(false)} periods={periodsList} currentRef={ref} employees={meta.employees} rubrics={meta.rubrics}
         commissions={meta.settings.commissions} payMonth={meta.settings.payMonth} canManage={can('payroll.manage')} canEdit={canEdit} initial={{ ...commImport, ref }}
         onConfigure={onConfigure} onDone={() => undefined} />}

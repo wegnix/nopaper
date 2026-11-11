@@ -223,7 +223,7 @@ export default async function esignRoutes(app: FastifyInstance) {
       const buf = await readStoredFile(r.signedKey!);
       const saved = await saveFile(req.org!.id, buf, 'pdf');
       const [doc] = await db.insert(schema.accountingDocuments).values({
-        orgId: req.org!.id, direction: 'to_accountant', recipientId, kind: r.kind === 'term' ? 'other' : 'payslip', competence: r.kind === 'term' ? null : r.competence,
+        orgId: req.org!.id, direction: 'to_accountant', recipientId, kind: r.kind === 'term' ? 'term' : 'payslip', competence: r.kind === 'term' ? null : r.competence,
         note: `${r.kind === 'term' ? 'Termo de aceite de assinatura eletrônica assinado' : 'Holerite assinado eletronicamente'} por ${r.employeeName}`.slice(0, 500),
         originalName: fileName(r, true), mime: 'application/pdf', size: buf.length, storageKey: saved.key, sha256: saved.sha256, detected: null, uploadedBy: req.user!.id,
       }).returning({ id: schema.accountingDocuments.id });
