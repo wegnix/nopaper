@@ -16,6 +16,7 @@ import { deleteFile, readStoredFile, saveFile, signFileToken, verifyFileToken } 
 import { assertCompany, loadPeriod } from '../services/payroll.js';
 import { buildSignedPdf, buildTermPdf, splitPayslips } from '../services/esign.js';
 import { resolveRecipient } from '../services/accounting.js';
+import { assertStorageRoom } from '../services/storageQuota.js';
 
 type Row = typeof schema.payslipSignatures.$inferSelect;
 const digits = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '');
@@ -137,6 +138,7 @@ export default async function esignRoutes(app: FastifyInstance) {
     try { split = await splitPayslips(buf); } catch { throw badRequest('Não consegui ler este PDF. Peça o arquivo de novo ao contador e tente outra vez.'); }
     if (!split.slips.length) throw badRequest('Não achei holerites neste PDF. Ele precisa ser o PDF original do contador, não uma foto ou digitalização.', 'payslips_unknown');
     if (!split.ref) throw badRequest('Não achei o mês (competência) neste PDF de holerites.');
+    await assertStorageRoom(orgId, split.slips.reduce((n, x) => n + x.pdf.length, 0));
     const competence = split.ref;
 
     const employees = await db.select().from(schema.employees).where(eq(schema.employees.orgId, orgId));

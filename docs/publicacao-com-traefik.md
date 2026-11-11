@@ -142,6 +142,15 @@ financeiro.suaempresa.com.br {
 > Use sempre pelo domínio com **HTTPS**: o cookie da sessão é marcado como seguro. Acessando
 > `http://IP:8080` direto, sem o proxy, o login até entra, mas cai ao recarregar a página.
 
+> **O endereço IP de quem acessa precisa chegar ao NoPaper.** O bloqueio por senhas erradas, o limite
+> de tentativas e o IP gravado na auditoria e nos comprovantes de assinatura usam o cabeçalho
+> `X-Forwarded-For`. O seu proxy deve **substituir** esse cabeçalho pelo IP real do visitante (é o
+> padrão do Caddy, do Traefik e do nginx com `proxy_set_header X-Forwarded-For $remote_addr`), e não
+> repassar o que o navegador mandou. Para conferir: entre no sistema e veja em **Configurações →
+> Plataforma → Auditoria da plataforma** o IP do seu login — tem de ser o seu endereço público, não um
+> `172.x`/`10.x` interno. Se aparecer um IP interno, todos os visitantes estão sendo vistos como um só:
+> cinco senhas erradas de qualquer pessoa bloqueariam o login de todos por 15 minutos.
+
 ### 5b. Trocar as portas do Traefik
 
 Em `deploy/traefik/.env` existem `HTTP_PORT` e `HTTPS_PORT` (padrão 80 e 443). Trocar é possível,
@@ -263,6 +272,15 @@ O primeiro certificado pode levar alguns segundos para ser emitido.
 
 Não existe cadastro público: novas pessoas são criadas por um administrador em
 **Configurações → Membros** (dentro do espaço) ou **Configurações → Plataforma → Usuários**.
+
+> **Administrador da plataforma = acesso ao servidor.** Quem é administrador da plataforma configura o
+> destino dos backups (um `rclone.conf` livre), baixa e restaura o banco inteiro e atualiza o sistema.
+> Na prática isso equivale a ter acesso ao próprio servidor e a todos os espaços. Dê esse papel só a
+> quem você daria a senha do servidor; para o dia a dia, use administradores **do espaço**.
+
+Cada espaço tem uma **cota de arquivos** (anexos, documentos do contador, holerites): 5 GB por padrão
+(`STORAGE_QUOTA_MB` no `.env`), ajustável por espaço em **Configurações → Plataforma → Segurança**. Ao
+chegar no limite, o espaço não consegue enviar arquivos novos até apagar algo ou ter a cota aumentada.
 
 ## 11. E-mail, Telegram e backups
 

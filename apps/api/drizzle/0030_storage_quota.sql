@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN "storage_quota_mb" integer;

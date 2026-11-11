@@ -9,6 +9,8 @@ import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { hashPassword, requireAuth, requireSuperadmin } from '../lib/auth.js';
 import { audit, auditUsers, queryAudit, type AuditQuery } from '../lib/audit.js';
 import { assertEmailFree, assertUsernameFree } from './auth.js';
+import { env } from '../env.js';
+import { storageUsage } from '../services/storageQuota.js';
 
 /**
  * Plataforma (só superadmin): contas de usuário de todos os espaços e auditoria da plataforma.
@@ -104,6 +106,21 @@ export default async function platformRoutes(app: FastifyInstance) {
     const orgs = await db.select({ id: schema.organizations.id, name: schema.organizations.name, kind: schema.organizations.kind }).from(schema.organizations).orderBy(schema.organizations.name);
     const groups = await db.select({ id: schema.groups.id, orgId: schema.groups.orgId, name: schema.groups.name, isAdmin: schema.groups.isAdmin }).from(schema.groups).orderBy(schema.groups.name);
     return { items: orgs.map((o) => ({ ...o, groups: groups.filter((g) => g.orgId === o.id).map(({ orgId: _o, ...g }) => g) })) };
+  });
+
+  /** Armazenamento: quanto cada espaço usa e a cota dele (null = a padrão da instalação). */
+  app.get('/api/system/storage', guard, async () => {
+    const orgs = await db.select({ id: schema.organizations.id, name: schema.organizations.name, quotaMb: schema.organizations.storageQuotaMb }).from(schema.organizations).orderBy(schema.organizations.name);
+    const items = [];
+    for (const o of orgs) items.push({ ...o, usedBytes: await storageUsage(o.id) });
+    return { defaultQuotaMb: env.STORAGE_QUOTA_MB, items };
+  });
+  app.put<{ Params: { orgId: string } }>('/api/system/orgs/:orgId/storage', guard, async (req) => {
+    const body = parse(z.object({ quotaMb: z.number().int().min(100, 'Mínimo de 100 MB').max(10_000_000).nullable() }), req.body);
+    const [o] = await db.update(schema.organizations).set({ storageQuotaMb: body.quotaMb }).where(eq(schema.organizations.id, req.params.orgId)).returning({ id: schema.organizations.id, name: schema.organizations.name });
+    if (!o) throw notFound('Espaço não encontrado');
+    await audit(req, { action: 'platform.storage_quota', entityType: 'organization', entityId: o.id, description: `Definiu a cota de armazenamento de ${o.name}: ${body.quotaMb ? `${body.quotaMb} MB` : 'padrão'}`, details: { quotaMb: body.quotaMb } });
+    return { ok: true };
   });
 
   /** Põe a conta num espaço (ou troca os grupos dela lá). */

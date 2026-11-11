@@ -42,7 +42,12 @@ export async function pdfToText(buf: Buffer, maxPages = 10): Promise<string> {
  * em colunas, em que a ordem interna do PDF não segue a leitura (relatório de vendas do Jasper,
  * holerites do contador — lá a coluna do valor diz se é vencimento ou desconto).
  */
+/** Um PDF de holerites ou de vendas tem algumas centenas de textos por página; isto barra o arquivo montado para prender o servidor. */
+const MAX_ITEMS_PER_PAGE = 8000;
+const MAX_READ_MS = 15_000;
+
 export async function pdfToPageCells(buf: Buffer, maxPages = 30): Promise<PdfCell[][][]> {
+  const started = Date.now();
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const task = pdfjs.getDocument({ data: new Uint8Array(buf), useSystemFonts: false, disableFontFace: true, verbosity: 0 });
   const doc = await task.promise;
@@ -52,6 +57,7 @@ export async function pdfToPageCells(buf: Buffer, maxPages = 30): Promise<PdfCel
       const page = await doc.getPage(p);
       const m = page.getViewport({ scale: 1 }).transform;
       const content = await page.getTextContent();
+      if (content.items.length > MAX_ITEMS_PER_PAGE || Date.now() - started > MAX_READ_MS) throw new Error('PDF grande ou complexo demais para ler');
       const rows: Array<{ y: number; items: PdfCell[] }> = [];
       for (const it of content.items as Array<{ str?: string; transform?: number[]; width?: number }>) {
         const s = it.str?.trim();

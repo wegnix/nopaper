@@ -10,12 +10,13 @@ import { parse } from '../lib/validate.js';
 import { badRequest, forbidden, HttpError, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
-import { ALLOWED_UPLOADS, ARCHIVE_UPLOADS, deleteFile, readStoredFile, saveFile, saveUploadStream, signFileToken, sniffArchive, sniffMime, streamStoredFile, verifyFileToken } from '../lib/storage.js';
+import { ALLOWED_UPLOADS, ARCHIVE_UPLOADS, deleteFile, readStoredFile, saveUploadStream, signFileToken, sniffArchive, sniffMime, streamStoredFile, verifyFileToken } from '../lib/storage.js';
 import { classifyDocument } from '../services/classifier.js';
 import { pdfToCells } from '../services/pdf.js';
 import { loadAlertConfig } from '../services/alerts.js';
 import { loadBill, restrictedCategoryIds } from '../services/bills.js';
 import { accountantsOf, resolveRecipient } from '../services/accounting.js';
+import { assertStorageRoom, storageInfo } from '../services/storageQuota.js';
 import { escapeHtml, sendEmail, telegramSend, telegramToken } from '../services/notify.js';
 
 type Doc = typeof schema.accountingDocuments.$inferSelect;
@@ -48,24 +49,6 @@ async function loadDoc(req: FastifyRequest, id: string): Promise<{ d: Doc; side:
 const EXT: Record<string, string> = { ...ALLOWED_UPLOADS, ...ARCHIVE_UPLOADS };
 /** Dá para abrir no navegador (PDF e imagem); o resto é só download. */
 const previewable = (mime: string) => !!ALLOWED_UPLOADS[mime];
-
-/** Lê os campos e os arquivos de um envio do contador (um pedido, vários arquivos, em memória: são pequenos). */
-async function readUpload(req: FastifyRequest) {
-  const fields: Record<string, string> = {};
-  const files: Array<{ buf: Buffer; mime: string; filename: string }> = [];
-  for await (const part of req.parts({ limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: MAX_FILES } })) {
-    if (part.type === 'field') { fields[part.fieldname] = String(part.value ?? ''); continue; }
-    const buf = await part.toBuffer();
-    const filename = (part.filename || 'arquivo').slice(0, 200);
-    if (part.file.truncated) throw badRequest(`"${filename}" é maior que ${env.MAX_UPLOAD_MB} MB`);
-    if (!buf.length) throw badRequest(`"${filename}" está vazio`);
-    const mime = sniffMime(buf);
-    if (!mime || !ALLOWED_UPLOADS[mime]) throw badRequest(`"${filename}": formato não suportado. Envie PDF (ou imagem PNG/JPG).`);
-    files.push({ buf, mime, filename });
-  }
-  if (!files.length) throw badRequest('Escolha ao menos um arquivo');
-  return { fields, files };
-}
 
 /** O que dá para ler do arquivo já no envio (ajuda quem confere; nada disso é obrigatório). */
 async function detect(kind: AccountingKind, buf: Buffer, mime: string, filename: string): Promise<AccountingDetected | null> {
@@ -180,31 +163,41 @@ export default async function accountingRoutes(app: FastifyInstance) {
     };
   });
 
-  const store = async (req: FastifyRequest, files: Array<{ buf: Buffer; mime: string; filename: string }>, base: { direction: string; kind: AccountingKind; competence: string | null; note: string | null }, withDetect: boolean) => {
-    const saved: string[] = [];
+  app.post('/api/accounting/documents', { preHandler: requirePerm('accounting.upload') }, async (req) => {
+    const orgId = req.org!.id;
+    await assertStorageRoom(orgId);
+    // cada arquivo vai direto para o disco (um contador não segura 20 arquivos na memória da API);
+    // a leitura automática abre um por vez, depois de gravado
+    const fields: Record<string, string> = {};
+    const saved: Array<{ key: string; sha256: string; size: number; mime: string; filename: string }> = [];
+    const sniff = (head: Buffer) => { const mime = sniffMime(head); return mime && ALLOWED_UPLOADS[mime] ? { mime, ext: ALLOWED_UPLOADS[mime]! } : null; };
+    let docs: Doc[];
+    let body;
     try {
+      for await (const part of req.parts({ limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: MAX_FILES } })) {
+        if (part.type === 'field') { fields[part.fieldname] = String(part.value ?? ''); continue; }
+        const filename = (part.filename || 'arquivo').slice(0, 200);
+        const r = await saveUploadStream(orgId, part.file, sniff);
+        if (r.ok) saved.push({ ...r, filename });
+        if (part.file.truncated) throw badRequest(`"${filename}" é maior que ${env.MAX_UPLOAD_MB} MB`);
+        if (!r.ok) throw badRequest(r.size ? `"${filename}": formato não suportado. Envie PDF (ou imagem PNG/JPG).` : `"${filename}" está vazio`);
+        await assertStorageRoom(orgId, saved.reduce((n, f) => n + f.size, 0));
+      }
+      if (!saved.length) throw badRequest('Escolha ao menos um arquivo');
+      body = parse(accountingUploadSchema, fields);
+      if (body.kind === 'payslip' && saved.some((f) => f.mime !== 'application/pdf')) throw badRequest('Os holerites precisam ser enviados em PDF (o arquivo original do sistema de folha).');
       const values = [];
-      for (const f of files) {
-        const { key, sha256 } = await saveFile(req.org!.id, f.buf, EXT[f.mime]!);
-        saved.push(key);
+      for (const f of saved) {
         values.push({
-          orgId: req.org!.id, ...base, originalName: f.filename, mime: f.mime, size: f.buf.length, storageKey: key, sha256,
-          detected: withDetect ? await detect(base.kind, f.buf, f.mime, f.filename) : null, uploadedBy: req.user!.id,
+          orgId, direction: 'to_client', kind: body.kind, competence: body.competence ?? null, note: body.note, originalName: f.filename, mime: f.mime, size: f.size,
+          storageKey: f.key, sha256: f.sha256, detected: await detect(body.kind, await readStoredFile(f.key), f.mime, f.filename), uploadedBy: req.user!.id,
         });
       }
-      return await db.insert(schema.accountingDocuments).values(values).returning();
+      docs = await db.insert(schema.accountingDocuments).values(values).returning();
     } catch (e) {
-      for (const k of saved) await deleteFile(k);
+      for (const f of saved) await deleteFile(f.key);
       throw e;
     }
-  };
-
-  /** Contador → espaço: campos (tipo, mês, observação) + um ou mais arquivos no mesmo pedido. */
-  app.post('/api/accounting/documents', { preHandler: requirePerm('accounting.upload') }, async (req) => {
-    const { fields, files } = await readUpload(req);
-    const body = parse(accountingUploadSchema, fields);
-    if (body.kind === 'payslip' && files.some((f) => f.mime !== 'application/pdf')) throw badRequest('Os holerites precisam ser enviados em PDF (o arquivo original do sistema de folha).');
-    const docs = await store(req, files, { direction: 'to_client', kind: body.kind, competence: body.competence ?? null, note: body.note }, true);
     await audit(req, {
       action: 'accounting.upload', entityType: 'accounting_document', entityId: docs[0]!.id,
       description: `Enviou ${docs.length === 1 ? `o documento "${docs[0]!.originalName}"` : `${docs.length} documentos`} (${ACCOUNTING_KIND_LABEL[body.kind]}${body.competence ? ` – ${refLabelPT(body.competence)}` : ''}) pela área do contador`,
@@ -212,7 +205,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
     });
     // o aviso não segura a resposta nem derruba o envio
     void notifyUpload(req.org!.id, req.user!.name, docs).catch((e) => req.log.error({ err: e }, 'aviso da área do contador falhou'));
-    return { created: docs.length };
+    return { created: docs.length, storage: await storageInfo(orgId) };
   });
 
   /**
@@ -225,6 +218,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
     const saved: Array<{ key: string; sha256: string; size: number; mime: string; filename: string }> = [];
     const sniff = (head: Buffer) => { const mime = sniffMime(head) ?? sniffArchive(head); return mime && EXT[mime] ? { mime, ext: EXT[mime]! } : null; };
     let docs: Doc[];
+    await assertStorageRoom(req.org!.id);
     try {
       for await (const part of req.parts({ limits: { fileSize: max * 1024 * 1024, files: MAX_FILES } })) {
         if (part.type === 'field') { fields[part.fieldname] = String(part.value ?? ''); continue; }
@@ -233,6 +227,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
         if (r.ok) saved.push({ ...r, filename });
         if (part.file.truncated) throw badRequest(`"${filename}" é maior que ${max} MB`);
         if (!r.ok) throw badRequest(r.size ? `"${filename}": formato não suportado. Envie PDF, imagem, XML ou arquivo compactado (ZIP, RAR, 7z).` : `"${filename}" está vazio`);
+        await assertStorageRoom(req.org!.id, saved.reduce((n, f) => n + f.size, 0));
       }
       if (!saved.length) throw badRequest('Escolha ao menos um arquivo');
       const body = parse(accountingSendSchema, fields);
@@ -250,7 +245,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
       description: `Enviou ${docs.length === 1 ? `"${docs[0]!.originalName}"` : `${docs.length} arquivos`} para o contador (${ACCOUNTING_KIND_LABEL[docs[0]!.kind as AccountingKind]}${docs[0]!.competence ? ` – ${refLabelPT(docs[0]!.competence)}` : ''})`,
       details: { kind: docs[0]!.kind, competence: docs[0]!.competence, files: docs.map((d) => d.originalName) },
     });
-    return { created: docs.length };
+    return { created: docs.length, storage: await storageInfo(req.org!.id) };
   });
 
   /**

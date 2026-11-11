@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Lock, Timer } from 'lucide-react';
+import { HardDrive, Lock, Timer } from 'lucide-react';
 import { DEFAULT_IDLE_TIMEOUT_MINUTES, type SecuritySettings } from '@nopaper/shared';
 import { Button, Card, Field, Input, Select, Spinner } from '@/components/ui/base';
 import { errMsg, get, put } from '@/lib/api';
@@ -83,13 +83,72 @@ export function SecurityPage() {
         </div>
         <ul className="mt-4 grid gap-2 text-sm text-muted sm:grid-cols-2">
           <li>Senhas guardadas com Argon2id (nunca em texto).</li>
-          <li>5 senhas erradas para o mesmo usuário bloqueiam esse login por 15 minutos.</li>
-          <li>Limite de tentativas de login por endereço IP.</li>
+          <li>5 senhas erradas bloqueiam aquela conta naquele endereço por 15 minutos (o dono entra de outro lugar).</li>
+          <li>Limites gerais de senhas erradas por endereço IP e por conta.</li>
           <li>Acesso por token de 15 minutos, renovado com troca a cada uso; token roubado e reutilizado derruba a sessão.</li>
           <li>Trocar a senha encerra as outras sessões; sessões podem ser encerradas em Meu perfil.</li>
           <li>Sair numa aba sai de todas.</li>
         </ul>
       </Card>
+      <StorageCard />
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ armazenamento por espaço
+interface StorageRow { id: string; name: string; quotaMb: number | null; usedBytes: number }
+const GB = 1024 ** 3;
+const size = (b: number) => (b >= GB ? `${(b / GB).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} GB` : `${Math.max(b ? 1 : 0, Math.round(b / 1024 ** 2)).toLocaleString('pt-BR')} MB`);
+
+/** Quanto cada espaço usa de arquivos (anexos, documentos do contador, holerites) e a cota dele. */
+function StorageCard() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ['system', 'storage'], queryFn: () => get<{ defaultQuotaMb: number; items: StorageRow[] }>('/api/system/storage') });
+  const [edit, setEdit] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!q.data) return null;
+  const def = q.data.defaultQuotaMb;
+  const save = async (o: StorageRow) => {
+    const raw = (edit[o.id] ?? '').trim().replace(',', '.');
+    const gb = raw === '' ? null : Number(raw);
+    if (gb !== null && (!Number.isFinite(gb) || gb < 0.1)) { toast.error('Informe o limite em GB (mínimo 0,1) ou deixe vazio para usar o padrão'); return; }
+    setBusy(o.id);
+    try {
+      await put(`/api/system/orgs/${o.id}/storage`, { quotaMb: gb === null ? null : Math.round(gb * 1024) });
+      toast.success(gb === null ? `${o.name}: limite padrão (${size(def * 1024 ** 2)})` : `${o.name}: limite de ${size(Math.round(gb * 1024) * 1024 ** 2)}`);
+      setEdit((e) => { const n = { ...e }; delete n[o.id]; return n; });
+      qc.invalidateQueries({ queryKey: ['system', 'storage'] });
+    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(null); }
+  };
+  return (
+    <Card className="p-5">
+      <div className="flex items-center gap-3">
+        <span className="grid size-10 place-items-center rounded-xl bg-accent-soft text-accent"><HardDrive className="size-5" /></span>
+        <div>
+          <h2 className="font-display text-lg font-semibold">Armazenamento por espaço</h2>
+          <p className="text-sm text-muted">Anexos de contas, documentos do contador e holerites. Ao chegar no limite, o espaço não consegue enviar arquivos novos. Padrão: {size(def * 1024 ** 2)}.</p>
+        </div>
+      </div>
+      <ul className="mt-4 flex flex-col divide-y divide-line rounded-xl border border-line">
+        {q.data.items.map((o) => {
+          const quota = (o.quotaMb ?? def) * 1024 ** 2, pct = Math.min(100, Math.round((o.usedBytes / quota) * 100));
+          const value = edit[o.id] ?? (o.quotaMb ? String(+(o.quotaMb / 1024).toFixed(2)).replace('.', ',') : '');
+          return (
+            <li key={o.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3">
+              <div className="min-w-0 flex-1 basis-56">
+                <p className="truncate text-sm font-medium">{o.name}</p>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2"><div className={pct >= 100 ? 'h-full bg-danger' : pct >= 90 ? 'h-full bg-warn' : 'h-full bg-accent'} style={{ width: `${Math.max(pct, o.usedBytes ? 2 : 0)}%` }} /></div>
+                <p className="mt-1 text-xs text-muted tnum">{size(o.usedBytes)} de {size(quota)} ({pct}%){pct >= 100 ? ' · no limite: envios bloqueados' : pct >= 90 ? ' · perto do limite' : ''}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input aria-label={`Limite de ${o.name} em GB`} inputMode="decimal" className="h-9 w-24 text-sm tnum" placeholder="padrão" value={value} onChange={(e) => setEdit({ ...edit, [o.id]: e.target.value })} />
+                <span className="text-xs text-faint">GB</span>
+                <Button size="sm" variant="secondary" loading={busy === o.id} disabled={edit[o.id] === undefined} onClick={() => save(o)}>Salvar</Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }

@@ -158,7 +158,8 @@ export function ClientOutbox() {
     try {
       // os campos vão antes dos arquivos (o servidor grava cada arquivo conforme chega)
       const build = () => { const fd = new FormData(); fd.append('kind', kind); fd.append('competence', competence); fd.append('note', note); if (needRecipient) fd.append('recipientId', recipient); for (const f of files) fd.append('file', f); return fd; };
-      const r = await uploadFormWithProgress<{ created: number }>('/api/accounting/outbox', build, setPct);
+      const r = await uploadFormWithProgress<{ created: number; storage?: { near: boolean } }>('/api/accounting/outbox', build, setPct);
+      if (r.storage?.near) toast.warning('O espaço está perto do limite de armazenamento. Apague arquivos antigos ou peça ao administrador da plataforma para aumentar o limite.');
       setSent(`${plural(r.created, 'arquivo enviado', 'arquivos enviados')} ao contador às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Ele vê em “Recebidos”.`);
       setFiles([]); setNote('');
       refresh();

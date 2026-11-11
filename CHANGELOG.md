@@ -8,6 +8,28 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.13.2] - 2026-11-11
+
+### Novo
+- **Cota de armazenamento por espaço** (Configurações → Plataforma → Segurança): a tela mostra quanto cada
+  espaço usa de arquivos (anexos de contas, documentos do contador, holerites) e o limite dele — 5 GB por
+  padrão, ajustável por espaço. Perto do limite o envio avisa; ao atingir, o espaço não envia arquivos
+  novos até apagar algo ou ter o limite aumentado.
+
+### Segurança
+- Os envios do contador passam a ser gravados direto no disco, sem ocupar a memória do servidor.
+- Um PDF montado de propósito não consegue mais prender a leitura de holerites e do relatório de vendas.
+- Importações têm tetos: fatura OFX com até 1.000 lançamentos e 3.000 parcelas futuras por vez; planilha
+  da folha com até 240 meses e 10 mil lançamentos por vez.
+- O link de assinatura de holerites e as chaves de arquivo não ficam mais gravados nos registros de acesso
+  do servidor.
+- A página não aceita mais scripts embutidos (política de conteúdo do navegador mais rígida).
+- O nome de uma categoria restrita não é mais confirmado a quem não a vê; a contagem de contas de cada
+  pasta não inclui as de categoria restrita para quem não as vê; desfazer a conciliação de uma conta que
+  virou recorrente é bloqueado com a orientação do que fazer.
+- Manual de publicação: notas sobre o IP real do visitante atrás de outro proxy e sobre o alcance do
+  administrador da plataforma.
+
 ## [1.13.1] - 2026-11-11
 
 ### Segurança

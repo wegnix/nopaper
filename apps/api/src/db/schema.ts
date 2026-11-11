@@ -63,6 +63,8 @@ export const organizations = pgTable('organizations', {
   document: varchar('document', { length: 32 }),
   /** Razão social: vai nos documentos legais (termo e comprovante de assinatura). `name` = nome fantasia. */
   legalName: varchar('legal_name', { length: 160 }),
+  /** Cota de armazenamento deste espaço em MB (null = a padrão da instalação). */
+  storageQuotaMb: integer('storage_quota_mb'),
   timezone: varchar('timezone', { length: 64 }).notNull().default('America/Sao_Paulo'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

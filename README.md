@@ -92,6 +92,7 @@ Tudo pelo arquivo `.env` (modelo comentado em [.env.example](.env.example)):
 | `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, `TRAEFIK_CERTRESOLVER` | não | Para usar um Traefik já existente com outros nomes |
 | `COMPOSE_FILE`, `WEB_PORT`, `WEB_BIND` | não | Sem Traefik: publica a interface numa porta para outro proxy (nginx, Caddy…) |
 | `TZ`, `MAX_UPLOAD_MB`, `LOG_LEVEL` | não | Fuso padrão, tamanho máximo de anexo, nível de log |
+| `STORAGE_QUOTA_MB` | não | Cota padrão de arquivos por espaço (5120 = 5 GB); ajustável por espaço em Plataforma → Segurança |
 | `UPDATE_REPO` | não | Repositório das atualizações (padrão `wegnix/nopaper`; troque se usar um fork) |
 
 E-mail (SMTP), bot do Telegram e backups são configurados depois, pela interface, em

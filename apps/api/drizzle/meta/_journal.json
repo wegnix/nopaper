@@ -211,6 +211,13 @@
       "when": 1794409043058,
       "tag": "0029_accounting_recipient",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794411825679,
+      "tag": "0030_storage_quota",
+      "breakpoints": true
     }
   ]
 }

@@ -29,7 +29,7 @@ export default async function catalogRoutes(app: FastifyInstance) {
     if (body.isRestricted && !req.org!.can('bills.view_restricted')) throw forbidden('Sem permissão para criar categorias restritas');
     const [dup] = await db.select().from(schema.categories)
       .where(and(eq(schema.categories.orgId, req.org!.id), sql`lower(${schema.categories.label}) = lower(${body.label})`));
-    if (dup) throw badRequest(`Já existe a categoria "${dup.label}"`);
+    if (dup) throw badRequest(dup.isRestricted && !req.org!.can('bills.view_restricted') ? 'Este nome já está em uso neste espaço. Escolha outro.' : `Já existe a categoria "${dup.label}"`);
     const [c] = await db.insert(schema.categories).values({ ...body, orgId: req.org!.id, createdBy: req.user!.id }).returning();
     await audit(req, { action: 'category.create', entityType: 'category', entityId: c.id, description: `Criou categoria ${c.label}`, details: { ...body, restricted: c.isRestricted } });
     return c;
@@ -48,7 +48,7 @@ export default async function catalogRoutes(app: FastifyInstance) {
     if (body.label && body.label.toLowerCase() !== c.label.toLowerCase()) {
       const [dup] = await db.select().from(schema.categories)
         .where(and(eq(schema.categories.orgId, req.org!.id), sql`lower(${schema.categories.label}) = lower(${body.label})`, ne(schema.categories.id, c.id)));
-      if (dup) throw badRequest(`Já existe a categoria "${dup.label}"`);
+      if (dup) throw badRequest(dup.isRestricted && !req.org!.can('bills.view_restricted') ? 'Este nome já está em uso neste espaço. Escolha outro.' : `Já existe a categoria "${dup.label}"`);
     }
     const [u] = await db.update(schema.categories).set(body).where(eq(schema.categories.id, c.id)).returning();
     await audit(req, { action: 'category.update', entityType: 'category', entityId: c.id, details: { ...body, restricted: u.isRestricted } });
@@ -69,7 +69,10 @@ export default async function catalogRoutes(app: FastifyInstance) {
   app.get('/api/folders', { preHandler: anyView }, async (req) => {
     const rows = await db.select({
       id: schema.folders.id, name: schema.folders.name, label: schema.folders.label, color: schema.folders.color,
-      usage: sql<number>`(select count(*)::int from bills b where b.folder_id = folders.id)`,
+      // a contagem não inclui contas de categoria restrita para quem não as vê
+      usage: req.org!.can('bills.view_restricted')
+        ? sql<number>`(select count(*)::int from bills b where b.folder_id = folders.id)`
+        : sql<number>`(select count(*)::int from bills b join categories c on c.id = b.category_id where b.folder_id = folders.id and not c.is_restricted)`,
     }).from(schema.folders).where(eq(schema.folders.orgId, req.org!.id)).orderBy(schema.folders.label);
     return { items: rows.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' })) };
   });

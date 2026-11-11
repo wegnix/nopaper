@@ -336,7 +336,7 @@ export const payrollImportSchema = z.object({
       lines: z.array(z.object({ rubric: z.string().trim().min(1).max(64), amount: nonNeg, note: optText(120) })).max(40),
       notes: optText(1000),
     })).max(200),
-  })).min(1, 'Nada para importar').max(600),
+  })).min(1, 'Nada para importar').max(240, 'No máximo 240 meses por importação'),
 });
 
 /** Rubricas padrão de todo espaço (criadas no 1º acesso à folha). */

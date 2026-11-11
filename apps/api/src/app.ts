@@ -26,11 +26,20 @@ import bankRoutes from './routes/bank.js';
 import accountingRoutes from './routes/accounting.js';
 import esignRoutes from './routes/esign.js';
 
+/** Tira dos logs o que dá acesso: token do link de assinatura e chaves assinadas de arquivo. */
+export const maskUrl = (url: string) => url.replace(/(\/api\/sign\/)[^/?]+/, '$1***').replace(/([?&](?:k|t)=)[^&]+/g, '$1***');
+
 export async function buildApp() {
   const app = Fastify({
     logger: {
       level: env.LOG_LEVEL,
       redact: ['req.headers.authorization', 'req.headers.cookie'],
+      // o endereço vai para o log: sem o token do link de assinatura e sem as chaves de arquivo (?k=, ?t=)
+      serializers: {
+        req: (req: { method: string; url: string; hostname?: string; ip?: string; socket?: { remotePort?: number } }) => ({
+          method: req.method, url: maskUrl(req.url), hostname: req.hostname, remoteAddress: req.ip, remotePort: req.socket?.remotePort,
+        }),
+      },
       ...(isProd ? {} : { transport: { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } } }),
     },
     // Só confia em X-Forwarded-For vindo de proxies da rede interna (nginx do container web e o

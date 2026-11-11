@@ -121,6 +121,6 @@ export const cardOfxImportSchema = z.object({
     installments: z.number().int().min(2).max(99).nullable().default(null),
     notes: z.string().max(1000).nullable().default(null),
   }).refine((i) => (i.installment === null) === (i.installments === null) && (i.installment ?? 0) <= (i.installments ?? 0), 'Parcela inválida'))
-    .min(1, 'Marque ao menos um lançamento').max(2000),
+    .min(1, 'Marque ao menos um lançamento').max(1000, 'No máximo 1000 lançamentos por importação'),
 });
 export type CardOfxImportInput = z.infer<typeof cardOfxImportSchema>;

@@ -23,6 +23,8 @@ const schema = z.object({
   MAX_UPLOAD_MB: z.coerce.number().default(15),
   /** Limite por arquivo no envio do espaço para o contador (ZIP de notas fiscais costuma ser grande). */
   ACCOUNTING_MAX_UPLOAD_MB: z.coerce.number().default(200),
+  /** Cota padrão de armazenamento por espaço, em MB (ajustável por espaço na Plataforma). */
+  STORAGE_QUOTA_MB: z.coerce.number().int().min(1).default(5120),
   TZ_DEFAULT: z.string().default('America/Sao_Paulo'),
   LOG_LEVEL: z.string().default('info'),
   /** Chave para cifrar segredos guardados no banco (opcional; padrão: derivada do JWT_SECRET). */

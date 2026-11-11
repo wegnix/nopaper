@@ -311,6 +311,9 @@ export default async function bankRoutes(app: FastifyInstance) {
         if (t.action === 'created') {
           if (!req.org!.can(billPerm(type, 'delete'))) throw forbidden(`Esta conta foi criada pelo extrato: desfazer apaga a conta, e você não pode apagar ${type === 'payable' ? 'contas a pagar' : 'contas a receber'}.`);
           if (b.statementId || b.payrollEntryId) throw conflict('Esta conta não pode ser apagada por aqui.');
+          // virou série depois de criada: apagar só esta deixaria as outras sem a primeira
+          const [kid] = b.parentId ? [b] : await tx.select({ id: schema.bills.id }).from(schema.bills).where(eq(schema.bills.parentId, b.id)).limit(1);
+          if (kid) throw conflict('Esta conta virou recorrente depois de criada pelo extrato. Apague-a em Contas (escolhendo o que fazer com as outras ocorrências) e depois desfaça a conciliação.');
           await tx.update(schema.bankTransactions).set({ billId: null }).where(eq(schema.bankTransactions.id, t.id));
           await deleteBillsWithFiles(tx, [b.id]);
           what = `Desfez a conciliação: apagou a conta "${b.description}" criada pelo extrato`;

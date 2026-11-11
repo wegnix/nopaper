@@ -266,6 +266,9 @@ export default async function cardRoutes(app: FastifyInstance) {
       await tx.insert(schema.importBatches).values({ id: batchId, orgId: req.org!.id, type: 'card', fileName: body.fileName, rowCount: items.length, totalAmount: total, createdBy: req.user!.id });
       // parcelas futuras não podem cair em fatura já paga (mudaria o valor de uma conta paga)
       if (body.futureInstallments) {
+        // teto do que uma importação pode criar em faturas futuras (uma fatura real fica muito abaixo)
+        const future = items.reduce((n, i) => n + Math.max(0, (i.installments ?? 1) - (i.installment ?? 1)), 0);
+        if (future > 3000) throw badRequest(`Esta importação criaria ${future} parcelas em faturas futuras. Importe em partes ou desligue "Lançar também as próximas parcelas".`);
         const span = Math.max(0, ...items.map((i) => (i.installments ?? 1) - (i.installment ?? 1)));
         if (span > 0) {
           const refs = Array.from({ length: span }, (_, k) => addMonthsRef(body.ref, k + 1));

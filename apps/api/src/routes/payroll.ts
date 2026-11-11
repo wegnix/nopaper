@@ -721,6 +721,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
   // ------------------------------------------------------------ importação do histórico (planilha)
   app.post('/api/payroll/import', manage, async (req) => {
     const body = parse(payrollImportSchema, req.body);
+    if (body.months.reduce((n, m) => n + m.entries.length, 0) > 10_000) throw badRequest('Planilha grande demais para uma importação só (mais de 10 mil lançamentos). Importe em partes.');
     await ensurePayrollDefaults(req.org!.id);
     const orgId = req.org!.id;
     const out = await db.transaction(async (tx) => {

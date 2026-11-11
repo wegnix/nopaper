@@ -264,7 +264,8 @@ function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: ()
       const fd = new FormData();
       fd.append('kind', kind); fd.append('competence', competence); fd.append('note', note);
       for (const f of files) fd.append('file', f);
-      const r = await api<{ created: number }>('POST', '/api/accounting/documents', fd);
+      const r = await api<{ created: number; storage?: { near: boolean } }>('POST', '/api/accounting/documents', fd);
+      if (r.storage?.near) toast.warning('Este espaço está perto do limite de armazenamento. Avise o responsável.');
       toast.success(`${plural(r.created, 'documento enviado', 'documentos enviados')}. O responsável foi avisado.`);
       setSent({ n: r.created, label: `${ACCOUNTING_KIND_LABEL[kind]}${competence ? ` – ${refLabelPT(competence)}` : ''}`, at: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) });
       setFiles([]); setNote(''); setKind(null);

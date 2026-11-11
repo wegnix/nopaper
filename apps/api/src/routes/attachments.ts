@@ -5,6 +5,7 @@ import { db, schema } from '../db/client.js';
 import { env } from '../env.js';
 import { badRequest, forbidden, HttpError, notFound } from '../lib/errors.js';
 import { requireOrg, requirePerm } from '../lib/auth.js';
+import { assertStorageRoom } from '../services/storageQuota.js';
 import { audit } from '../lib/audit.js';
 import { ALLOWED_UPLOADS, saveFile, deleteFile, sniffMime, signFileToken, verifyFileToken, streamStoredFile } from '../lib/storage.js';
 import { loadBill, serialize, attachmentsFor, restrictedCategoryIds } from '../services/bills.js';
@@ -33,6 +34,7 @@ export default async function attachmentRoutes(app: FastifyInstance) {
     const requested = req.query.slot ?? 'auto';
     const b = await loadBill(req, req.params.id, requested === 'payment_proof' ? ['pay', 'edit'] : requested === 'auto' ? ['create', 'edit', 'pay'] : ['create', 'edit']);
     const { buf, mime, filename } = await readUpload(req);
+    await assertStorageRoom(req.org!.id, buf.length);
     let slot: AttachmentSlot;
     let classification = null;
     if (requested === 'auto') {
