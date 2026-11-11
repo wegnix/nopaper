@@ -1,3 +1,4 @@
+import { LogoLoader } from '@/components/brand/Brand';
 import { Fragment, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -326,6 +327,7 @@ function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: ()
               ))}
             </ul>
           )}
+          {busy && <div className="flex items-center gap-2 text-sm text-muted"><LogoLoader size={64} label="Enviando documentos" />Enviando {files.length > 1 ? 'os arquivos' : 'o arquivo'}…</div>}
           <div className="flex flex-wrap items-center justify-end gap-3">
             <span className="mr-auto text-xs text-faint">{files.length ? `${ACCOUNTING_KIND_LABEL[kind]}${competence ? ` – ${refLabelPT(competence)}` : ''} · ${plural(files.length, 'arquivo', 'arquivos')}` : 'Nenhum arquivo escolhido ainda.'}</span>
             <Button variant="primary" className="max-sm:w-full" loading={busy} disabled={!files.length} icon={<FileUp className="size-4" />} onClick={send}>Enviar {files.length > 1 ? `${files.length} arquivos` : 'documento'}</Button>

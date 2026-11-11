@@ -1,6 +1,6 @@
 /* nopaper — service worker: instala como app e abre a casca offline.
    Nunca guarda respostas da API (dados financeiros ficam só no servidor). */
-const CACHE = 'np-shell-v1';
+const CACHE = 'np-shell-v2';
 const SHELL = ['/', '/manifest.webmanifest', '/favicon.svg', '/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

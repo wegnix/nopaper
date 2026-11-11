@@ -1,9 +1,10 @@
+import { PixelSpinner } from '@/components/brand/Brand';
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle2, ChevronLeft, FileSpreadsheet, Loader2, RotateCcw, Upload, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronLeft, FileSpreadsheet, RotateCcw, Upload, X } from 'lucide-react';
 import {
   IMPORT_FIELDS, IMPORT_FIELD_LABEL, IMPORT_REQUIRED, IMPORT_SKIP_LABEL, buildImportRows, dupKey, formatBRL, formatDateBR, fromCents,
   guessMapping, headersOf, normText, toCents, todayISO, MONTHS_PT_SHORT,
@@ -362,7 +363,7 @@ export function ImportPage() {
               {warnCount > 0 && <Stat label="Com aviso" value={String(warnCount)} tone="warn" />}
               <div className="ml-auto flex items-center gap-3">
                 {missingCat > 0 && <span className="text-xs text-warn">{plural(missingCat, 'descrição sem categoria', 'descrições sem categoria')}</span>}
-                <Button variant="primary" disabled={!toImport.length || missingCat > 0 || busy || check.isFetching} onClick={commit} icon={busy ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}>
+                <Button variant="primary" disabled={!toImport.length || missingCat > 0 || busy || check.isFetching} onClick={commit} icon={busy ? <PixelSpinner className="size-4" /> : <Upload className="size-4" />}>
                   Importar {toImport.length} {toImport.length === 1 ? 'conta' : 'contas'}
                 </Button>
               </div>
@@ -388,7 +389,7 @@ function DropZone({ onFile, busy }: { onFile: (f: File) => void; busy: boolean }
       className={cn('group flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed px-6 py-14 text-center transition-colors',
         over ? 'border-accent bg-accent-soft' : 'border-line hover:border-line-strong hover:bg-surface-2/50')}>
       <span className="grid size-14 place-items-center rounded-2xl bg-accent-soft text-accent transition-transform group-hover:-translate-y-0.5">
-        {busy ? <Loader2 className="size-6 animate-spin" /> : <FileSpreadsheet className="size-6" />}
+        {busy ? <PixelSpinner className="size-6" /> : <FileSpreadsheet className="size-6" />}
       </span>
       <div>
         <p className="font-display text-lg font-semibold">{busy ? 'Lendo a planilha…' : isTouch() ? 'Toque para escolher a planilha' : 'Arraste a planilha aqui ou clique para escolher'}</p>

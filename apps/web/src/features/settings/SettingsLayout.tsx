@@ -64,7 +64,7 @@ export function SettingsLayout() {
             <div key={s.title} className="flex lg:flex-col gap-1 shrink-0">
               <p className="hidden lg:block px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-faint">{s.title}</p>
               {s.items.map((i) => (
-                <NavLink key={i.to} to={i.to} className={({ isActive }) => cn('flex items-center gap-2.5 rounded-lg px-3 h-10 text-sm font-medium whitespace-nowrap transition-colors', isActive ? 'bg-surface-2 text-ink' : 'text-muted hover:text-ink')}>
+                <NavLink key={i.to} to={i.to} className={({ isActive }) => cn('flex items-center gap-2.5 rounded-lg px-3 h-10 text-sm font-medium whitespace-nowrap transition-colors', isActive ? 'bg-accent-soft text-accent font-semibold shadow-[inset_3px_0_0_var(--np-accent)]' : 'text-muted hover:text-ink hover:bg-surface-2')}>
                   <i.icon className="size-4" />{i.label}
                 </NavLink>
               ))}

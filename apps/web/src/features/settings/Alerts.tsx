@@ -1,7 +1,8 @@
+import { PixelSpinner } from '@/components/brand/Brand';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CheckCircle2, ExternalLink, Loader2, Mail, Plus, Send, Trash2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Mail, Plus, Send, Trash2, X, XCircle } from 'lucide-react';
 import { ALERT_DAY_OPTIONS, type AlertConfig } from '@nopaper/shared';
 import { Button, Card, Field, IconButton, Input, Select, Switch } from '@/components/ui/base';
 import { api, errMsg, get, post, put } from '@/lib/api';
@@ -158,7 +159,7 @@ export function AlertsPage() {
           </ul>
           {link ? (
             <div className="mt-3 rounded-lg border border-accent/40 bg-accent-soft/40 p-3 text-sm">
-              <p className="flex items-center gap-2"><Loader2 className="size-4 animate-spin text-accent" /> Aguardando você tocar em <b>Iniciar</b> no Telegram…</p>
+              <p className="flex items-center gap-2"><PixelSpinner className="size-4 text-accent" /> Aguardando você tocar em <b>Iniciar</b> no Telegram…</p>
               <p className="mt-1 text-xs text-muted">Não abriu? <a className="text-accent hover:underline" href={link.url} target="_blank" rel="noopener noreferrer">Abrir conversa com @{link.bot}</a>. Para um grupo, adicione o bot ao grupo e envie o mesmo link lá.</p>
               <button className="mt-2 text-xs text-muted hover:text-ink" onClick={() => { if (poll.current) window.clearInterval(poll.current); setLink(null); }}>Cancelar</button>
             </div>

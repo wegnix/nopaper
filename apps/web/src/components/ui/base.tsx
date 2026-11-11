@@ -1,5 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
-import { Loader2 } from 'lucide-react';
+import { PixelSpinner } from '@/components/brand/Brand';
 import { Checkbox as RCheckbox, Switch as RSwitch, Tooltip as RTooltip } from 'radix-ui';
 import { Check, Minus } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -31,7 +31,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       )}
       {...rest}
     >
-      {loading ? <Loader2 className="size-4 animate-spin" /> : icon}
+      {loading ? <PixelSpinner className="size-4" /> : icon}
       {children}
     </button>
   );
@@ -122,7 +122,7 @@ export function Tooltip({ content, children, side = 'top' }: { content: ReactNod
 }
 
 export function Spinner({ className }: { className?: string }) {
-  return <Loader2 className={cn('size-5 animate-spin text-faint', className)} />;
+  return <PixelSpinner className={cn('size-5 text-faint', className)} />;
 }
 
 export function Segmented<T extends string>({ value, onChange, options, className }: { value: T; onChange: (v: T) => void; options: Array<{ value: T; label: ReactNode }>; className?: string }) {
@@ -131,7 +131,7 @@ export function Segmented<T extends string>({ value, onChange, options, classNam
       {options.map((o) => (
         <button
           type="button" role="radio" aria-checked={value === o.value} key={o.value} onClick={() => onChange(o.value)}
-          className={cn('h-8 pointer-coarse:h-9 px-3 rounded-md text-[13px] font-medium whitespace-nowrap transition-colors flex-1', value === o.value ? 'bg-raised text-ink shadow-card' : 'text-muted hover:text-ink')}
+          className={cn('h-8 pointer-coarse:h-9 px-3 rounded-md text-[13px] font-medium whitespace-nowrap transition-colors flex-1', value === o.value ? 'bg-accent text-accent-ink font-semibold shadow-[0_4px_14px_-6px_var(--np-accent)]' : 'text-muted hover:text-ink hover:bg-line/60')}
         >
           {o.label}
         </button>

@@ -103,25 +103,14 @@ function OrgSwitcher({ onNew, collapsed }: { onNew: () => void; collapsed?: bool
   );
 }
 
-function SidebarContent({ onNavigate, onNewOrg, collapsed, onToggle }: { onNavigate?: () => void; onNewOrg: () => void; collapsed?: boolean; onToggle?: () => void }) {
+function SidebarContent({ onNavigate, onNewOrg, collapsed }: { onNavigate?: () => void; onNewOrg: () => void; collapsed?: boolean }) {
   return (
     <div className="flex h-full flex-col gap-5 px-3 py-4">
-      <div className="px-[6px] pt-1 overflow-hidden"><Logo textClassName={cn('transition-opacity duration-150', collapsed && 'opacity-0')} /></div>
+      <div className={cn('overflow-hidden transition-[padding] duration-200', collapsed ? 'px-1' : 'px-[6px]')}><Logo animated scale="md" markSize={collapsed ? 32 : 36} textClassName={cn('transition-opacity duration-150', collapsed && 'opacity-0')} /></div>
       <OrgSwitcher onNew={onNewOrg} collapsed={collapsed} />
       <nav className="flex flex-col gap-0.5"><NavItems items={NAV} onNavigate={onNavigate} collapsed={collapsed} /></nav>
       <div className="mt-auto flex flex-col gap-0.5">
         <NavItems items={NAV_BOTTOM} onNavigate={onNavigate} collapsed={collapsed} />
-        {onToggle && (
-          <Tooltip content={collapsed ? 'Expandir menu (Ctrl+B)' : 'Recolher menu (Ctrl+B)'} side="right">
-            <button
-              type="button" onClick={onToggle} aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'} aria-expanded={!collapsed}
-              className="flex h-10 items-center gap-3 rounded-lg px-[11px] text-sm font-medium text-faint hover:text-ink hover:bg-surface-2/60 transition-colors"
-            >
-              {collapsed ? <PanelLeftOpen className="size-[18px] shrink-0" /> : <PanelLeftClose className="size-[18px] shrink-0" />}
-              <span className={cn('flex-1 truncate whitespace-nowrap text-left transition-opacity duration-150', collapsed && 'opacity-0')}>Recolher menu</span>
-            </button>
-          </Tooltip>
-        )}
         <p className={cn('px-[11px] pt-1 text-[11px] text-faint tnum whitespace-nowrap transition-opacity duration-150', collapsed && 'opacity-0')} title={`NoPaper versão ${__APP_VERSION__}`}>NoPaper v{__APP_VERSION__}</p>
       </div>
     </div>
@@ -166,9 +155,20 @@ export function AppShell() {
 
   return (
     <div className="safe-x flex h-dvh overflow-hidden">
-      <aside className={cn('sidebar-glow relative hidden lg:block shrink-0 overflow-hidden border-r border-line transition-[width] duration-200 ease-out', collapsed ? 'w-16' : 'w-[220px]')}>
-        <SidebarContent onNewOrg={() => setNewOrg(true)} collapsed={collapsed} onToggle={toggleSidebar} />
-      </aside>
+      <div className="relative hidden lg:block shrink-0">
+        <aside className={cn('sidebar-glow relative h-full overflow-hidden border-r border-line transition-[width] duration-200 ease-out', collapsed ? 'w-16' : 'w-[220px]')}>
+          <SidebarContent onNewOrg={() => setNewOrg(true)} collapsed={collapsed} />
+        </aside>
+        {/* fora do <aside> (que recorta o conteúdo): fica sobre a borda entre o menu e a página, na altura da logo */}
+        <Tooltip content={collapsed ? 'Expandir menu (Ctrl+B)' : 'Recolher menu (Ctrl+B)'} side="right">
+          <button
+            type="button" onClick={toggleSidebar} aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'} aria-expanded={!collapsed}
+            className="absolute -right-3.5 top-[21px] z-30 grid size-7 place-items-center rounded-full border border-line-strong bg-surface text-muted shadow-card transition-colors hover:border-accent hover:text-accent"
+          >
+            {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </button>
+        </Tooltip>
+      </div>
 
       <AnimatePresence>
         {drawer && (

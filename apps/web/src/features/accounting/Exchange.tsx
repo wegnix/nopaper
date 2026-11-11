@@ -1,3 +1,4 @@
+import { LogoLoader } from '@/components/brand/Brand';
 import { Fragment, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Navigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -201,7 +202,8 @@ export function ClientOutbox() {
               <Input aria-label="Observação" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Observação para o contador (opcional)" />
             </div>
             {busy && (
-              <div className="flex items-center gap-3" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Progresso do envio">
+              <div className="flex items-center gap-3">
+                <LogoLoader size={72} progress={pct / 100} label="Progresso do envio" />
                 <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${pct}%` }} /></div>
                 <span className="w-24 shrink-0 text-right text-xs text-muted tnum">{pct < 100 ? `enviando ${pct}%` : 'finalizando…'}</span>
               </div>

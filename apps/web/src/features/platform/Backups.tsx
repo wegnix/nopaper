@@ -1,8 +1,9 @@
+import { LogoLoader, PixelSpinner } from '@/components/brand/Brand';
 import { useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, ArchiveRestore, CheckCircle2, Clock, Cloud, Download, HardDrive, History, Loader2, Play, Settings2, Trash2, XCircle } from 'lucide-react';
+import { AlertTriangle, ArchiveRestore, CheckCircle2, Clock, Cloud, Download, HardDrive, History, Play, Settings2, Trash2, XCircle } from 'lucide-react';
 import { Button, Card, Field, IconButton, Input, Segmented, Select, Spinner, Switch, Textarea } from '@/components/ui/base';
 import { useConfirm } from '@/components/ui/dialog';
 import { api, errMsg, get, post, put } from '@/lib/api';
@@ -76,8 +77,10 @@ function Summary({ v, list, onConfig }: { v: SystemView['backup']; list?: Backup
         <Stat icon={<Cloud className="size-4 text-accent" />} label="Cópia externa" value={remote} sub={v.remote.mode === 'none' ? <span className="inline-flex items-center gap-1 text-warn"><AlertTriangle className="size-3" />sem cópia fora do servidor</span> : v.remote.keepDays ? `apaga após ${v.remote.keepDays} dias` : 'nunca apaga'} />
       </div>
       <div className="flex flex-wrap items-center gap-3 border-t border-line px-4 py-3">
-        <p className="mr-auto text-xs text-muted">Banco de dados completo + anexos, num .tar.gz verificado depois de criado.</p>
-        <Button variant="primary" disabled={running || starting} icon={running || starting ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />} onClick={runNow}>
+        {running
+          ? <p className="mr-auto flex items-center gap-2 text-sm text-muted"><LogoLoader size={56} className="-my-1" label="Fazendo backup" />Fazendo o backup: banco de dados e anexos…</p>
+          : <p className="mr-auto text-xs text-muted">Banco de dados completo + anexos, num .tar.gz verificado depois de criado.</p>}
+        <Button variant="primary" disabled={running || starting} icon={running || starting ? <PixelSpinner className="size-4" /> : <Play className="size-4" />} onClick={runNow}>
           {running ? 'Fazendo backup…' : 'Fazer backup agora'}
         </Button>
       </div>
@@ -167,7 +170,7 @@ function HistoryTab() {
                     <td className="px-4 py-2.5 whitespace-nowrap tnum">{when(x.startedAt)}</td>
                     <td className="px-3 py-2.5"><span className={cn('rounded-md px-1.5 py-0.5 text-[11px] font-medium', TRIGGER[x.trigger]?.tone)}>{TRIGGER[x.trigger]?.label ?? x.trigger}</span></td>
                     <td className="px-3 py-2.5">
-                      {x.status === 'running' ? <span className="inline-flex items-center gap-1 text-accent"><Loader2 className="size-3.5 animate-spin" />em andamento</span>
+                      {x.status === 'running' ? <span className="inline-flex items-center gap-1 text-accent"><PixelSpinner className="size-3.5" />em andamento</span>
                         : x.status === 'ok' ? <span className="inline-flex items-center gap-1 text-ok"><CheckCircle2 className="size-3.5" />ok</span>
                           : <span className="inline-flex items-center gap-1 text-danger"><XCircle className="size-3.5" />erro</span>}
                       {x.error && <p className="mt-0.5 max-w-md text-xs text-danger">{x.error}</p>}

@@ -8,6 +8,25 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.12.0] - 2026-11-11
+
+### Novo
+- **Logo nova**: a folha de papel se desfazendo em pixels — o papel virando dado. Aparece no menu, no login,
+  na aba do navegador e no ícone do app (no iPhone, para trocar o ícone da tela de início, remova o app e
+  adicione de novo pelo Safari).
+- **Logo em movimento nas esperas**: os quadradinhos saem da folha e formam um anel girando em volta da logo
+  ao abrir o sistema, no backup, na restauração, na atualização e no envio de documentos do contador; no
+  envio de arquivos grandes ao contador o anel vai se completando conforme o arquivo sobe. O “carregando”
+  pequeno dos botões e das listas também virou um anel de quadradinhos.
+
+### Melhorado
+- **Opção escolhida bem mais visível** nos seletores de opções lado a lado (ex.: Todas | Pendentes | Vencidas
+  | Pagas; Novos | Lançados | Dispensados | Todos; “do pagamento” × “trabalhado” na folha): a opção marcada
+  agora fica preenchida em violeta, nos temas claro e escuro, em todas as telas.
+- **Configurações**: a seção aberta fica destacada em violeta no menu lateral.
+- **Recolher menu**: o botão saiu do rodapé do menu lateral e virou um ícone na borda do menu com a página,
+  na altura da logo (o atalho Ctrl+B continua valendo).
+
 ## [1.11.0] - 2026-11-10
 
 ### Novo

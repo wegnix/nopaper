@@ -1,9 +1,10 @@
+import { LogoLoader, PixelSpinner } from '@/components/brand/Brand';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
 import {
-  AlertTriangle, ArchiveRestore, Check, CheckCircle2, CloudDownload, HardDrive, Loader2, RefreshCw, ShieldCheck, Upload, XCircle,
+  AlertTriangle, ArchiveRestore, Check, CheckCircle2, CloudDownload, HardDrive, RefreshCw, ShieldCheck, Upload, XCircle,
 } from 'lucide-react';
 import { Button, Card, Input, Segmented, Spinner } from '@/components/ui/base';
 import { Dialog } from '@/components/ui/dialog';
@@ -265,10 +266,7 @@ function Running({ st, offline, owner }: { st: RestoreStatus | null; offline: bo
   return (
     <>
       <div className="flex items-center gap-4">
-        <div className="relative grid size-12 place-items-center">
-          <motion.span className="absolute inset-0 rounded-full bg-accent/20" animate={{ scale: [1, 1.35, 1], opacity: [0.6, 0, 0.6] }} transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }} />
-          <span className="relative grid size-12 place-items-center rounded-full bg-accent-soft text-accent"><ArchiveRestore className="size-5" /></span>
-        </div>
+        <LogoLoader size={84} className="-m-2" label="Restaurando backup" />
         <div className="min-w-0">
           <h2 className="font-display text-xl font-semibold leading-tight">{owner ? 'Restaurando backup' : 'Sistema em manutenção'}</h2>
           <p className="text-sm text-muted">
@@ -284,7 +282,7 @@ function Running({ st, offline, owner }: { st: RestoreStatus | null; offline: bo
               <span className={cn('mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border',
                 state === 'done' && 'border-ok bg-ok text-white', state === 'now' && 'border-accent text-accent', state === 'next' && 'border-line text-faint')}>
                 {state === 'done' ? <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }}><Check className="size-3" strokeWidth={3} /></motion.span>
-                  : state === 'now' ? <Loader2 className="size-3 animate-spin" /> : <span className="size-1.5 rounded-full bg-current" />}
+                  : state === 'now' ? <PixelSpinner className="size-3" /> : <span className="size-1.5 rounded-full bg-current" />}
               </span>
               <div className="min-w-0">
                 <p className={cn('text-sm', state === 'next' ? 'text-faint' : 'text-ink', state === 'now' && 'font-medium')}>{STEP_LABEL[s].label}</p>

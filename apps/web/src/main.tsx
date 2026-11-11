@@ -10,7 +10,7 @@ import { bootSession, ApiError } from './lib/api';
 import { useTheme } from './lib/theme';
 import { AppShell } from './components/layout/AppShell';
 import { ConfirmProvider } from './components/ui/dialog';
-import { Spinner } from './components/ui/base';
+import { LogoLoader } from './components/brand/Brand';
 import { ForcePasswordPage, LoginPage } from './pages/Auth';
 import { DashboardPage } from './pages/Dashboard';
 import { BillsPage } from './features/bills/BillsPage';
@@ -50,7 +50,7 @@ function ConnectingScreen() {
   return (
     <div className="grid h-dvh place-items-center">
       <div className="flex flex-col items-center gap-3 text-sm text-muted">
-        <Spinner className="size-6" />
+        <LogoLoader size={112} label="Abrindo o NoPaper" />
         {connecting && <p>Conectando ao servidor… tentando de novo automaticamente.</p>}
       </div>
     </div>

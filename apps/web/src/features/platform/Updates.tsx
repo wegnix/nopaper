@@ -1,8 +1,9 @@
+import { LogoLoader, PixelSpinner } from '@/components/brand/Brand';
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowUpCircle, CheckCircle2, DatabaseBackup, Download, ExternalLink, Loader2, RefreshCw, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowUpCircle, CheckCircle2, DatabaseBackup, Download, ExternalLink, RefreshCw, XCircle } from 'lucide-react';
 import { Button, Card, Checkbox, Spinner } from '@/components/ui/base';
 import { Dialog } from '@/components/ui/dialog';
 import { Markdown } from '@/components/ui/markdown';
@@ -179,7 +180,7 @@ function UpdateDialog({ release, view, onClose }: { release: Release; view: View
           <p className="mb-2 text-sm font-semibold">1. Backup completo (obrigatório)</p>
           <div className="rounded-lg border border-line bg-surface-2/50 p-4 text-sm">
             {backingUp ? (
-              <p className="flex items-center gap-2 text-muted"><Loader2 className="size-4 animate-spin" /> Fazendo o backup do banco e de todos os anexos…</p>
+              <p className="flex items-center gap-2 text-muted"><PixelSpinner className="size-4" /> Fazendo o backup do banco e de todos os anexos…</p>
             ) : backupOk ? (
               <div className="flex flex-wrap items-center gap-3">
                 <CheckCircle2 className="size-5 text-ok" />
@@ -244,7 +245,7 @@ function ProgressCard({ status, current }: { status: UpdaterStatus; current: str
   return (
     <Card className={cn('p-5', status.state === 'failed' && 'border-danger/50')}>
       <div className="flex items-center gap-3">
-        {status.state === 'running' ? <Loader2 className="size-5 animate-spin text-accent" /> : status.state === 'failed' ? <XCircle className="size-5 text-danger" /> : <CheckCircle2 className="size-5 text-ok" />}
+        {status.state === 'running' ? <LogoLoader size={64} className="-m-1.5" label="Atualizando" /> : status.state === 'failed' ? <XCircle className="size-5 text-danger" /> : <CheckCircle2 className="size-5 text-ok" />}
         <div className="mr-auto">
           <p className="font-medium">
             {status.state === 'running' ? `Atualizando ${status.from} → ${status.to}` : status.state === 'failed' ? `A atualização para ${status.to} falhou` : done ? `Atualizado para ${status.to}` : `Atualização para ${status.to} concluída`}

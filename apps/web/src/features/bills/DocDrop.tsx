@@ -1,5 +1,6 @@
+import { PixelSpinner } from '@/components/brand/Brand';
 import { useRef, useState, type DragEvent } from 'react';
-import { FileUp, Loader2 } from 'lucide-react';
+import { FileUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function DocDrop({ onFile, busy, label, hint, compact }: { onFile: (f: File) => void; busy?: boolean; label: string; hint?: string; compact?: boolean }) {
@@ -22,7 +23,7 @@ export function DocDrop({ onFile, busy, label, hint, compact }: { onFile: (f: Fi
       )}
     >
       <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-        {busy ? <Loader2 className="size-5 animate-spin" /> : <FileUp className="size-5" />}
+        {busy ? <PixelSpinner className="size-5" /> : <FileUp className="size-5" />}
       </span>
       <span className="min-w-0">
         <span className="block text-sm font-medium">{busy ? 'Lendo o documento…' : label}</span>
