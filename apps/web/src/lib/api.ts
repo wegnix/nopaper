@@ -104,6 +104,30 @@ export function uploadWithProgress<T>(path: string, file: File, onProgress: (pct
   });
 }
 
+/** Envio de um formulário (vários arquivos + campos) com progresso, no espaço atual. */
+export function uploadFormWithProgress<T>(path: string, build: () => FormData, onProgress: (pct: number) => void, retry = true): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    const { accessToken, orgId } = useSession.getState();
+    if (accessToken) xhr.setRequestHeader('authorization', `Bearer ${accessToken}`);
+    if (orgId) xhr.setRequestHeader('x-org-id', orgId);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+    xhr.onerror = () => reject(new ApiError(0, 'Falha de conexão durante o envio'));
+    xhr.onload = async () => {
+      let data: Record<string, unknown> = {};
+      try { data = JSON.parse(xhr.responseText || '{}'); } catch { /* sem corpo */ }
+      if (xhr.status === 401 && retry && (await refreshSession()) === 'ok') {
+        uploadFormWithProgress<T>(path, build, onProgress, false).then(resolve, reject);
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data as T);
+      else reject(new ApiError(xhr.status, xhr.status === 413 ? 'O envio é grande demais para o servidor.' : (data.error as string) || `Erro ${xhr.status}`, data.code as string | undefined, data));
+    };
+    xhr.send(build());
+  });
+}
+
 export const get = <T>(p: string) => api<T>('GET', p);
 export const post = <T>(p: string, b?: Body) => api<T>('POST', p, b ?? {});
 export const put = <T>(p: string, b?: Body) => api<T>('PUT', p, b ?? {});

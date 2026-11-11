@@ -1,6 +1,8 @@
 import { createHash, randomUUID, createHmac, timingSafeEqual } from 'node:crypto';
-import { mkdir, writeFile, unlink, readFile, stat } from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
+import { mkdir, writeFile, unlink, readFile, stat, rename } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { Transform, type Readable } from 'node:stream';
 import path from 'node:path';
 import { env } from '../env.js';
 
@@ -12,6 +14,39 @@ export async function saveFile(orgId: string, buf: Buffer, ext: string) {
   await mkdir(path.dirname(full), { recursive: true });
   await writeFile(full, buf, { mode: 0o640 });
   return { key, sha256: createHash('sha256').update(buf).digest('hex') };
+}
+
+/**
+ * Grava um envio grande direto no disco, sem segurar o arquivo na memória. O tipo é conferido pelos
+ * primeiros bytes (`sniff` devolve a extensão ou null = formato recusado). O arquivo fica num
+ * temporário oculto (`.up-*`, fora do backup) e só ganha o nome definitivo quando termina inteiro.
+ */
+export async function saveUploadStream(orgId: string, stream: Readable, sniff: (head: Buffer) => { mime: string; ext: string } | null) {
+  const dir = path.join(root, orgId);
+  await mkdir(dir, { recursive: true });
+  const id = randomUUID().replace(/-/g, '');
+  const tmp = path.join(dir, `.up-${id}`);
+  const hash = createHash('sha256');
+  let size = 0;
+  let head = Buffer.alloc(0);
+  const tap = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      if (head.length < 4096) head = Buffer.concat([head, chunk]).subarray(0, 4096);
+      hash.update(chunk); size += chunk.length;
+      cb(null, chunk);
+    },
+  });
+  try {
+    await pipeline(stream, tap, createWriteStream(tmp, { mode: 0o640 }));
+    const kind = size ? sniff(head) : null;
+    if (!kind) { await unlink(tmp).catch(() => undefined); return { ok: false as const, size }; }
+    const key = `${orgId}/${id}.${kind.ext}`;
+    await rename(tmp, path.join(root, key));
+    return { ok: true as const, key, sha256: hash.digest('hex'), size, mime: kind.mime };
+  } catch (e) {
+    await unlink(tmp).catch(() => undefined);
+    throw e;
+  }
 }
 
 function resolveKey(key: string) {
@@ -49,6 +84,27 @@ export const ALLOWED_UPLOADS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
 };
+
+/**
+ * Formatos a mais aceitos só no envio do espaço para o contador (notas fiscais costumam ir
+ * compactadas ou em XML). Nunca são abertos no navegador: são sempre servidos como download.
+ */
+export const ARCHIVE_UPLOADS: Record<string, string> = {
+  'application/zip': 'zip',
+  'application/vnd.rar': 'rar',
+  'application/x-7z-compressed': '7z',
+  'application/xml': 'xml',
+};
+/** Assinatura dos formatos de ARCHIVE_UPLOADS. */
+export function sniffArchive(buf: Buffer): string | null {
+  if (buf[0] === 0x50 && buf[1] === 0x4b && (buf[2] === 0x03 || buf[2] === 0x05 || buf[2] === 0x07)) return 'application/zip';
+  if (buf.subarray(0, 6).toString('latin1') === 'Rar!\x1a\x07') return 'application/vnd.rar';
+  if (buf.subarray(0, 6).equals(Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]))) return 'application/x-7z-compressed';
+  // XML (NF-e): texto que começa com "<?xml" ou uma tag, com ou sem BOM
+  const head = buf.subarray(0, 200).toString('utf8').replace(/^\uFEFF/, '').trimStart();
+  if (/^<\?xml\s/i.test(head) || /^<[A-Za-z][\w:.-]*[\s>]/.test(head)) return buf.includes(0) ? null : 'application/xml';
+  return null;
+}
 
 /** Confere assinatura binária (magic bytes) — não confia no mime enviado. */
 export function sniffMime(buf: Buffer): string | null {

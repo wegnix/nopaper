@@ -176,6 +176,13 @@
       "when": 1794353762500,
       "tag": "0024_accounting_uploader_removed",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794354980201,
+      "tag": "0025_accounting_direction",
+      "breakpoints": true
     }
   ]
 }

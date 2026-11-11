@@ -17,6 +17,7 @@ import { BillsPage } from './features/bills/BillsPage';
 import { CardsPage } from './features/cards/CardsPage';
 import { BankPage } from './features/bank/BankPage';
 import { AccountingPage } from '@/features/accounting/AccountingPage';
+import { AccountantInboxPage } from '@/features/accounting/Exchange';
 import { PayrollPage } from './features/payroll/PayrollPage';
 import { ImportPage } from './features/import/ImportPage';
 import { ReportsPage } from './features/reports/ReportsPage';
@@ -85,6 +86,7 @@ function App() {
           <Route path="bancos" element={<BankPage />} />
           <Route path="folha" element={<PayrollPage />} />
           <Route path="contador" element={<AccountingPage />} />
+          <Route path="recebidos" element={<AccountantInboxPage />} />
           <Route path="relatorios" element={<ReportsPage />} />
           <Route path="importar" element={<ImportPage />} />
           <Route path="config" element={<SettingsLayout />}>

@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, BarChart3, CreditCard, FileUp, Landmark, LayoutDashboard, Settings, UsersRound, type LucideIcon } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, BarChart3, CreditCard, FileUp, Inbox, Landmark, LayoutDashboard, Settings, UsersRound, type LucideIcon } from 'lucide-react';
 import type { Permission } from '@nopaper/shared';
 
 /** `companyOnly`: só aparece em espaço do tipo Empresa. */
@@ -11,9 +11,11 @@ export const NAV: NavItem[] = [
   { to: '/cartoes', label: 'Cartões', icon: CreditCard, perm: 'cards.view' },
   { to: '/bancos', label: 'Contas bancárias', icon: Landmark, perm: 'bank.view' },
   { to: '/folha', label: 'Folha de pagamento', icon: UsersRound, perm: 'payroll.view', companyOnly: true },
-  { to: '/contador', label: 'Contador', icon: FileUp, anyPerm: ['accounting.upload', 'accounting.review'] },
+  { to: '/contador', label: 'Contador', icon: FileUp, anyPerm: ['accounting.upload', 'accounting.review', 'accounting.send'] },
   { to: '/relatorios', label: 'Relatórios', icon: BarChart3, perm: 'reports.view' },
 ];
+/** Só no menu do contador: o que o espaço mandou para ele. */
+export const NAV_ACCOUNTANT_INBOX: NavItem = { to: '/recebidos', label: 'Recebidos', icon: Inbox };
 export const NAV_BOTTOM: NavItem[] = [{ to: '/config', label: 'Configurações', icon: Settings }];
 
 /** Item visível para a pessoa neste espaço. */

@@ -12,8 +12,8 @@ import { Tooltip } from '@/components/ui/base';
 import { useSidebar } from '@/lib/sidebar';
 import { endSession, useIdleLogout } from '@/lib/idle';
 import { Logo } from './Logo';
-import { NAV, NAV_BOTTOM, navVisible, type NavItem } from './nav';
-import { useAccountantOnly, useAccountingPending } from '@/features/accounting/data';
+import { NAV, NAV_ACCOUNTANT_INBOX, NAV_BOTTOM, navVisible, type NavItem } from './nav';
+import { useAccountantOnly, useAccountingInbox, useAccountingPending } from '@/features/accounting/data';
 import { CommandPalette } from './CommandPalette';
 import { NewOrgDialog } from './NewOrgDialog';
 
@@ -21,12 +21,13 @@ function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNaviga
   const can = useCan();
   const kind = useOrg()?.kind;
   const pendingDocs = useAccountingPending();
-  const badge = (i: NavItem) => (i.to === '/contador' ? pendingDocs : 0);
+  const inboxDocs = useAccountingInbox();
+  const badge = (i: NavItem) => (i.to === '/contador' ? pendingDocs : i.to === '/recebidos' ? inboxDocs : 0);
   // contador: o Início dele já é a área do contador
   const accountantOnly = useAccountantOnly();
   return (
     <>
-      {items.filter((i) => navVisible(i, can, kind) && !(accountantOnly && i.to === '/contador')).map((i) => (
+      {[...items.filter((i) => navVisible(i, can, kind) && !(accountantOnly && i.to === '/contador')), ...(accountantOnly && items === NAV ? [NAV_ACCOUNTANT_INBOX] : [])].map((i) => (
         <Tooltip key={i.to} content={collapsed ? i.label : null} side="right">
           <NavLink
             to={i.to} end={i.to === '/'} onClick={onNavigate} aria-label={collapsed ? i.label : undefined}

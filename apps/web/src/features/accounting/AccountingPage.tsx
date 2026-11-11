@@ -20,17 +20,8 @@ import type { Bill } from '@/lib/types';
 import { BillForm } from '@/features/bills/BillForm';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
 import { useAccountantOnly, useAccountingDocs, type AccountingDoc } from './data';
-
-const KIND_ICON: Record<AccountingKind, typeof FileText> = {
-  payslip: UsersRound, office_fee: Building2, das: Landmark, darf: Landmark, dae: Landmark, state_tax: Landmark, other: FileText,
-};
-const sizeText = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
-const when = (iso: string) => { const d = new Date(iso); return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; };
-/** Texto sem acento/maiúsculas, para a busca. */
-const norm = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-/** Mês do envio (AAAA-MM, no horário de quem está vendo). */
-const sentMonth = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
-const docTitle = (d: AccountingDoc) => `${ACCOUNTING_KIND_LABEL[d.kind]}${d.competence ? ` – ${refLabelPT(d.competence)}` : ''}`;
+import { KIND_ICON, docTitle, norm, sentMonth, sizeText, when } from './common';
+import { ClientOutbox } from './Exchange';
 
 /**
  * Área do contador. Quem tem "enviar" (o contador) manda os PDFs do mês e acompanha os próprios
@@ -41,7 +32,8 @@ export function AccountingPage() {
   const can = useCan();
   const org = useOrg();
   const canUpload = can('accounting.upload'), canReview = can('accounting.review');
-  const docs = useAccountingDocs();
+  // quem só envia ao contador (sem conferir) não tem a lista do que o contador mandou
+  const docs = useAccountingDocs('to_client', canUpload || canReview);
   const qc = useQueryClient();
   const confirm = useConfirm();
   const navigate = useNavigate();
@@ -55,8 +47,9 @@ export function AccountingPage() {
   /** Conta a pagar sendo criada a partir de um documento. */
   const [billFor, setBillFor] = useState<{ doc: AccountingDoc; file: File } | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
-  /** Quem confere quase nunca envia: o envio fica recolhido atrás do botão. */
-  const [showUpload, setShowUpload] = useState(false);
+  const canSend = can('accounting.send') && !accountant;
+  /** Lado do espaço: o que chegou do contador × o que foi enviado para ele. */
+  const [box, setBox] = useState<'in' | 'out'>(canReview ? 'in' : 'out');
   const refresh = () => qc.invalidateQueries({ queryKey: ['accounting'] });
 
   const all = docs.data ?? [];
@@ -133,14 +126,21 @@ export function AccountingPage() {
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
       <PageHeader title={accountant ? `Olá, ${user?.name.split(' ')[0] ?? ''}` : 'Contador'}
-        actions={canUpload && canReview && !showUpload && <Button variant="secondary" icon={<FileUp className="size-4" />} onClick={() => setShowUpload(true)}>Enviar documento</Button>}
-        description={canReview
+        actions={canSend && box === 'in' && <Button variant="secondary" icon={<FileUp className="size-4" />} onClick={() => setBox('out')}>Enviar ao contador</Button>}
+        description={!accountant && (!canReview || box === 'out') ? 'Envie notas fiscais e outros arquivos para o contador e acompanhe se ele já recebeu.' : canReview
           ? 'Documentos que o contador envia: holerites, guias de impostos, a mensalidade do escritório e outros. Confira e lance cada um.'
           : `Envie por aqui os documentos de ${org?.name ?? 'seu cliente'}: holerites, guias de impostos, a mensalidade do escritório e outros PDFs. O responsável é avisado na hora, e tudo o que você enviar fica registrado no histórico abaixo.`} />
 
-      {canUpload && (!canReview || showUpload) && <UploadCard company={org?.kind === 'company'} onSent={refresh} onClose={canReview ? () => setShowUpload(false) : undefined} />}
+      {accountant && canUpload && <UploadCard company={org?.kind === 'company'} onSent={refresh} />}
 
-      <Card className="overflow-hidden">
+      {canSend && canReview && (
+        <Segmented className="self-start max-sm:self-stretch" value={box} onChange={setBox} options={[
+          { value: 'in', label: `Recebidos do contador${counts.new ? ` (${counts.new})` : ''}` }, { value: 'out', label: 'Enviados ao contador' },
+        ]} />
+      )}
+      {canSend && box === 'out' && <ClientOutbox />}
+
+      {(accountant || (canReview && box === 'in')) && <Card className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-line p-3 sm:p-4 md:px-5">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="font-display text-lg font-semibold">{canReview ? 'Documentos recebidos' : 'Histórico de envios'}</h2>
@@ -225,7 +225,7 @@ export function AccountingPage() {
             })}
           </ul>
         )}
-      </Card>
+      </Card>}
 
       <FileViewer target={viewer} onClose={() => setViewer(null)} />
       <BillForm type="payable" bill={null} open={!!billFor} onClose={() => setBillFor(null)} onRestructure={() => undefined} onStopRecurrence={() => undefined} onView={() => undefined}

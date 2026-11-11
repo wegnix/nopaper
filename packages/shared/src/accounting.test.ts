@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { accountingBillDescription, accountingHandleSchema, accountingIsPayable, accountingUploadSchema } from './accounting.js';
+import { accountingBillDescription, accountingHandleSchema, accountingIsPayable, accountingSendSchema, accountingUploadSchema } from './accounting.js';
 import { DEFAULT_ACCOUNTANT_PERMISSIONS, DEFAULT_OPERATOR_PERMISSIONS, withRequired } from './permissions.js';
 import { findBoletoInText } from './boleto.js';
 
@@ -18,6 +18,14 @@ test('área do contador: campos do envio e da conferência', () => {
   assert.equal(accountingUploadSchema.safeParse({ kind: 'das', competence: '2026-13' }).success, false);
   assert.equal(accountingHandleSchema.safeParse({ status: 'done', billId: 'x' }).success, false);
   assert.ok(accountingHandleSchema.safeParse({ status: 'dismissed' }).success);
+});
+
+test('envio do espaço para o contador: notas fiscais (padrão) ou outro; tipos do contador não valem', () => {
+  assert.deepEqual(accountingSendSchema.parse({ competence: '2026-11', note: '' }), { kind: 'invoice', competence: '2026-11', note: null });
+  assert.equal(accountingSendSchema.parse({ kind: 'other', competence: '' }).competence, null);
+  assert.equal(accountingSendSchema.safeParse({ kind: 'das', competence: '2026-11' }).success, false);
+  // e o contador não envia "notas fiscais" pela tela dele
+  assert.equal(accountingUploadSchema.safeParse({ kind: 'invoice', competence: '2026-11' }).success, false);
 });
 
 test('grupo Contador só envia; Operadores não ganham a área do contador sozinhos', () => {

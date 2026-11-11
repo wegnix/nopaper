@@ -8,6 +8,25 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.11.0] - 2026-11-10
+
+### Novo
+- **Enviar arquivos para o contador** (menu Contador → **Enviados ao contador**): solte as notas fiscais (ou
+  outro arquivo), diga o mês e, se quiser, uma observação — e pronto. Além de PDF e imagem, aceita XML e
+  arquivos compactados (ZIP, RAR, 7z), de até 200 MB cada, com barra de progresso no envio; esses não abrem
+  na tela, o contador baixa. A lista mostra o que já foi enviado e
+  quando o contador recebeu. Usa a permissão nova “Enviar documentos para o contador” (administradores já
+  têm).
+- **Recebidos** (no menu do contador): o que o espaço mandou para ele, com selo de quantos ainda não viu.
+  Abrir ou baixar um arquivo já marca como recebido e avisa o espaço; dá para marcar todos de uma vez,
+  buscar e filtrar por mês.
+- Cada lado tira o arquivo só da própria lista: o registro de quem enviou continua, como nos documentos do
+  contador.
+
+### Alterado
+- Quem confere os documentos do contador não vê mais a tela de envio do contador (por tipo de guia): no
+  lugar, o botão **Enviar ao contador** leva ao envio simples de notas fiscais.
+
 ## [1.10.0] - 2026-11-10
 
 ### Novo

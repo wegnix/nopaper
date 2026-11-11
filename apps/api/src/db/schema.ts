@@ -508,7 +508,9 @@ export const backupRuns = pgTable('backup_runs', {
 export const accountingDocuments = pgTable('accounting_documents', {
   id: id(),
   orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
-  /** payslip | office_fee | das | darf | dae | state_tax | other */
+  /** to_client (contador → espaço) | to_accountant (espaço → contador) */
+  direction: varchar('direction', { length: 16 }).notNull().default('to_client'),
+  /** payslip | office_fee | das | darf | dae | state_tax | other | invoice */
   kind: varchar('kind', { length: 16 }).notNull(),
   /** Competência AAAA-MM. */
   competence: varchar('competence', { length: 7 }),

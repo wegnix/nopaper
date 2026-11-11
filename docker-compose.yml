@@ -41,6 +41,7 @@ services:
       TZ: ${TZ:-America/Sao_Paulo}
       TZ_DEFAULT: ${TZ:-America/Sao_Paulo}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-15}
+      ACCOUNTING_MAX_UPLOAD_MB: ${ACCOUNTING_MAX_UPLOAD_MB:-200}
       # atualização pela interface: de onde vêm as versões (dono/repositório no GitHub)
       UPDATE_REPO: ${UPDATE_REPO:-wegnix/nopaper}
       LOG_LEVEL: ${LOG_LEVEL:-info}

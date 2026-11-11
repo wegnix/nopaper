@@ -1,0 +1,1 @@
+ALTER TABLE "accounting_documents" ADD COLUMN "direction" varchar(16) DEFAULT 'to_client' NOT NULL;

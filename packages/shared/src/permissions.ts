@@ -43,6 +43,7 @@ export const PERMISSIONS = {
 
   'accounting.upload': { group: 'Contador', label: 'Enviar documentos (área do contador)', hint: 'Holerites, guias de impostos, mensalidade do escritório… Vê só os próprios envios.' },
   'accounting.review': { group: 'Contador', label: 'Conferir e lançar os documentos do contador', hint: 'Vê tudo o que foi enviado e recebe o aviso. Lançar a conta usa “Cadastrar contas a pagar”; os holerites, “Lançar a folha”.' },
+  'accounting.send': { group: 'Contador', label: 'Enviar documentos para o contador', hint: 'Notas fiscais e outros arquivos. Vê o que o espaço já enviou e se o contador recebeu.' },
 
   'reports.view': { group: 'Relatórios', label: 'Ver relatórios e o gráfico anual do início' },
 
