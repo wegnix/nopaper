@@ -29,34 +29,46 @@ export async function isSessionIdle(lastActivityAt: Date) {
 
 // ------------------------------------------------------------------ tentativas de login
 /**
- * Bloqueio por conta (além do limite por IP): depois de MAX_FAILS senhas erradas para o mesmo
- * login em WINDOW, novas tentativas para ele são recusadas por LOCK — mesmo vindas de IPs
- * diferentes. Em memória (processo único); reiniciar a API zera os contadores.
+ * Senhas erradas, em três contadores (janela de 15 min, em memória — reiniciar a API zera):
+ *  - conta + IP: 5 erros → aquele IP fica 15 min sem tentar naquela conta;
+ *  - IP: 20 erros em quaisquer contas → o IP fica 15 min sem tentar em nenhuma;
+ *  - conta (todos os IPs): 100 erros → a conta trava 15 min (ataque distribuído).
+ * O bloqueio "da conta inteira" só no 3º caso evita que alguém de fora, com 5 senhas erradas,
+ * impeça o dono de entrar: com o limite por IP, travar uma conta exige vários endereços.
+ * `account` = id do usuário quando o login existe; senão o texto digitado.
  */
-const MAX_FAILS = 5;
 const WINDOW_MS = 15 * 60_000;
 const LOCK_MS = 15 * 60_000;
+const LIMITS = { pair: 5, ip: 20, account: 100 };
 const attempts = new Map<string, { fails: number; first: number; lockedUntil: number }>();
+const keysOf = (account: string, ip: string) => [[`p:${account}|${ip}`, LIMITS.pair], [`i:${ip}`, LIMITS.ip], [`a:${account}`, LIMITS.account]] as const;
 
-/** Segundos que ainda faltam de bloqueio para este login (0 = liberado). */
-export function loginLockedFor(login: string) {
-  const a = attempts.get(login);
-  if (!a) return 0;
-  const left = a.lockedUntil - Date.now();
-  if (left > 0) return Math.ceil(left / 1000);
-  if (Date.now() - a.first > WINDOW_MS) attempts.delete(login);
-  return 0;
+/** Segundos que ainda faltam de bloqueio para esta conta vinda deste IP (0 = liberado). */
+export function loginLockedFor(account: string, ip: string) {
+  let left = 0;
+  for (const [k] of keysOf(account, ip)) {
+    const a = attempts.get(k);
+    if (!a) continue;
+    if (a.lockedUntil > Date.now()) left = Math.max(left, Math.ceil((a.lockedUntil - Date.now()) / 1000));
+    else if (Date.now() - a.first > WINDOW_MS) attempts.delete(k);
+  }
+  return left;
 }
 
-export function registerLoginFailure(login: string) {
+/** Conta uma senha errada. Devolve true se isso acabou de bloquear. */
+export function registerLoginFailure(account: string, ip: string) {
   const now = Date.now();
-  let a = attempts.get(login);
-  if (!a || now - a.first > WINDOW_MS) a = { fails: 0, first: now, lockedUntil: 0 };
-  a.fails++;
-  if (a.fails >= MAX_FAILS) a.lockedUntil = now + LOCK_MS;
-  attempts.set(login, a);
-  if (attempts.size > 10_000) for (const [k, v] of attempts) if (now - v.first > WINDOW_MS && v.lockedUntil < now) attempts.delete(k);
-  return a.lockedUntil > now;
+  let locked = false;
+  for (const [k, max] of keysOf(account, ip)) {
+    let a = attempts.get(k);
+    if (!a || now - a.first > WINDOW_MS) a = { fails: 0, first: now, lockedUntil: 0 };
+    a.fails++;
+    if (a.fails >= max) { a.lockedUntil = now + LOCK_MS; locked = true; }
+    attempts.set(k, a);
+  }
+  if (attempts.size > 20_000) for (const [k, v] of attempts) if (now - v.first > WINDOW_MS && v.lockedUntil < now) attempts.delete(k);
+  return locked;
 }
 
-export const clearLoginFailures = (login: string) => { attempts.delete(login); };
+/** Senha certa: zera o par conta+IP (os contadores gerais expiram sozinhos). */
+export const clearLoginFailures = (account: string, ip: string) => { attempts.delete(`p:${account}|${ip}`); };

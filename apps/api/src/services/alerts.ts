@@ -153,8 +153,10 @@ export async function runAlertsTick() {
   const rows = await db.select({ orgId: schema.orgSettings.orgId, tz: schema.organizations.timezone })
     .from(schema.orgSettings).innerJoin(schema.organizations, eq(schema.organizations.id, schema.orgSettings.orgId))
     .where(eq(schema.orgSettings.key, 'alerts'));
-  let sent = 0, skipped = 0;
+  let sent = 0, skipped = 0, failed = 0;
   for (const r of rows) {
+    // um espaço com problema (fuso gravado errado, destino fora do ar) não pode parar os outros
+    try {
     const cfg = await loadAlertConfig(r.orgId);
     if (!cfg.enabled) continue;
     const today = todayISO(r.tz);
@@ -166,6 +168,7 @@ export async function runAlertsTick() {
     if (!d.count) { skipped++; continue; }
     await deliver(r.orgId, cfg, d);
     sent++;
+    } catch (err) { failed++; console.error(`[alerts] espaço ${r.orgId}: ${(err as Error).message}`); }
   }
-  return { orgs: rows.length, sent, skipped };
+  return { orgs: rows.length, sent, skipped, failed };
 }

@@ -95,6 +95,8 @@ export const documentSchema = z.string().max(32).nullish()
   .transform((v) => (v && normalizeDocument(v) ? v : null))
   .superRefine((v, ctx) => { const e = documentError(v); if (e) ctx.addIssue({ code: 'custom', message: e }); })
   .transform((v) => (v ? formatDocument(v) : null));
+/** Fuso IANA que o servidor conhece (um valor inválido quebraria tudo o que calcula "hoje"). */
+export const isValidTimeZone = (tz: string) => { try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch { return false; } };
 export const orgCreateSchema = z.object({
   name: z.string().trim().min(2).max(120),
   kind: orgKindSchema.default('company'),
@@ -103,7 +105,7 @@ export const orgCreateSchema = z.object({
   legalName: z.string().trim().max(160).nullish().transform((v) => (v ? v : null)),
 });
 export const orgUpdateSchema = orgCreateSchema.partial().extend({
-  timezone: z.string().max(64).optional(),
+  timezone: z.string().max(64).refine(isValidTimeZone, 'Fuso horário inválido').optional(),
 });
 export const memberAddSchema = z.object({
   email: z.string().trim().toLowerCase().email('E-mail inválido'),

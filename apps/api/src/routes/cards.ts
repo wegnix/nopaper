@@ -4,7 +4,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   addMonthsRef, billPerm, cardCategorySchema, cardDescKeys, classifySpending, cardOfxImportSchema, cardOfxLines, cardSchema, cardTxSchema, cardTxUpdateSchema, cycleForPurchase, cycleForRef,
-  MONTHS_PT_SHORT, decodeOfx, fromCents, matchExistingCardTx, parseOfx, toCents, todayISO,
+  MONTHS_PT_SHORT, decodeOfx, fromCents, matchExistingCardTx, OFX_MAX_TRANSACTIONS, parseOfx, toCents, todayISO,
 } from '@nopaper/shared';
 import { env } from '../env.js';
 import { db, schema } from '../db/client.js';
@@ -12,7 +12,7 @@ import { parse } from '../lib/validate.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
-import { assertCategoryUsable, assertFolder, attachmentsFor, deleteBillsWithFiles, serialize } from '../services/bills.js';
+import { assertCategoryUsable, assertFolder, attachmentsFor, deleteBillsWithFiles, restrictedCategoryIds, serialize } from '../services/bills.js';
 import { assertCardCategories, categoryForRule, ensureCardCategories } from '../services/cardCategories.js';
 import {
   loadCard, ensureStatement, createPurchase, deleteTransactions, limitUsed, statementStatus, statementsOf, syncStatementBill,
@@ -134,7 +134,9 @@ export default async function cardRoutes(app: FastifyInstance) {
     const total = fromCents(items.reduce((a, t) => a + toCents(t.amount), 0));
     return {
       card: c, ref, statement: st, status: statementStatus(st, bill, today), total,
-      bill: bill ? serialize(bill, (await attachmentsFor([bill.id])).get(bill.id)) : null,
+      // a conta da fatura é de Contas a pagar: só vai para quem pode vê-la lá (e a categoria, se restrita)
+      bill: bill && req.org!.can('payable.view') && (req.org!.can('bills.view_restricted') || !(await restrictedCategoryIds(req.org!.id)).includes(bill.categoryId))
+        ? serialize(bill, (await attachmentsFor([bill.id])).get(bill.id)) : null,
       items, refs: all.map((s) => s.ref),
     };
   });
@@ -210,6 +212,7 @@ export default async function cardRoutes(app: FastifyInstance) {
     const buf = await file.toBuffer();
     if (file.file.truncated) throw badRequest(`Arquivo maior que ${env.MAX_UPLOAD_MB} MB`);
     const ofx = parseOfx(decodeOfx(new Uint8Array(buf)));
+    if (ofx.statements.reduce((n, st) => n + st.transactions.length, 0) > OFX_MAX_TRANSACTIONS) throw badRequest(`Este arquivo tem mais de ${OFX_MAX_TRANSACTIONS} lançamentos. Exporte um período menor.`);
     const cc = ofx.statements.filter((s) => s.kind === 'creditcard');
     if (!cc.length) {
       if (ofx.statements.length) throw badRequest('Este arquivo é um extrato de conta corrente, não uma fatura de cartão. Importe-o em Contas bancárias.', 'ofx_not_card');
@@ -289,7 +292,7 @@ export default async function cardRoutes(app: FastifyInstance) {
         }
       }
       for (let k = 0; k < rows.length; k += 500) await tx.insert(schema.cardTransactions).values(rows.slice(k, k + 500));
-      for (const id of touched) await syncStatementBill(tx, id, req.user!.id);
+      for (const id of touched) await syncStatementBill(tx, id, req.user!.id, { lockPaid: true });
       return { batchId, created: items.length, skipped: dup.size, total, parcels: rows.length };
     });
     if (r.batchId) {
@@ -416,9 +419,10 @@ export default async function cardRoutes(app: FastifyInstance) {
     await db.transaction(async (tx) => {
       const st = await ensureStatement(tx, card, ref);
       await tx.update(schema.cardTransactions).set({ statementId: st.id }).where(eq(schema.cardTransactions.id, t.id));
-      await syncStatementBill(tx, t.statementId, req.user!.id);
-      await syncStatementBill(tx, st.id, req.user!.id);
+      await syncStatementBill(tx, t.statementId, req.user!.id, { lockPaid: true });
+      await syncStatementBill(tx, st.id, req.user!.id, { lockPaid: true });
     });
+    await audit(req, { action: 'card.tx.move', entityType: 'card_tx', entityId: t.groupId, description: `Moveu "${t.description}" para a fatura de ${ref} do ${card.name}` });
     return { ok: true };
   });
 }

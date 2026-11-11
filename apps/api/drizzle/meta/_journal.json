@@ -197,6 +197,20 @@
       "when": 1794404682306,
       "tag": "0027_esign_term_legal_name",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794408539224,
+      "tag": "0028_security_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794409043058,
+      "tag": "0029_accounting_recipient",
+      "breakpoints": true
     }
   ]
 }

@@ -49,7 +49,11 @@ export const esignSubmitSchema = z.object({
   /** Assinatura desenhada: PNG em data URL. */
   signature: z.string().startsWith('data:image/png;base64,', 'Desenhe a sua assinatura').max(600_000, 'Assinatura grande demais: limpe e desenhe de novo'),
 });
-export const esignSendAccountantSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(200) });
+export const esignSendAccountantSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(200),
+  /** Com mais de um contador no espaço: o id de um deles, ou "all" (todos). */
+  recipientId: z.string().uuid().or(z.literal('all')).nullish(),
+});
 
 /** Linha da lista de assinaturas do mês (tela da folha). */
 export interface PayslipSignatureRow {

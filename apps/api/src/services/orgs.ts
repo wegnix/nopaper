@@ -29,7 +29,7 @@ const BASE_PAYABLE_CATEGORIES: DefaultCategory[] = [
 /** "Cartão" também está na lista da empresa, mas já vem na base. */
 const COMPANY_PAYABLE_CATEGORIES: DefaultCategory[] = [
   ['Bônus', 'sky'], ['Comissão', 'coral'], ['Férias', 'yellow'], ['Frota', 'violet'], ['Marketing', 'rose'],
-  ['Pró-Labore', 'wine', true], ['Salário', 'green'], ['Segurança do Trabalho', 'olive'], ['Ticket Refeição', 'brown'],
+  ['Pró-Labore', 'wine', true], ['Salário', 'green', true], ['Segurança do Trabalho', 'olive'], ['Ticket Refeição', 'brown'],
 ];
 export const DEFAULT_FOLDERS: Record<OrgKind, DefaultFolder[]> = {
   personal: BASE_FOLDERS,

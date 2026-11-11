@@ -7,7 +7,7 @@ import { parse } from '../lib/validate.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { requireAuth, requirePerm, requireOrg, hashPassword, membershipsOf } from '../lib/auth.js';
 import { createOrganization } from '../services/orgs.js';
-import { audit, auditUsers, queryAudit, type AuditQuery } from '../lib/audit.js';
+import { audit, auditAreasFor, auditUsers, queryAudit, type AuditQuery } from '../lib/audit.js';
 
 /** Primeiro nome de usuário livre: base, base2, base3… */
 async function freeUsername(base: string) {
@@ -81,6 +81,12 @@ export default async function orgRoutes(app: FastifyInstance) {
     const result = await db.transaction(async (tx) => {
       let [u] = await tx.select().from(schema.users).where(and(sql`lower(${schema.users.email}) = ${body.email}`, isNull(schema.users.deletedAt)));
       const created = !u;
+      // conta que já existe: só entra por aqui se quem adiciona já divide algum espaço com ela (a mesma
+      // regra da lista "Conta que já existe"); senão qualquer um poria contas alheias no próprio espaço
+      if (u && !req.user!.isSuperadmin) {
+        const shared = await tx.execute(sql`select 1 from memberships m join memberships mine on mine.org_id = m.org_id and mine.user_id = ${req.user!.id} and mine.active where m.user_id = ${u.id} limit 1`);
+        if (!shared.rows.length) throw badRequest('Já existe uma conta com este e-mail na plataforma. Peça ao administrador da plataforma para associá-la a este espaço.', 'account_exists');
+      }
       if (!u) {
         if (!body.password || !body.name) throw badRequest('Usuário novo: informe nome e senha inicial');
         const username = body.username ?? (await freeUsername(usernameFromEmail(body.email)));
@@ -181,7 +187,7 @@ export default async function orgRoutes(app: FastifyInstance) {
 
   // ---------------------------------------------------------- auditoria
   app.get<{ Querystring: AuditQuery }>('/api/audit', { preHandler: requirePerm('audit.view') }, async (req) => {
-    return queryAudit(req.org!.id, { ...req.query, tz: req.org!.timezone }, !req.org!.can('bills.view_restricted'));
+    return queryAudit(req.org!.id, { ...req.query, tz: req.org!.timezone }, !req.org!.can('bills.view_restricted'), 100, auditAreasFor(req.org!));
   });
   app.get('/api/audit/users', { preHandler: requirePerm('audit.view') }, async (req) => ({ items: await auditUsers(req.org!.id) }));
 }
@@ -208,7 +214,9 @@ async function groupNames(ids: string[]) {
 function assertCanGrant(req: FastifyRequest, body: { isAdmin: boolean; permissions: string[] }, before: { isAdmin: boolean; permissions: string[] } | null) {
   if (req.org!.isAdmin) return;
   if (body.isAdmin || before?.isAdmin) throw forbidden('Só um administrador do espaço pode criar ou alterar grupos de administradores');
-  const extra = body.permissions.filter((p) => !req.org!.can(p as Permission) && !before?.permissions.includes(p));
+  // grupo que já dá o que você não tem: nem para tirar permissões (seria rebaixar quem está acima)
+  if (before?.permissions.some((p) => !req.org!.can(p as Permission))) throw forbidden('Só um administrador do espaço pode alterar um grupo com permissões que você não tem');
+  const extra = body.permissions.filter((p) => !req.org!.can(p as Permission));
   if (extra.length) throw forbidden(`Você não pode conceder permissões que não tem: ${extra.map((p) => PERMISSIONS[p as Permission]?.label ?? p).join('; ')}`);
 }
 
@@ -228,8 +236,10 @@ async function assertCanManageMember(req: FastifyRequest, m: { isOwner: boolean 
   if (req.org!.isAdmin) return;
   if (m.isOwner) throw forbidden('Só um administrador do espaço pode alterar o dono');
   if (!groupIds.length) return;
-  const rows = await db.select({ isAdmin: schema.groups.isAdmin }).from(schema.groups).where(inArray(schema.groups.id, groupIds));
+  const rows = await db.select({ isAdmin: schema.groups.isAdmin, permissions: schema.groups.permissions }).from(schema.groups).where(inArray(schema.groups.id, groupIds));
   if (rows.some((g) => g.isAdmin)) throw forbidden('Só um administrador do espaço pode alterar outro administrador');
+  // quem tem mais permissões que você não pode ser desativado, removido nem rebaixado por você
+  if (rows.some((g) => g.permissions.some((p) => !req.org!.can(p as Permission)))) throw forbidden('Só um administrador do espaço pode alterar um membro que tem permissões que você não tem');
 }
 
 async function assertGroupsInOrg(orgId: string, ids: string[]) {

@@ -6,7 +6,7 @@ import { useCan, useSession } from '@/lib/session';
 export interface AccountingDoc {
   id: string; direction: AccountingDirection; kind: AccountingKind; competence: string | null; note: string | null; originalName: string; mime: string; size: number;
   detected: AccountingDetected | null; status: AccountingStatus; billId: string | null; handledAt: string | null; handleNote: string | null;
-  createdAt: string; uploadedByName: string | null; handledByName: string | null; mine: boolean;
+  createdAt: string; uploadedByName: string | null; handledByName: string | null; recipientName?: string | null; mine: boolean;
   /** Tirado da lista de quem confere (o registro continua para quem enviou). `hiddenByMe` = cancelado por quem enviou. */
   hiddenAt: string | null; hiddenByMe: boolean;
   bill: { id: string; description: string; status: 'pending' | 'paid'; dueDate: string; amount: string } | null;
@@ -41,3 +41,9 @@ function useAccountingSummary() {
 export const useAccountingPending = () => useAccountingSummary().pending;
 /** Arquivos que o espaço mandou e o contador ainda não viu (selo em "Recebidos"). */
 export const useAccountingInbox = () => useAccountingSummary().inbox;
+
+/** Contadores do espaço (quem envia escolhe o destinatário quando há mais de um). */
+export function useAccountants(enabled: boolean) {
+  const orgId = useSession((s) => s.orgId);
+  return useQuery({ enabled, queryKey: ['accounting', orgId, 'accountants'], staleTime: 60_000, queryFn: () => get<{ items: Array<{ id: string; name: string }> }>('/api/accounting/accountants').then((r) => r.items) });
+}

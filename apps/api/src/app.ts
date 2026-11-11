@@ -52,7 +52,9 @@ export async function buildApp() {
     if (err instanceof HttpError) {
       return reply.status(err.statusCode).send({ error: err.message, code: err.code, ...err.extra });
     }
-    const e = err as { statusCode?: number; message: string; code?: string };
+    const e = err as { statusCode?: number; message: string; code?: string; cause?: { code?: string } };
+    // id fora do formato (uuid) chega ao banco como erro de sintaxe: para quem chama é "não existe"
+    if (e.code === '22P02' || e.cause?.code === '22P02') return reply.status(404).send({ error: 'Não encontrado', code: 'not_found' });
     if (e.statusCode && e.statusCode < 500) {
       return reply.status(e.statusCode).send({ error: e.statusCode === 429 ? 'Muitas requisições. Aguarde um pouco.' : e.message, code: e.code });
     }

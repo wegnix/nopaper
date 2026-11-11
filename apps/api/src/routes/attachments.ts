@@ -4,7 +4,7 @@ import { ATTACHMENT_SLOTS, ATTACHMENT_SLOT_LABEL, billPerm, type AttachmentSlot,
 import { db, schema } from '../db/client.js';
 import { env } from '../env.js';
 import { badRequest, forbidden, HttpError, notFound } from '../lib/errors.js';
-import { requireOrg } from '../lib/auth.js';
+import { requireOrg, requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
 import { ALLOWED_UPLOADS, saveFile, deleteFile, sniffMime, signFileToken, verifyFileToken, streamStoredFile } from '../lib/storage.js';
 import { loadBill, serialize, attachmentsFor, restrictedCategoryIds } from '../services/bills.js';
@@ -23,7 +23,7 @@ async function readUpload(req: FastifyRequest) {
 
 export default async function attachmentRoutes(app: FastifyInstance) {
   /** Analisa um documento sem salvar (usado no formulário de nova conta para auto-preencher). */
-  app.post('/api/documents/analyze', { preHandler: requireOrg }, async (req) => {
+  app.post('/api/documents/analyze', { preHandler: requirePerm('payable.create', 'payable.edit', 'receivable.create', 'receivable.edit') }, async (req) => {
     const { buf, mime, filename } = await readUpload(req);
     return classifyDocument(buf, mime, filename);
   });

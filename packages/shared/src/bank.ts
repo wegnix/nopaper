@@ -49,8 +49,12 @@ export function decodeOfx(bytes: Uint8Array): string {
   return new TextDecoder(utf8 ? 'utf-8' : 'windows-1252').decode(bytes);
 }
 
+/** Nenhum campo de OFX passa disso; o limite impede que um arquivo montado de propósito prenda o servidor. */
+const MAX_FIELD = 600;
+/** Lançamentos por arquivo (um extrato de um ano de uma empresa fica bem abaixo). */
+export const OFX_MAX_TRANSACTIONS = 20_000;
 const tagValue = (block: string, tag: string): string | null => {
-  const m = new RegExp(`<${tag}>([^<\\r\\n]*)`, 'i').exec(block);
+  const m = new RegExp(`<${tag}>([^<\\r\\n]{0,${MAX_FIELD}})`, 'i').exec(block);
   const v = m?.[1]?.trim();
   return v ? decodeEntities(v) : null;
 };

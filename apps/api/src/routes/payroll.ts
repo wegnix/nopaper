@@ -17,7 +17,7 @@ import { audit } from '../lib/audit.js';
 import { assertCategoryUsable, assertFolder, attachmentsFor, serialize } from '../services/bills.js';
 import {
   assertCompany, assertEntryEditable, deleteEntries, ensurePayrollDefaults, getPayrollSettings, loadEmployee, loadEntry,
-  loadPeriod, paidBillsCount, recomputeCosts, rewriteOpenEntries, rubricsOf, savePayrollSettings, syncEntries, writeEntry,
+  loadPeriod, paidBillsCount, recomputeCosts, restrictPayrollCategory, rewriteOpenEntries, rubricsOf, savePayrollSettings, syncEntries, writeEntry,
 } from '../services/payroll.js';
 
 /** Violação de índice único (o drizzle embrulha o erro do pg em `cause`). */
@@ -69,8 +69,11 @@ export default async function payrollRoutes(app: FastifyInstance) {
     const body = parse(payrollSettingsSchema, req.body);
     if (!body.categoryId) throw badRequest('Escolha a categoria das contas de salário');
     await assertCategoryUsable(req, body.categoryId, 'payable');
+    // a categoria dos salários fica restrita (quem não vê restritas não vê os salários em Contas a pagar)
+    if (!req.org!.can('bills.view_restricted')) throw forbidden('A categoria das contas de salário é restrita. Só quem vê categorias restritas pode configurá-la.');
     await assertFolder(req, body.folderId);
     const before = await getPayrollSettings(req.org!.id);
+    const nowRestricted = await db.transaction((tx) => restrictPayrollCategory(tx, req.org!.id, body.categoryId!));
     // impressão e comissões têm rotas próprias: a tela de configuração pode estar com uma cópia velha
     body.print = before.print;
     body.commissions = before.commissions;
@@ -83,7 +86,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     for (const k of Object.keys(body) as (keyof typeof body)[]) if (JSON.stringify(before[k] ?? null) !== JSON.stringify(body[k] ?? null)) changes[k] = { from: before[k] ?? null, to: body[k] ?? null };
     // regime/alíquotas novos: o custo gravado de todos os meses acompanha
     const recalculated = changes.costs ? await db.transaction((tx) => recomputeCosts(req.org!.id, tx)) : 0;
-    await audit(req, { action: 'payroll.settings', entityType: 'payroll', description: 'Alterou a configuração da folha de pagamento', details: { changes, resynced: ids.length, recalculated } });
+    await audit(req, { action: 'payroll.settings', entityType: 'payroll', description: 'Alterou a configuração da folha de pagamento', details: { changes, resynced: ids.length, recalculated, categoryRestricted: nowRestricted || undefined } });
     return body;
   });
 

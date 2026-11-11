@@ -44,8 +44,16 @@ export const REFRESH_TTL_DAYS = 30;
 export const hashPassword = (pw: string) => argon2.hash(pw, { type: argon2.argon2id });
 export const verifyPassword = (hash: string, pw: string) => argon2.verify(hash, pw).catch(() => false);
 
-export async function signAccessToken(userId: string, sessionId: string) {
-  return new SignJWT({ sid: sessionId })
+/**
+ * Hash válido de uma senha que ninguém conhece: o login confere contra ele quando o usuário não
+ * existe, para a resposta demorar o mesmo que a de um usuário real (não revela quem tem conta).
+ */
+let dummyHash: Promise<string> | null = null;
+export const dummyPasswordHash = () => (dummyHash ??= hashPassword(randomBytes(24).toString('base64url')));
+
+/** `rot` = número da rotação do refresh token em que este token de acesso foi emitido. */
+export async function signAccessToken(userId: string, sessionId: string, rot = 0) {
+  return new SignJWT({ sid: sessionId, rot })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
     .setIssuedAt()
@@ -69,6 +77,7 @@ export async function authenticate(req: FastifyRequest) {
       id: schema.users.id, email: schema.users.email, name: schema.users.name,
       isSuperadmin: schema.users.isSuperadmin, active: schema.users.active, mustChangePassword: schema.users.mustChangePassword,
       revokedAt: schema.sessions.revokedAt, lastActivityAt: schema.sessions.lastActivityAt,
+      rotation: schema.sessions.rotation, rotationAcked: schema.sessions.rotationAcked,
     }).from(schema.users)
       .innerJoin(schema.sessions, eq(schema.sessions.userId, schema.users.id))
       .where(and(eq(schema.users.id, userId), eq(schema.sessions.id, sid)))
@@ -78,6 +87,11 @@ export async function authenticate(req: FastifyRequest) {
     if (await isSessionIdle(u.lastActivityAt)) {
       await db.update(schema.sessions).set({ revokedAt: new Date() }).where(eq(schema.sessions.id, sid));
       return;
+    }
+    // 1º uso do token de acesso da rotação atual: a resposta da renovação chegou a quem pediu.
+    // A partir daí o refresh token anterior deixa de valer (ver /api/auth/refresh).
+    if (!u.rotationAcked && payload.rot === u.rotation) {
+      await db.update(schema.sessions).set({ rotationAcked: true }).where(and(eq(schema.sessions.id, sid), eq(schema.sessions.rotation, u.rotation)));
     }
     req.user = { id: u.id, email: u.email, name: u.name, isSuperadmin: u.isSuperadmin, sessionId: sid, mustChangePassword: u.mustChangePassword };
   } catch {

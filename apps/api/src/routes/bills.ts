@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, eq, gt, inArray, or, sql, ne } from 'drizzle-orm';
 import {
   billCreateSchema, billUpdateSchema, billListQuerySchema, paySchema, bulkPaySchema, restructureSchema,
@@ -23,6 +23,18 @@ export default async function billRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireOrg);
 
   const isRestricted = async (orgId: string, categoryId: string) => (await restrictedCategoryIds(orgId)).includes(categoryId);
+  /** Categorias que este usuário não pode ver (vazio para quem vê restritas). */
+  const hiddenFor = async (req: FastifyRequest): Promise<string[]> => (req.org!.can('bills.view_restricted') ? [] : restrictedCategoryIds(req.org!.id));
+  /**
+   * Série com ocorrências em categoria restrita (acontece quando a categoria foi trocada só "daqui
+   * para a frente"): quem não vê restritas pode mexer na ocorrência que enxerga, mas não em ações
+   * que alcançam as irmãs (mudar as futuras, reestruturar, parar, apagar a série).
+   */
+  const assertSeriesOpen = async (req: FastifyRequest, b: BillRow) => {
+    const hidden = await hiddenFor(req);
+    if (!hidden.length) return;
+    if ((await seriesRows(db, b)).some((r) => hidden.includes(r.categoryId))) throw forbidden('Esta série tem contas em categoria restrita. Só quem vê categorias restritas pode alterar a série inteira.');
+  };
 
   app.get('/api/bills', async (req) => {
     const q = parse(billListQuerySchema, req.query);
@@ -46,7 +58,8 @@ export default async function billRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>('/api/bills/:id/series', async (req) => {
     const b = await loadBill(req, req.params.id);
-    return { items: await serializeMany(await seriesRows(db, b)) };
+    const hidden = await hiddenFor(req);
+    return { items: await serializeMany((await seriesRows(db, b)).filter((r) => !hidden.includes(r.categoryId))) };
   });
 
   // -------------------------------------------------------------- criar
@@ -56,6 +69,10 @@ export default async function billRoutes(app: FastifyInstance) {
     if (body.paidAt && !req.org!.can(billPerm(body.type, 'pay'))) throw forbidden('Sem permissão para cadastrar já como paga');
     const cat = await assertCategoryUsable(req, body.categoryId, body.type);
     await assertFolder(req, body.folderId);
+    if (body.cardId) {
+      const [card] = await db.select({ id: schema.cards.id }).from(schema.cards).where(and(eq(schema.cards.id, body.cardId), eq(schema.cards.orgId, req.org!.id)));
+      if (!card) throw badRequest('Cartão inválido');
+    }
     const rows = await db.transaction((tx) => createBills(tx, req.org!.id, req.user!.id, body));
     await audit(req, {
       action: `${body.type}.create`, entityType: 'bill', entityId: rows[0].id,
@@ -96,6 +113,8 @@ export default async function billRoutes(app: FastifyInstance) {
       patch.status = 'pending'; patch.paidAt = null; patch.paidAmount = null;
     }
 
+    if (body.cascade) await assertSeriesOpen(req, b);
+    const restrictedBefore = await isRestricted(b.orgId, b.categoryId);
     const result = await db.transaction(async (tx) => {
       const [u] = await tx.update(schema.bills).set(patch).where(eq(schema.bills.id, b.id)).returning();
       let cascaded = 0;
@@ -124,7 +143,7 @@ export default async function billRoutes(app: FastifyInstance) {
     await audit(req, {
       action: `${type}.update`, entityType: 'bill', entityId: b.id,
       description: `Editou "${result.u.description}"${result.cascaded ? ` (+${result.cascaded} futuras)` : ''}`,
-      details: { changes, cascaded: result.cascaded, restricted: await isRestricted(b.orgId, result.u.categoryId) },
+      details: { changes, cascaded: result.cascaded, restricted: restrictedBefore || (await isRestricted(b.orgId, result.u.categoryId)) },
     });
     const att = await attachmentsFor([b.id]);
     return { ...serialize(result.u, att.get(b.id)), cascaded: result.cascaded };
@@ -155,7 +174,8 @@ export default async function billRoutes(app: FastifyInstance) {
   app.post('/api/bills/bulk-pay', async (req) => {
     const body = parse(bulkPaySchema, req.body);
     const paidAt = body.paidAt ?? orgToday(req);
-    const hidden = req.org!.can('bills.view_restricted') ? [] : await restrictedCategoryIds(req.org!.id);
+    const restrictedAll = await restrictedCategoryIds(req.org!.id);
+    const hidden = req.org!.can('bills.view_restricted') ? [] : restrictedAll;
     const rows = await db.select().from(schema.bills).where(and(eq(schema.bills.orgId, req.org!.id), inArray(schema.bills.id, body.ids), eq(schema.bills.status, 'pending')));
     const allowed = rows.filter((r) => req.org!.can(billPerm(r.type as BillType, 'pay')) && !hidden.includes(r.categoryId));
     await db.transaction(async (tx) => {
@@ -163,7 +183,7 @@ export default async function billRoutes(app: FastifyInstance) {
         await tx.update(schema.bills).set({ status: 'paid', paidAt, paidAmount: r.paidAmount ?? r.amount }).where(eq(schema.bills.id, r.id));
       }
     });
-    await audit(req, { action: 'bills.bulk_pay', entityType: 'bill', entityId: allowed.slice(0, 20).map((r) => r.id).join(','), description: `Pagamento em massa: ${allowed.length} de ${body.ids.length} contas`, details: { paidAt, ids: allowed.map((r) => r.id) } });
+    await audit(req, { action: 'bills.bulk_pay', entityType: 'bill', entityId: allowed.slice(0, 20).map((r) => r.id).join(','), description: `Pagamento em massa: ${allowed.length} de ${body.ids.length} contas`, details: { paidAt, ids: allowed.map((r) => r.id), restricted: allowed.some((r) => restrictedAll.includes(r.categoryId)) } });
     return { updated: allowed.length };
   });
 
@@ -174,6 +194,7 @@ export default async function billRoutes(app: FastifyInstance) {
     if (b.statementId) throw badRequest('Conta de fatura de cartão não pode virar recorrente');
     if (b.payrollEntryId) throw badRequest('Salário da folha não pode virar recorrente: o próximo mês é aberto na Folha de pagamento');
     if (b.parentId) throw badRequest('Edite a recorrência a partir da primeira ocorrência da série');
+    await assertSeriesOpen(req, b);
     if (b.status === 'paid') throw badRequest('Esta conta já está paga — reverta o pagamento antes de reestruturar');
     if (body.isIndefinite && !isPeriodic(body.recurrenceType)) throw badRequest('Repetição sem data para acabar só para semanal, quinzenal, mensal ou anual');
     const plan = planOccurrences({ ...body, amount: body.amount ?? b.amount });
@@ -200,6 +221,7 @@ export default async function billRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>('/api/bills/:id/recurrence/stop', async (req) => {
     const b = await loadBill(req, req.params.id, 'edit');
+    await assertSeriesOpen(req, b);
     const headId = headIdOf(b);
     const today = orgToday(req);
     const deleted = await db.transaction(async (tx) => {
@@ -222,6 +244,7 @@ export default async function billRoutes(app: FastifyInstance) {
     const b = await loadBill(req, req.params.id, 'delete');
     if (b.statementId) throw badRequest('Esta conta é a fatura de um cartão. Apague os lançamentos na tela de Cartões.');
     if (b.payrollEntryId) throw badRequest('Este salário vem da Folha de pagamento. Tire o funcionário da folha do mês por lá.');
+    if (mode !== 'one') await assertSeriesOpen(req, b);
     const restricted = await isRestricted(b.orgId, b.categoryId);
     const res = await db.transaction(async (tx) => {
       const series = await seriesRows(tx, b);

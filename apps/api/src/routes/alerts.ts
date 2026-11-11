@@ -1,10 +1,10 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { randomBytes } from 'node:crypto';
 import { desc, eq } from 'drizzle-orm';
 import { alertConfigSchema } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { parse } from '../lib/validate.js';
-import { badRequest } from '../lib/errors.js';
+import { badRequest, forbidden } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
 import { getSystemSetting } from '../lib/settings.js';
@@ -31,11 +31,29 @@ export default async function alertRoutes(app: FastifyInstance) {
     };
   });
 
+  /**
+   * O resumo leva descrição, valor e vencimento das contas: quem escolhe os destinatários (e-mail ou
+   * chat do Telegram) precisa poder ver tudo o que o resumo traz — os tipos ligados e, se incluídas,
+   * as categorias restritas. Senão bastaria "gerenciar alertas" para receber contas que não pode ver.
+   */
+  const assertCanReceive = (req: FastifyRequest, cfg: { payable: { enabled: boolean }; receivable: { enabled: boolean }; includeRestricted: boolean }) => {
+    const o = req.org!;
+    if ((cfg.payable.enabled && !o.can('payable.view')) || (cfg.receivable.enabled && !o.can('receivable.view')) || (cfg.includeRestricted && !o.can('bills.view_restricted'))) {
+      throw forbidden('Só quem pode ver as contas que entram no resumo (e as categorias restritas, se incluídas) escolhe quem recebe os alertas.');
+    }
+  };
+
   app.put('/api/alerts', guard, async (req) => {
     const body = parse(alertConfigSchema, req.body);
     const cur = await loadAlertConfig(req.org!.id);
     // os chats só entram pelo fluxo de vínculo (não aceita IDs digitados)
     const next = { ...cur, ...body, telegram: { enabled: body.telegram.enabled, chats: cur.telegram.chats } };
+    // quem não vê um tipo de conta (ou as restritas) não muda essa parte do resumo
+    if (!req.org!.can('payable.view')) next.payable = cur.payable;
+    if (!req.org!.can('receivable.view')) next.receivable = cur.receivable;
+    if (!req.org!.can('bills.view_restricted')) next.includeRestricted = cur.includeRestricted;
+    const newRecipients = next.email.recipients.some((r) => !cur.email.recipients.includes(r));
+    if (newRecipients || (next.email.enabled && !cur.email.enabled) || (next.telegram.enabled && !cur.telegram.enabled)) assertCanReceive(req, next);
     // mudou a hora para mais tarde hoje? libera o envio de hoje de novo
     if (body.hour !== cur.hour) next.lastSentOn = null;
     await saveAlertConfig(req.org!.id, next);
@@ -59,6 +77,7 @@ export default async function alertRoutes(app: FastifyInstance) {
     const tg = await getSystemSetting<StoredTelegram>('telegram');
     if (!token || !tg?.botUsername) throw badRequest('O bot do Telegram ainda não foi configurado pelo administrador da plataforma.');
     const cfg = await loadAlertConfig(req.org!.id);
+    assertCanReceive(req, cfg);
     const code = `np${randomBytes(6).toString('hex')}`;
     await saveAlertConfig(req.org!.id, { ...cfg, pendingLink: { code, expiresAt: Date.now() + LINK_TTL_MS } });
     return { code, url: `https://t.me/${tg.botUsername}?start=${code}`, bot: tg.botUsername };
@@ -66,6 +85,7 @@ export default async function alertRoutes(app: FastifyInstance) {
 
   app.post('/api/alerts/telegram/check', guard, async (req) => {
     const cfg = await loadAlertConfig(req.org!.id);
+    assertCanReceive(req, cfg);
     const link = cfg.pendingLink;
     if (!link || link.expiresAt < Date.now()) throw badRequest('O código expirou. Gere um novo.');
     const token = await telegramToken();

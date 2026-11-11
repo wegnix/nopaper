@@ -143,6 +143,22 @@ export async function writeEntry(tx: DBOrTx, orgId: string, userId: string | nul
 }
 
 /**
+ * A categoria das contas de salário é sempre restrita: sem isso, quem vê Contas a pagar veria o
+ * salário de cada funcionário. Marca a categoria e os registros de auditoria das contas dela.
+ */
+export async function restrictPayrollCategory(tx: DBOrTx, orgId: string, categoryId: string) {
+  const done = await tx.update(schema.categories).set({ isRestricted: true })
+    .where(and(eq(schema.categories.id, categoryId), eq(schema.categories.orgId, orgId), eq(schema.categories.isRestricted, false))).returning({ id: schema.categories.id });
+  if (!done.length) return false;
+  await tx.execute(sql`
+    update audit_logs a set details = coalesce(a.details, '{}'::jsonb) || '{"restricted": true}'::jsonb
+    from bills b
+    where a.org_id = ${orgId} and a.entity_type = 'bill' and a.entity_id = b.id::text and b.category_id = ${categoryId}
+      and (a.details is null or jsonb_typeof(a.details) = 'object')`);
+  return true;
+}
+
+/**
  * Mantém a conta a pagar do lançamento: cria quando o mês gera contas e o total > 0, atualiza
  * valor/vencimento/descrição enquanto pendente e apaga quando o total zera. Conta paga não é tocada.
  */
@@ -156,17 +172,14 @@ export async function syncEntryBill(tx: DBOrTx, entryId: string, userId: string 
   if (!p.billsEnabled || toCents(e.total) <= 0) {
     if (bill) {
       await tx.update(schema.payrollEntries).set({ billId: null }).where(eq(schema.payrollEntries.id, e.id));
-      await tx.delete(schema.bills).where(eq(schema.bills.id, bill.id));
+      await deleteBillsWithFiles(tx, [bill.id]); // leva os anexos junto (antes ficavam órfãos no disco)
     }
     return;
   }
   const settings = await getPayrollSettings(e.orgId, tx);
   if (!settings.categoryId) throw badRequest('Escolha a categoria das contas de salário em Folha de pagamento → Configurar.', 'payroll_category');
-  const off = toCents(e.offPayroll);
-  const notes = [
-    `Folha de pagamento ${refLabelPT(p.ref)}.`,
-    off > 0 ? `Pelo holerite: ${formatBRL(toCents(e.total) - off)} · por fora: ${formatBRL(e.offPayroll)}.` : null,
-  ].filter(Boolean).join(' ');
+  // só a origem: a divisão do valor (holerite × extras) fica na Folha, não em Contas a pagar
+  const notes = `Folha de pagamento ${refLabelPT(p.ref)}.`;
   const values = {
     description: `Salário ${emp.name} – ${refLabelPT(p.ref)}`.slice(0, 255), amount: e.total, dueDate: p.payDate,
     categoryId: settings.categoryId, folderId: settings.folderId ?? null, relatedPerson: emp.name.slice(0, 128),

@@ -1,5 +1,6 @@
 import type { FastifyRequest } from 'fastify';
-import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import type { Permission } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import type { DBOrTx } from '../db/client.js';
 
@@ -41,7 +42,24 @@ const AREA_RE = /^[a-z_]+$/;
  * Filtros comuns da auditoria. `scope` = id do espaço, ou 'platform' (eventos sem espaço: login, plataforma)
  * ou 'all' (tudo, só superadmin). `hideRestricted` esconde registros de categorias restritas.
  */
-export async function queryAudit(scope: string | 'platform' | 'all', f: AuditQuery, hideRestricted: boolean, limit = 100) {
+/**
+ * Áreas da auditoria (1º trecho da ação) que a pessoa enxerga no espaço: só as das telas a que ela
+ * tem acesso. Administrador do espaço vê tudo (null). Evento de área não listada = só administrador.
+ */
+const AREA_PERMS: Record<string, Permission[]> = {
+  payable: ['payable.view'], receivable: ['receivable.view'],
+  bills: ['payable.view', 'receivable.view'], import: ['payable.view', 'receivable.view'],
+  category: ['payable.view', 'receivable.view'], folder: ['payable.view', 'receivable.view'],
+  card: ['cards.view'], bank: ['bank.view'], payroll: ['payroll.view'],
+  accounting: ['accounting.review', 'accounting.send'],
+  member: ['members.manage'], group: ['groups.manage', 'members.manage'], org: ['org.settings'], alerts: ['alerts.manage'],
+};
+export function auditAreasFor(org: { isAdmin: boolean; can(p: Permission): boolean }): string[] | null {
+  if (org.isAdmin) return null;
+  return Object.entries(AREA_PERMS).filter(([, perms]) => perms.some((p) => org.can(p))).map(([area]) => area);
+}
+
+export async function queryAudit(scope: string | 'platform' | 'all', f: AuditQuery, hideRestricted: boolean, limit = 100, allowedAreas: string[] | null = null) {
   const t = schema.auditLogs;
   const conds = [];
   if (scope === 'platform') conds.push(isNull(t.orgId));
@@ -58,6 +76,7 @@ export async function queryAudit(scope: string | 'platform' | 'all', f: AuditQue
   const tz = f.tz && /^[A-Za-z_]+\/[A-Za-z_\/]+$/.test(f.tz) ? f.tz : 'America/Sao_Paulo';
   if (f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from)) conds.push(sql`${t.createdAt} >= (${f.from}::date)::timestamp at time zone ${tz}`);
   if (f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to)) conds.push(sql`${t.createdAt} < (${f.to}::date + 1)::timestamp at time zone ${tz}`);
+  if (allowedAreas) conds.push(allowedAreas.length ? inArray(sql<string>`split_part(${t.action}, '.', 1)`, allowedAreas) : sql`false`);
   if (hideRestricted) conds.push(sql`coalesce((${t.details}->>'restricted')::boolean, false) = false`);
   const rows = await db.select({
     id: t.id, orgId: t.orgId, userId: t.userId, userName: t.userName, action: t.action, entityType: t.entityType, entityId: t.entityId,

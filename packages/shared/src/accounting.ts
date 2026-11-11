@@ -51,6 +51,8 @@ export const accountingSendSchema = z.object({
   kind: z.enum(ACCOUNTING_CLIENT_KINDS).default('invoice'),
   competence: ref.nullish().or(z.literal('').transform(() => null)),
   note: text(500),
+  /** Com mais de um contador no espaço: o id de um deles, ou "all" (todos). */
+  recipientId: z.string().uuid().or(z.literal('all')).nullish().or(z.literal('').transform(() => null)),
 });
 
 export const accountingHandleSchema = z.object({

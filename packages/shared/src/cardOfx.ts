@@ -33,7 +33,7 @@ const PAYMENT = /\b(PAGAMENTO|PAGTO|PGTO)\b/i;
 /** "BRASIL PARAL*BrasilP  02/12   SAO PAULO" → descrição, parcela 2 de 12. */
 export function parseCardMemo(memo: string): { description: string; installment: number | null; installments: number | null } {
   // "EC          *SHELLBO": espaços antes do "*" fazem parte do nome, não separam a cidade
-  const raw = memo.replace(/\s+$/, '').replace(/\s+\*/g, '*');
+  const raw = memo.slice(0, 600).trimEnd().replace(/\s+\*/g, '*');
   const m = INSTALLMENT.exec(raw);
   let n = m ? Number(m[1]) : null, total = m ? Number(m[2]) : null;
   if (n === null || total === null || total < 2 || n < 1 || n > total) n = total = null;

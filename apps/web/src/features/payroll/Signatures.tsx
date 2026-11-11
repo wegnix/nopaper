@@ -3,13 +3,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, Copy, Download, FileSignature, FileUp, MessageCircle, PenLine, Send, X } from 'lucide-react';
 import { formatBRL, refLabelPT, whatsappLink, type PayslipSignatureRow } from '@nopaper/shared';
-import { Button, Empty, IconButton, Spinner } from '@/components/ui/base';
+import { Button, Empty, IconButton, Select, Spinner } from '@/components/ui/base';
 import { StatusChip } from '@/components/ui/chips';
 import { Dialog, useConfirm } from '@/components/ui/dialog';
 import { api, del, get, post, errMsg } from '@/lib/api';
 import { useCan, useSession } from '@/lib/session';
 import { downloadBlob, plural } from '@/lib/utils';
 import { payrollKey } from './data';
+import { useAccountants } from '@/features/accounting/data';
 
 const when = (iso: string) => { const d = new Date(iso); return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; };
 
@@ -52,6 +53,10 @@ export function SignaturesDialog({ open, onClose, periodId, refStr }: { open: bo
   const toSend = [...termRows, ...rows].filter((r) => r.status === 'signed' && !r.sentToAccountantAt);
   const reload = () => { qc.invalidateQueries({ queryKey: payrollKey(orgId, 'signatures', periodId) }); qc.invalidateQueries({ queryKey: payrollKey(orgId, 'signature-terms') }); };
   const what = (r: PayslipSignatureRow) => (r.kind === 'term' ? 'Termo de assinatura eletrônica' : 'Holerite');
+  // mais de um contador no espaço: escolhe para qual vão os assinados
+  const accountants = useAccountants(open && can('accounting.send')).data ?? [];
+  const [recipient, setRecipient] = useState('');
+  const needRecipient = accountants.length > 1;
   const makeTerms = async () => {
     setTermBusy(true);
     try {
@@ -102,7 +107,7 @@ export function SignaturesDialog({ open, onClose, periodId, refStr }: { open: bo
   const sendAccountant = async () => {
     setSending(true);
     try {
-      const r = await post<{ sent: number }>('/api/payroll/signatures/send-accountant', { ids: toSend.map((x) => x.id) });
+      const r = await post<{ sent: number }>('/api/payroll/signatures/send-accountant', { ids: toSend.map((x) => x.id), ...(needRecipient ? { recipientId: recipient } : {}) });
       toast.success(`${plural(r.sent, 'documento assinado enviado', 'documentos assinados enviados')} ao contador`);
       reload();
     } catch (e) { toast.error(errMsg(e)); } finally { setSending(false); }
@@ -136,7 +141,18 @@ export function SignaturesDialog({ open, onClose, periodId, refStr }: { open: bo
     <Dialog open={open} onClose={onClose} size="lg" title="Assinatura dos holerites"
       description={`Folha de ${refLabelPT(refStr)}. Cada funcionário recebe um link pessoal, abre com o CPF, confere e assina no celular. Antes do primeiro holerite ele assina, uma vez, o termo de aceite.`}
       footer={<>
-        {can('accounting.send') && toSend.length > 0 && <Button variant="secondary" className="mr-auto" loading={sending} icon={<Send className="size-4" />} onClick={sendAccountant}>Enviar {plural(toSend.length, 'assinado', 'assinados')} ao contador</Button>}
+        {can('accounting.send') && toSend.length > 0 && (
+          <div className="mr-auto flex flex-wrap items-center gap-2">
+            {needRecipient && (
+              <Select aria-label="Contador" className="w-auto min-w-44" value={recipient} onChange={(e) => setRecipient(e.target.value)}>
+                <option value="">Para qual contador?</option>
+                {accountants.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                <option value="all">Todos os contadores</option>
+              </Select>
+            )}
+            <Button variant="secondary" loading={sending} disabled={needRecipient && !recipient} icon={<Send className="size-4" />} onClick={sendAccountant}>Enviar {plural(toSend.length, 'assinado', 'assinados')} ao contador</Button>
+          </div>
+        )}
         <Button variant="ghost" onClick={onClose}>Fechar</Button>
       </>}>
       <div className="flex flex-col gap-4">

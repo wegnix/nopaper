@@ -4,7 +4,8 @@ import {
   addMonthsRef, cycleForPurchase, cycleForRef, splitInstallments, fromCents, toCents, MONTHS_PT_SHORT, todayISO,
 } from '@nopaper/shared';
 import { db, schema, type DBOrTx } from '../db/client.js';
-import { notFound } from '../lib/errors.js';
+import { HttpError, notFound } from '../lib/errors.js';
+import { deleteBillsWithFiles } from './bills.js';
 
 export type CardRow = typeof schema.cards.$inferSelect;
 export type StatementRow = typeof schema.cardStatements.$inferSelect;
@@ -35,7 +36,7 @@ const refLabel = (ref: string) => `${MONTHS_PT_SHORT[Number(ref.slice(5, 7)) - 1
  * Recalcula o total da fatura e sincroniza a conta a pagar vinculada:
  * cria quando total > 0, atualiza valor/vencimento, remove quando zera (se ainda não paga).
  */
-export async function syncStatementBill(tx: DBOrTx, statementId: string, userId: string | null) {
+export async function syncStatementBill(tx: DBOrTx, statementId: string, userId: string | null, opts: { lockPaid?: boolean } = {}) {
   const [st] = await tx.select().from(schema.cardStatements).where(eq(schema.cardStatements.id, statementId));
   if (!st) return;
   const [card] = await tx.select().from(schema.cards).where(eq(schema.cards.id, st.cardId));
@@ -44,12 +45,18 @@ export async function syncStatementBill(tx: DBOrTx, statementId: string, userId:
   const amount = fromCents(toCents(total));
   const description = `Fatura ${card.name} ${refLabel(st.ref)}`;
   const bill = st.billId ? (await tx.select().from(schema.bills).where(eq(schema.bills.id, st.billId)))[0] : undefined;
+  // fatura já paga é histórico: nada aqui muda o valor (nem a categoria) de uma conta paga. Quem
+  // precisa corrigir um lançamento reverte o pagamento em Contas a pagar — o que exige essa permissão.
+  if (bill?.status === 'paid') {
+    // `lockPaid`: quem chama está mudando lançamentos (criar, editar, apagar, mover) — recusa.
+    // Sem ele (ressincronizar ao editar o cartão) só não mexe, mesmo que o histórico não feche.
+    if (opts.lockPaid && toCents(amount) !== toCents(bill.amount)) throw new HttpError(409, `A fatura ${refLabel(st.ref)} do ${card.name} já está paga. Para mudar os lançamentos dela, reverta o pagamento em Contas a pagar.`, 'statement_paid');
+    return;
+  }
   if (toCents(amount) <= 0) {
-    if (bill && bill.status === 'pending') {
-      await tx.delete(schema.bills).where(eq(schema.bills.id, bill.id));
+    if (bill) {
       await tx.update(schema.cardStatements).set({ billId: null }).where(eq(schema.cardStatements.id, st.id));
-    } else if (bill) {
-      await tx.update(schema.bills).set({ amount: '0.00' }).where(eq(schema.bills.id, bill.id));
+      await deleteBillsWithFiles(tx, [bill.id]); // leva os anexos junto (antes ficavam órfãos no disco)
     }
     return;
   }
@@ -91,14 +98,14 @@ export async function createPurchase(tx: DBOrTx, card: CardRow, userId: string |
     });
   }
   await tx.insert(schema.cardTransactions).values(rows);
-  for (const id of touched) await syncStatementBill(tx, id, userId);
+  for (const id of touched) await syncStatementBill(tx, id, userId, { lockPaid: true });
   return { groupId, statements: [...touched] };
 }
 
 export async function deleteTransactions(tx: DBOrTx, ids: string[], userId: string | null) {
   if (!ids.length) return 0;
   const rows = await tx.delete(schema.cardTransactions).where(inArray(schema.cardTransactions.id, ids)).returning({ statementId: schema.cardTransactions.statementId });
-  for (const s of new Set(rows.map((r) => r.statementId))) await syncStatementBill(tx, s, userId);
+  for (const s of new Set(rows.map((r) => r.statementId))) await syncStatementBill(tx, s, userId, { lockPaid: true });
   return rows.length;
 }
 

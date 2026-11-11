@@ -8,6 +8,47 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.13.1] - 2026-11-11
+
+### Segurança
+Revisão completa de segurança do sistema. Não havia acesso a dados de outro espaço; as correções fecham
+vazamentos dentro do próprio espaço e pontos fracos contra ataques.
+- **Alertas**: só quem pode ver as contas que entram no resumo (e as categorias restritas, se incluídas)
+  escolhe quem recebe os alertas. Antes, a permissão de configurar alertas bastava para receber tudo.
+- **Auditoria**: cada pessoa vê só os registros das áreas a que tem acesso (contas a pagar, a receber,
+  cartões, bancos, folha, contador, membros…); o administrador do espaço continua vendo tudo. Registros
+  que envolvem contas de categoria restrita ficam ocultos para quem não vê restritas também em bancos e
+  importações.
+- **Salários**: a categoria das contas de salário da folha passa a ser **restrita** — só aparece em Contas a
+  pagar para quem tem "Ver categorias restritas" (dê essa permissão a quem paga os salários). As
+  observações dessas contas não trazem mais a divisão do valor.
+- **Séries de contas**: quem não vê categorias restritas não lê nem altera, pela série, as parcelas que
+  estão em categoria restrita.
+- **Importação de planilhas**: a conferência, a lista e o desfazer respeitam as categorias restritas;
+  importar contas já pagas exige a permissão de dar baixa.
+- **Cartões**: lançamentos de uma fatura já paga não podem mais ser criados, apagados, movidos ou ter o
+  valor alterado (reverta o pagamento em Contas a pagar antes); a conta da fatura só aparece na tela do
+  cartão para quem pode vê-la em Contas a pagar.
+- **Grupos e membros**: quem não é administrador não altera grupos nem membros que têm permissões que ele
+  próprio não tem, e só associa contas já existentes de pessoas com quem divide algum espaço.
+- **Login**: a resposta não revela mais se um usuário existe; o bloqueio por senhas erradas passou a valer
+  por conta e endereço (5 erros), com limites gerais por endereço e por conta — alguém de fora não consegue
+  mais travar o login de outra pessoa com poucas tentativas. A confirmação da senha atual (trocar e-mail ou
+  senha) entra na mesma contagem.
+- **Sessão**: um token de sessão copiado do navegador é detectado quando o dono volta a usar o sistema, e a
+  sessão é encerrada.
+- **Assinatura de holerites**: tentativas de CPF feitas ao mesmo tempo contam uma a uma; a imagem da
+  assinatura tem limite de tamanho.
+- **Arquivos**: um extrato ou fatura OFX montado de propósito não consegue mais travar o sistema; planilhas
+  CSV exportadas não executam fórmulas escondidas em descrições; fuso horário do espaço é validado (um valor
+  inválido interrompia os alertas de todos os espaços).
+- **Mais de um contador no mesmo espaço**: ao enviar arquivos (ou holerites assinados) ao contador, escolha
+  para qual deles vai ou "Todos os contadores". Cada contador só vê e baixa o que foi enviado a ele ou a
+  todos. Envios antigos continuam visíveis a todos os contadores do espaço.
+- Outros: o andamento da restauração não mostra mais mensagens internas de erro a quem não é administrador
+  da plataforma; a análise automática de documentos exige permissão de contas; conciliações simultâneas do
+  mesmo lançamento são bloqueadas.
+
 ## [1.13.0] - 2026-11-11
 
 ### Novo

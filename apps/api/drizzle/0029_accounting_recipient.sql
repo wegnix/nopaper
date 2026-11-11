@@ -1,0 +1,1 @@
+ALTER TABLE "accounting_documents" ADD COLUMN "recipient_id" uuid;

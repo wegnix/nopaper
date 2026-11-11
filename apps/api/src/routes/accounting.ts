@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import {
   ACCOUNTING_KIND_LABEL, accountingHandleSchema, accountingSendSchema, accountingUploadSchema, formatBRL, formatDateBR, parseBoleto, parsePayslips, refLabelPT,
   type AccountingDetected, type AccountingKind,
@@ -14,6 +14,8 @@ import { ALLOWED_UPLOADS, ARCHIVE_UPLOADS, deleteFile, readStoredFile, saveFile,
 import { classifyDocument } from '../services/classifier.js';
 import { pdfToCells } from '../services/pdf.js';
 import { loadAlertConfig } from '../services/alerts.js';
+import { loadBill, restrictedCategoryIds } from '../services/bills.js';
+import { accountantsOf, resolveRecipient } from '../services/accounting.js';
 import { escapeHtml, sendEmail, telegramSend, telegramToken } from '../services/notify.js';
 
 type Doc = typeof schema.accountingDocuments.$inferSelect;
@@ -31,7 +33,8 @@ const any = { preHandler: requirePerm('accounting.upload', 'accounting.review', 
 type Side = 'sender' | 'recipient';
 function sideOf(req: FastifyRequest, d: Doc): Side | null {
   const can = req.org!.can;
-  if (d.direction === 'to_accountant') return can('accounting.send') ? 'sender' : can('accounting.upload') ? 'recipient' : null;
+  // com mais de um contador no espaço, cada um só recebe o que foi enviado a ele (ou a todos)
+  if (d.direction === 'to_accountant') return can('accounting.send') ? 'sender' : can('accounting.upload') && (!d.recipientId || d.recipientId === req.user!.id) ? 'recipient' : null;
   return can('accounting.review') ? 'recipient' : d.uploadedBy === req.user!.id ? 'sender' : null;
 }
 /** Cada lado só enxerga o que ainda está na lista dele. */
@@ -124,11 +127,15 @@ async function notifyUpload(orgId: string, uploader: string, docs: Doc[]) {
 }
 
 export default async function accountingRoutes(app: FastifyInstance) {
+  /** Contadores do espaço, para quem envia escolher o destinatário quando há mais de um. */
+  app.get('/api/accounting/accountants', { preHandler: requirePerm('accounting.send') }, async (req) => ({ items: await accountantsOf(req.org!.id) }));
+
   /** Selos do menu: documentos do contador esperando conferência; e, para o contador, o que o espaço mandou e ele ainda não viu. */
   app.get('/api/accounting/summary', any, async (req) => {
     const t = schema.accountingDocuments;
     const count = async (direction: string) => (await db.select({ n: sql<number>`count(*)::int` }).from(t)
-      .where(and(eq(t.orgId, req.org!.id), eq(t.direction, direction), eq(t.status, 'new'), isNull(t.hiddenAt))))[0]!.n;
+      .where(and(eq(t.orgId, req.org!.id), eq(t.direction, direction), eq(t.status, 'new'), isNull(t.hiddenAt),
+        direction === 'to_accountant' ? or(isNull(t.recipientId), eq(t.recipientId, req.user!.id)) : undefined)))[0]!.n;
     const can = req.org!.can;
     return {
       pending: can('accounting.review') ? await count('to_client') : 0,
@@ -150,19 +157,24 @@ export default async function accountingRoutes(app: FastifyInstance) {
         // quem enviou vê o registro fiel do que mandou (mesmo o que o outro lado tirou da lista dele)
         side === 'sender' ? isNull(t.uploaderRemovedAt) : isNull(t.hiddenAt),
         side === 'sender' && !outbound ? eq(t.uploadedBy, req.user!.id) : undefined,
+        side === 'recipient' && outbound ? or(isNull(t.recipientId), eq(t.recipientId, req.user!.id)) : undefined,
       )).orderBy(desc(t.createdAt)).limit(3000);
-    const userIds = [...new Set(rows.flatMap((r) => [r.uploadedBy, r.handledBy]).filter((x): x is string => !!x))];
+    const userIds = [...new Set(rows.flatMap((r) => [r.uploadedBy, r.handledBy, r.recipientId]).filter((x): x is string => !!x))];
     const users = userIds.length ? await db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users).where(inArray(schema.users.id, userIds)) : [];
     const uname = new Map(users.map((u) => [u.id, u.name]));
     // a conta ligada só aparece para quem confere (o contador não vê as contas do espaço)
+    const hiddenCats = req.org!.can('bills.view_restricted') ? [] : await restrictedCategoryIds(req.org!.id);
     const billIds = !outbound && side === 'recipient' ? rows.map((r) => r.billId).filter((x): x is string => !!x) : [];
     const bills = billIds.length ? await db.select({ id: schema.bills.id, description: schema.bills.description, status: schema.bills.status, dueDate: schema.bills.dueDate, amount: schema.bills.amount })
-      .from(schema.bills).where(inArray(schema.bills.id, billIds)) : [];
+      .from(schema.bills).where(and(eq(schema.bills.orgId, req.org!.id), inArray(schema.bills.id, billIds),
+        hiddenCats.length ? notInArray(schema.bills.categoryId, hiddenCats) : undefined,
+        inArray(schema.bills.type, (['payable', 'receivable'] as const).filter((t) => req.org!.can(`${t}.view`))))) : [];
     const bmap = new Map(bills.map((b) => [b.id, b]));
     return {
       items: rows.map(({ storageKey: _k, sha256: _s, hiddenBy, ...r }) => ({
         hiddenByMe: !!r.hiddenAt && hiddenBy === req.user!.id,
         ...r, uploadedByName: r.uploadedBy ? uname.get(r.uploadedBy) ?? null : null, handledByName: r.handledBy ? uname.get(r.handledBy) ?? null : null,
+        recipientName: r.recipientId ? uname.get(r.recipientId) ?? null : null,
         bill: r.billId ? bmap.get(r.billId) ?? null : null, mine: r.uploadedBy === req.user!.id,
       })),
     };
@@ -224,8 +236,9 @@ export default async function accountingRoutes(app: FastifyInstance) {
       }
       if (!saved.length) throw badRequest('Escolha ao menos um arquivo');
       const body = parse(accountingSendSchema, fields);
+      const recipientId = await resolveRecipient(req.org!.id, body.recipientId);
       docs = await db.insert(schema.accountingDocuments).values(saved.map((f) => ({
-        orgId: req.org!.id, direction: 'to_accountant', kind: body.kind, competence: body.competence ?? null, note: body.note,
+        orgId: req.org!.id, direction: 'to_accountant', recipientId, kind: body.kind, competence: body.competence ?? null, note: body.note,
         originalName: f.filename, mime: f.mime, size: f.size, storageKey: f.key, sha256: f.sha256, detected: null, uploadedBy: req.user!.id,
       }))).returning();
     } catch (e) {
@@ -251,8 +264,8 @@ export default async function accountingRoutes(app: FastifyInstance) {
     const outbound = d.direction === 'to_accountant';
     if (outbound && (body.status === 'dismissed' || body.billId)) throw badRequest('Situação inválida para este documento');
     if (body.billId) {
-      const [b] = await db.select({ id: schema.bills.id }).from(schema.bills).where(and(eq(schema.bills.id, body.billId), eq(schema.bills.orgId, req.org!.id)));
-      if (!b) throw badRequest('Conta inválida');
+      // a conta ligada aparece na lista (descrição, valor): só liga quem pode vê-la em Contas
+      await loadBill(req, body.billId, 'view');
     }
     const handled = body.status !== 'new';
     if (d.status === body.status && !body.billId) return { ok: true };

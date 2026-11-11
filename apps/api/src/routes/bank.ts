@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, asc, between, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import {
   BANK_ACCOUNT_KIND_LABEL, MATCH_WINDOW, accountKey, bankAccountSchema, bankImportSchema, bankName, billPerm, decodeOfx, formatBRL, formatDateBR, normBank,
-  parseOfx, reconcileSchema, type BillType,
+  OFX_MAX_TRANSACTIONS, parseOfx, reconcileSchema, type BillType,
 } from '@nopaper/shared';
 import { db, schema, type DBOrTx } from '../db/client.js';
 import { env } from '../env.js';
@@ -94,6 +94,7 @@ export default async function bankRoutes(app: FastifyInstance) {
     const buf = await file.toBuffer();
     if (file.file.truncated) throw badRequest(`Arquivo maior que ${env.MAX_UPLOAD_MB} MB`);
     const ofx = parseOfx(decodeOfx(new Uint8Array(buf)));
+    if (ofx.statements.reduce((n, st) => n + st.transactions.length, 0) > OFX_MAX_TRANSACTIONS) throw badRequest(`Este arquivo tem mais de ${OFX_MAX_TRANSACTIONS} lançamentos. Exporte um período menor.`);
     if (!ofx.statements.length) throw badRequest(`Não consegui ler este arquivo como extrato OFX. ${ofx.warnings.join(' ')} No banco, exporte o extrato no formato OFX.`, 'ofx_invalid');
     const accounts = await db.select().from(schema.bankAccounts).where(eq(schema.bankAccounts.orgId, req.org!.id));
     const statements = [];
@@ -231,10 +232,13 @@ export default async function bankRoutes(app: FastifyInstance) {
     const orgId = req.org!.id;
     const done = { linked: 0, paid: 0, created: 0, ignored: 0 };
     const log: string[] = [];
+    /** Categorias das contas tocadas: se alguma é restrita, o registro da auditoria também é. */
+    const touched = new Set<string>();
     await db.transaction(async (tx) => {
       const txIds = body.actions.map((x) => x.txId);
       if (new Set(txIds).size !== txIds.length) throw badRequest('Lançamento repetido na conciliação');
-      const rows = await tx.select().from(schema.bankTransactions).where(and(eq(schema.bankTransactions.accountId, a.id), inArray(schema.bankTransactions.id, txIds)));
+      // trava os lançamentos até o fim: duas conciliações ao mesmo tempo não usam o mesmo lançamento
+      const rows = await tx.select().from(schema.bankTransactions).where(and(eq(schema.bankTransactions.accountId, a.id), inArray(schema.bankTransactions.id, txIds))).for('update');
       const byId = new Map(rows.map((r) => [r.id, r]));
       const billIds = body.actions.flatMap((x) => (x.kind === 'link' ? [x.billId] : []));
       if (new Set(billIds).size !== billIds.length) throw badRequest('A mesma conta foi escolhida para dois lançamentos');
@@ -249,6 +253,7 @@ export default async function bankRoutes(app: FastifyInstance) {
         if (act.kind === 'ignore') { await mark({ status: 'ignored' }); done.ignored++; continue; }
         if (act.kind === 'link') {
           const b = await loadBill(req, act.billId, 'view', tx);
+          touched.add(b.categoryId);
           if (b.type !== type) throw badRequest(`"${b.description}" é ${b.type === 'payable' ? 'a pagar' : 'a receber'}, mas o lançamento de ${label} é ${type === 'payable' ? 'uma saída' : 'uma entrada'}.`);
           const [other] = await tx.select({ id: schema.bankTransactions.id }).from(schema.bankTransactions)
             .where(and(eq(schema.bankTransactions.billId, b.id), eq(schema.bankTransactions.status, 'linked'), ne(schema.bankTransactions.id, t.id)));
@@ -271,6 +276,7 @@ export default async function bankRoutes(app: FastifyInstance) {
           throw forbidden(`Criar ${type === 'payable' ? 'contas a pagar' : 'contas a receber'} pelo extrato exige poder cadastrar e dar baixa nelas.`);
         }
         await assertCategoryUsable(req, act.categoryId, type, tx);
+        touched.add(act.categoryId);
         await assertFolder(req, act.folderId, tx);
         const [created] = await createBills(tx, orgId, req.user!.id, {
           type, description: act.description, categoryId: act.categoryId, folderId: act.folderId, recurrenceType: 'once', isIndefinite: false, dueDate: t.postedAt, amount: abs(t.amount),
@@ -285,7 +291,7 @@ export default async function bankRoutes(app: FastifyInstance) {
     await audit(req, {
       action: 'bank.reconcile', entityType: 'bank_account', entityId: a.id,
       description: `Conciliou o extrato de ${a.name}: ${done.paid} baixa(s), ${done.linked} ligação(ões) com contas já pagas, ${done.created} conta(s) criada(s), ${done.ignored} ignorado(s)`,
-      details: { ...done, actions: log.slice(0, 300) },
+      details: { ...done, actions: log.slice(0, 300), restricted: (await restrictedCategoryIds(orgId)).some((c) => touched.has(c)) },
     });
     return done;
   });
@@ -297,9 +303,11 @@ export default async function bankRoutes(app: FastifyInstance) {
     if (t.status === 'pending') return { ok: true };
     const type = typeOf(t.amount);
     let what = 'Voltou a pendente o lançamento ignorado';
+    let restricted = false;
     await db.transaction(async (tx) => {
       if (t.status === 'linked' && t.billId) {
         const b = await loadBill(req, t.billId, 'view', tx);
+        restricted = (await restrictedCategoryIds(req.org!.id)).includes(b.categoryId);
         if (t.action === 'created') {
           if (!req.org!.can(billPerm(type, 'delete'))) throw forbidden(`Esta conta foi criada pelo extrato: desfazer apaga a conta, e você não pode apagar ${type === 'payable' ? 'contas a pagar' : 'contas a receber'}.`);
           if (b.statementId || b.payrollEntryId) throw conflict('Esta conta não pode ser apagada por aqui.');
@@ -314,7 +322,7 @@ export default async function bankRoutes(app: FastifyInstance) {
       } else if (t.status === 'linked') what = 'Desligou o lançamento do extrato (a conta já tinha sido apagada)';
       await tx.update(schema.bankTransactions).set({ status: 'pending', action: null, billId: null, reconciledBy: null, reconciledAt: null }).where(eq(schema.bankTransactions.id, t.id));
     });
-    await audit(req, { action: 'bank.reconcile_undo', entityType: 'bank_transaction', entityId: t.id, description: `${what} (${formatDateBR(t.postedAt)} ${formatBRL(t.amount)})` });
+    await audit(req, { action: 'bank.reconcile_undo', entityType: 'bank_transaction', entityId: t.id, description: `${what} (${formatDateBR(t.postedAt)} ${formatBRL(t.amount)})`, details: { restricted } });
     return { ok: true };
   });
 }

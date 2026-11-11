@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createHash, randomBytes } from 'node:crypto';
-import { and, asc, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   ESIGN_LOCK_MINUTES, ESIGN_MAX_ATTEMPTS, ESIGN_TERM_COMPETENCE, ESIGN_TERM_VERSION, esignOpenSchema, esignSendAccountantSchema, esignSubmitSchema, esignTermText,
   formatDocument, isValidCPF, refLabelPT, type EsignKind, type EsignOpened, type EsignPublicInfo, type EsignTermParties, type Payslip, type PayslipSignatureRow,
@@ -15,6 +15,7 @@ import { decryptSecret, encryptSecret } from '../lib/secrets.js';
 import { deleteFile, readStoredFile, saveFile, signFileToken, verifyFileToken } from '../lib/storage.js';
 import { assertCompany, loadPeriod } from '../services/payroll.js';
 import { buildSignedPdf, buildTermPdf, splitPayslips } from '../services/esign.js';
+import { resolveRecipient } from '../services/accounting.js';
 
 type Row = typeof schema.payslipSignatures.$inferSelect;
 const digits = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '');
@@ -149,7 +150,8 @@ export default async function esignRoutes(app: FastifyInstance) {
       let cpf = digits(emp.document);
       if (!(cpf.length === 11 && isValidCPF(cpf))) {
         const fromSlip = digits(slip.document);
-        if (fromSlip.length === 11 && isValidCPF(fromSlip)) {
+        // o CPF é o que abre o link: gravar no cadastro o que veio do PDF é coisa de quem gerencia a folha
+        if (fromSlip.length === 11 && isValidCPF(fromSlip) && req.org!.can('payroll.manage')) {
           cpf = fromSlip;
           emp.document = formatDocument(fromSlip);
           await db.update(schema.employees).set({ document: emp.document }).where(eq(schema.employees.id, emp.id));
@@ -210,7 +212,8 @@ export default async function esignRoutes(app: FastifyInstance) {
 
   /** Manda os holerites assinados para o contador (caixa "Recebidos" dele), um arquivo por funcionário. */
   app.post('/api/payroll/signatures/send-accountant', { preHandler: [...view.preHandler, requirePerm('accounting.send')] }, async (req) => {
-    const { ids } = parse(esignSendAccountantSchema, req.body);
+    const { ids, recipientId: rawRecipient } = parse(esignSendAccountantSchema, req.body);
+    const recipientId = await resolveRecipient(req.org!.id, rawRecipient);
     const rows = await db.select().from(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.orgId, req.org!.id), inArray(schema.payslipSignatures.id, ids)));
     const ready = rows.filter((r) => r.status === 'signed' && r.signedKey && !r.sentToAccountantAt);
     if (!ready.length) throw badRequest('Nenhum documento assinado para enviar (ou já foram enviados).');
@@ -218,7 +221,7 @@ export default async function esignRoutes(app: FastifyInstance) {
       const buf = await readStoredFile(r.signedKey!);
       const saved = await saveFile(req.org!.id, buf, 'pdf');
       const [doc] = await db.insert(schema.accountingDocuments).values({
-        orgId: req.org!.id, direction: 'to_accountant', kind: r.kind === 'term' ? 'other' : 'payslip', competence: r.kind === 'term' ? null : r.competence,
+        orgId: req.org!.id, direction: 'to_accountant', recipientId, kind: r.kind === 'term' ? 'other' : 'payslip', competence: r.kind === 'term' ? null : r.competence,
         note: `${r.kind === 'term' ? 'Termo de aceite de assinatura eletrônica assinado' : 'Holerite assinado eletronicamente'} por ${r.employeeName}`.slice(0, 500),
         originalName: fileName(r, true), mime: 'application/pdf', size: buf.length, storageKey: saved.key, sha256: saved.sha256, detected: null, uploadedBy: req.user!.id,
       }).returning({ id: schema.accountingDocuments.id });
@@ -259,11 +262,15 @@ export default async function esignRoutes(app: FastifyInstance) {
     const { r, org } = await byToken(req.params.token);
     if (r.lockedUntil && r.lockedUntil > new Date()) throw new HttpError(429, `Muitas tentativas. Tente de novo em ${Math.max(1, Math.ceil((r.lockedUntil.getTime() - Date.now()) / 60000))} min.`, 'esign_locked');
     if (digits(cpf) !== digits(r.employeeDocument)) {
-      const n = r.failedAttempts + 1, lock = n >= ESIGN_MAX_ATTEMPTS;
-      await db.update(schema.payslipSignatures).set({ failedAttempts: lock ? 0 : n, lockedUntil: lock ? new Date(Date.now() + ESIGN_LOCK_MINUTES * 60000) : null }).where(eq(schema.payslipSignatures.id, r.id));
+      // conta no banco, numa instrução só: palpites disparados ao mesmo tempo contam um por um
+      const [u] = await db.update(schema.payslipSignatures).set({
+        failedAttempts: sql`case when ${schema.payslipSignatures.failedAttempts} + 1 >= ${ESIGN_MAX_ATTEMPTS} then 0 else ${schema.payslipSignatures.failedAttempts} + 1 end`,
+        lockedUntil: sql`case when ${schema.payslipSignatures.failedAttempts} + 1 >= ${ESIGN_MAX_ATTEMPTS} then now() + make_interval(mins => ${ESIGN_LOCK_MINUTES}) else ${schema.payslipSignatures.lockedUntil} end`,
+      }).where(eq(schema.payslipSignatures.id, r.id)).returning({ lockedUntil: schema.payslipSignatures.lockedUntil });
+      const lock = !!u?.lockedUntil && u.lockedUntil > new Date();
       throw badRequest(lock ? `CPF não confere. O link ficou bloqueado por ${ESIGN_LOCK_MINUTES} minutos.` : 'CPF não confere com o do cadastro. Confira e tente de novo.', 'esign_cpf');
     }
-    await db.update(schema.payslipSignatures).set({ failedAttempts: 0, lockedUntil: null, viewedAt: r.viewedAt ?? new Date() }).where(eq(schema.payslipSignatures.id, r.id));
+    await db.update(schema.payslipSignatures).set({ failedAttempts: 0, viewedAt: r.viewedAt ?? new Date() }).where(eq(schema.payslipSignatures.id, r.id));
     const [emp] = r.employeeId ? await db.select().from(schema.employees).where(eq(schema.employees.id, r.employeeId)) : [];
     const base = { key: signFileToken(`esign:${r.id}`, 30 * 60), kind: r.kind as EsignKind, company: legalName(org), employeeName: r.employeeName, competence: r.competence, status: r.status as EsignOpened['status'], signedAt: r.signedAt?.toISOString() ?? null };
     if (r.kind === 'term') {
@@ -306,6 +313,9 @@ export default async function esignRoutes(app: FastifyInstance) {
     if (!term && !termAccepted(emp)) throw badRequest('Antes de assinar o holerite, assine o termo de aceite de assinatura eletrônica.', 'esign_term');
     const png = Buffer.from(body.signature.slice('data:image/png;base64,'.length), 'base64');
     if (png.length < 200 || png.subarray(0, 8).toString('latin1') !== '\x89PNG\r\n\x1a\n') throw badRequest('Desenhe a sua assinatura no quadro.');
+    // largura × altura declaradas no cabeçalho (IHDR): uma imagem pequena em bytes pode abrir em gigabytes
+    const pw = png.readUInt32BE(16), ph = png.readUInt32BE(20);
+    if (png.subarray(12, 16).toString('latin1') !== 'IHDR' || pw < 8 || ph < 8 || pw > 4000 || ph > 2500) throw badRequest('Assinatura fora do tamanho aceito. Limpe o quadro e desenhe de novo.');
     const now = new Date();
     const ip = req.ip ?? null, ua = req.headers['user-agent']?.slice(0, 400) ?? null;
     let pdf: Buffer;

@@ -172,9 +172,12 @@ export default async function systemRoutes(app: FastifyInstance) {
 
   // ---------------------------------------------------------------- restauração
   /** Público e sem banco: a tela acompanha por aqui durante a manutenção (ninguém está logado). */
-  app.get('/api/system/restore/status', async (_req, reply) => {
+  app.get('/api/system/restore/status', async (req, reply) => {
     reply.header('cache-control', 'no-store');
-    return restoreStatus();
+    const s = restoreStatus();
+    // o texto cru do erro (saída do pg_restore/rclone) só para o administrador da plataforma
+    if ('error' in s && s.error && !req.user?.isSuperadmin) return { ...s, error: 'A restauração falhou e o sistema voltou ao estado anterior. O administrador da plataforma vê os detalhes.' };
+    return s;
   });
 
   app.post<{ Body: { source?: string; name?: string } }>('/api/system/restore', guard, async (req, reply) => {

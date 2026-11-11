@@ -13,7 +13,7 @@ import { api, get, put, errMsg, uploadFormWithProgress } from '@/lib/api';
 import { useOrg } from '@/lib/session';
 import { cn, isTouch, plural } from '@/lib/utils';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
-import { useAccountantOnly, useAccountingDocs, type AccountingDoc } from './data';
+import { useAccountantOnly, useAccountants, useAccountingDocs, type AccountingDoc } from './data';
 import { KIND_ICON, acceptFiles, canPreview, docTitle, fileAccept, norm, sentMonth, sizeText, when } from './common';
 
 /**
@@ -86,7 +86,7 @@ function DocList({ docs, loading, side, emptyTitle, emptyText, onView, actions }
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className={cn('font-medium', fresh && 'text-ink')}>{docTitle(d)}</span>{chip(d)}</span>
                       <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted"><Paperclip className="size-3 shrink-0 text-faint" /><span className="truncate">{d.originalName}</span><span className="shrink-0 text-faint">· {sizeText(d.size)}</span></span>
-                      <span className="mt-0.5 block text-xs text-faint">{d.uploadedByName ? `${d.uploadedByName} · ` : ''}enviado em {when(d.createdAt)}</span>
+                      <span className="mt-0.5 block text-xs text-faint">{d.uploadedByName ? `${d.uploadedByName} · ` : ''}enviado em {when(d.createdAt)}{side === 'sender' && d.recipientName ? ` · para ${d.recipientName}` : ''}</span>
                       {d.note && <span className="mt-1.5 block rounded-lg bg-surface-2/60 px-2.5 py-1.5 text-xs text-muted">“{d.note}”</span>}
                       {side === 'sender' && d.status === 'done' && d.handledAt && <span className="mt-1.5 block text-xs text-faint">Recebido{d.handledByName ? ` por ${d.handledByName}` : ''} em {when(d.handledAt)}.</span>}
                       {side === 'sender' && d.hiddenAt && d.status === 'done' && <span className="mt-0.5 block text-xs text-faint">O contador já tirou da lista dele; o registro do envio continua aqui.</span>}
@@ -136,6 +136,10 @@ export function ClientOutbox() {
   const [files, setFiles] = useState<File[]>([]);
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
+  // mais de um contador no espaço: quem envia escolhe para qual (cada um só vê o que é dele)
+  const accountants = useAccountants(true).data ?? [];
+  const [recipient, setRecipient] = useState('');
+  const needRecipient = accountants.length > 1;
   /** Progresso do envio (0–100). */
   const [pct, setPct] = useState(0);
   const [sent, setSent] = useState<string | null>(null);
@@ -153,7 +157,7 @@ export function ClientOutbox() {
     setBusy(true); setPct(0);
     try {
       // os campos vão antes dos arquivos (o servidor grava cada arquivo conforme chega)
-      const build = () => { const fd = new FormData(); fd.append('kind', kind); fd.append('competence', competence); fd.append('note', note); for (const f of files) fd.append('file', f); return fd; };
+      const build = () => { const fd = new FormData(); fd.append('kind', kind); fd.append('competence', competence); fd.append('note', note); if (needRecipient) fd.append('recipientId', recipient); for (const f of files) fd.append('file', f); return fd; };
       const r = await uploadFormWithProgress<{ created: number }>('/api/accounting/outbox', build, setPct);
       setSent(`${plural(r.created, 'arquivo enviado', 'arquivos enviados')} ao contador às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}. Ele vê em “Recebidos”.`);
       setFiles([]); setNote('');
@@ -201,6 +205,16 @@ export function ClientOutbox() {
               </Select>
               <Input aria-label="Observação" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Observação para o contador (opcional)" />
             </div>
+            {needRecipient && (
+              <label className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted">Para qual contador?</span>
+                <Select aria-label="Contador" className="w-auto min-w-52" value={recipient} onChange={(e) => setRecipient(e.target.value)}>
+                  <option value="">Escolha…</option>
+                  {accountants.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  <option value="all">Todos os contadores</option>
+                </Select>
+              </label>
+            )}
             {busy && (
               <div className="flex items-center gap-3">
                 <LogoLoader size={72} progress={pct / 100} label="Progresso do envio" />
@@ -208,7 +222,7 @@ export function ClientOutbox() {
                 <span className="w-24 shrink-0 text-right text-xs text-muted tnum">{pct < 100 ? `enviando ${pct}%` : 'finalizando…'}</span>
               </div>
             )}
-            <div className="flex justify-end"><Button variant="primary" className="max-sm:w-full" loading={busy} icon={<FileUp className="size-4" />} onClick={send}>Enviar {files.length > 1 ? `${files.length} arquivos` : 'arquivo'} ao contador</Button></div>
+            <div className="flex justify-end"><Button variant="primary" className="max-sm:w-full" loading={busy} disabled={needRecipient && !recipient} icon={<FileUp className="size-4" />} onClick={send}>Enviar {files.length > 1 ? `${files.length} arquivos` : 'arquivo'} ao contador</Button></div>
           </div>
         )}
       </Card>

@@ -42,6 +42,9 @@ export const sessions = pgTable('sessions', {
   prevRefreshHash: varchar('prev_refresh_hash', { length: 128 }),
   prev2RefreshHash: varchar('prev2_refresh_hash', { length: 128 }),
   rotatedAt: timestamp('rotated_at', { withTimezone: true }),
+  /** Nº da rotação atual do refresh token (vai no token de acesso) e se ele já foi usado por quem renovou. */
+  rotation: integer('rotation').notNull().default(0),
+  rotationAcked: boolean('rotation_acked').notNull().default(false),
   /** Última interação real da pessoa (heartbeat do front); base do logoff por inatividade. */
   lastActivityAt: timestamp('last_activity_at', { withTimezone: true }).notNull().defaultNow(),
   userAgent: varchar('user_agent', { length: 255 }),
@@ -535,6 +538,8 @@ export const accountingDocuments = pgTable('accounting_documents', {
   handledAt: timestamp('handled_at', { withTimezone: true }),
   handleNote: varchar('handle_note', { length: 500 }),
   uploadedBy: uuid('uploaded_by'),
+  /** Espaço → contador: o contador a quem o envio se destina (null = todos os contadores do espaço). */
+  recipientId: uuid('recipient_id'),
   /**
    * Tirado da lista de quem confere (por quem confere, ou cancelado por quem enviou). Nada é apagado:
    * quem enviou continua vendo o registro e o arquivo no histórico dele.

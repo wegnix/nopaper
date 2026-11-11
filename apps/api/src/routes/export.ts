@@ -97,7 +97,9 @@ export default async function exportRoutes(app: FastifyInstance) {
     const bills = await listBills(req, q);
     const today = orgToday(req);
     const [cats, folders] = await Promise.all([
-      db.select({ id: schema.categories.id, label: schema.categories.label }).from(schema.categories).where(eq(schema.categories.orgId, req.org!.id)),
+      // sem as restritas para quem não as vê: nem o nome delas sai no subtítulo/registro
+      db.select({ id: schema.categories.id, label: schema.categories.label }).from(schema.categories)
+        .where(and(eq(schema.categories.orgId, req.org!.id), req.org!.can('bills.view_restricted') ? undefined : eq(schema.categories.isRestricted, false))),
       db.select({ id: schema.folders.id, label: schema.folders.name }).from(schema.folders).where(eq(schema.folders.orgId, req.org!.id)),
     ]);
     const cat = new Map(cats.map((c) => [c.id, c.label])), fol = new Map(folders.map((f) => [f.id, f.label]));

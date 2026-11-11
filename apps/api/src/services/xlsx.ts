@@ -114,7 +114,9 @@ const parseDate = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`);
 export function billsCsv(rows: SheetBillRow[], type: 'payable' | 'receivable') {
   const paidWord = type === 'payable' ? 'Pago' : 'Recebido';
   const esc = (v: unknown) => {
-    const s = String(v ?? '');
+    let s = String(v ?? '');
+    // texto que começa como fórmula (=, +, -, @) seria executado pelo Excel ao abrir o arquivo
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const money = (v: string | null) => (v ? v.replace('.', ',') : '');
