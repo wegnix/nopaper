@@ -141,6 +141,23 @@ export const bankName = (code: string | null | undefined) => (code ? BANK_NAMES[
 export function accountLabel(a: { bankCode?: string | null; branch?: string | null; accountNumber?: string | null }) {
   return [bankName(a.bankCode), a.branch && `ag. ${a.branch}`, a.accountNumber && `cc ${a.accountNumber}`].filter(Boolean).join(' · ');
 }
+/**
+ * Lê o que der de um texto livre de banco ("Bradesco Poupança: AG: 123 - C/P: 45678-9"): usado para
+ * passar a anotação antiga do funcionário para os campos separados. Só sugere — a pessoa confere.
+ */
+export function parseBankText(text: string): { bankCode: string | null; branch: string | null; account: string | null; kind: 'checking' | 'savings' | null } {
+  const plain = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const byName = Object.entries(BANK_NAMES)
+    .map(([code, name]) => [code, name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()] as const)
+    .sort((a, b) => b[1].length - a[1].length)
+    .find(([, name]) => new RegExp(`(^|[^a-z])${name}([^a-z]|$)`).test(plain));
+  const byCode = /\((\d{3})\)/.exec(plain) ?? /\bbanco\s*:?\s*(\d{3})\b/.exec(plain);
+  const branch = /\bag(?:encia)?\b\.?\s*:?\s*(\d[\d.x-]*)/.exec(plain);
+  const account = /(?:\bc\s*\/\s*[cp]|\bconta(?:\s+(?:corrente|poupanca))?|\bcc|\bcp)\b\.?\s*:?\s*(\d[\d.x-]*)/.exec(plain);
+  const kind = /poupanca|\bc\s*\/\s*p\b|\bcp\b/.test(plain) ? 'savings' : /corrente|\bc\s*\/\s*c\b|\bcc\b/.test(plain) ? 'checking' : null;
+  const clean = (v: string | undefined) => (v ? v.replace(/[.-]+$/, '').toUpperCase() : null);
+  return { bankCode: byName?.[0] ?? (byCode ? normBank(byCode[1]) : null), branch: clean(branch?.[1]), account: clean(account?.[1]), kind };
+}
 /** Chave para reconhecer a conta do arquivo (só dígitos e letras, sem zeros à esquerda). */
 export const accountKey = (bank: string | null | undefined, branch: string | null | undefined, account: string | null | undefined) =>
   [normBank(bank) ?? '', ...[branch, account].map((v) => (v ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '').replace(/^0+/, ''))].join('|');

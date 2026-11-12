@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { accountKey, candidatesFor, decodeOfx, normBank, ofxAmount, ofxDate, parseOfx, suggestMatches, txDescription, type MatchBill } from './bank.js';
+import { accountKey, candidatesFor, decodeOfx, normBank, ofxAmount, parseBankText, ofxDate, parseOfx, suggestMatches, txDescription, type MatchBill } from './bank.js';
 
 // OFX 1.02 (SGML) fictício, no padrão dos bancos brasileiros
 const SGML = `OFXHEADER:100
@@ -87,4 +87,12 @@ test('descrição sugerida para conta nova', () => {
   assert.equal(txDescription({ memo: 'PIX EMITIDO OUTRA IF', name: 'Pagamento Pix ***.111.222-**' }), 'PIX EMITIDO OUTRA IF');
   assert.equal(txDescription({ memo: 'TRANSF.REALIZADA', name: 'FAV.: MARIA EXEMPLO' }), 'FAV.: MARIA EXEMPLO');
   assert.equal(txDescription({ memo: null, name: null }), 'Lançamento do extrato');
+});
+
+test('parseBankText: anotação livre do funcionário vira campos', () => {
+  assert.deepEqual(parseBankText('Bradesco Poupança: AG: 123 - C/P: 45678-9'), { bankCode: '237', branch: '123', account: '45678-9', kind: 'savings' });
+  assert.deepEqual(parseBankText('Itaú 341 · ag. 0001 · cc 12345-6'), { bankCode: '341', branch: '0001', account: '12345-6', kind: 'checking' });
+  assert.deepEqual(parseBankText('Banco do Brasil agência 1234-5 conta corrente 9876-X'), { bankCode: '001', branch: '1234-5', account: '9876-X', kind: 'checking' });
+  assert.deepEqual(parseBankText('Cooperativa (756) Ag 4355 Conta: 48287-0'), { bankCode: '756', branch: '4355', account: '48287-0', kind: null });
+  assert.deepEqual(parseBankText('ver com o RH'), { bankCode: null, branch: null, account: null, kind: null });
 });

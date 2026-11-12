@@ -3,6 +3,7 @@ import { money, isoDate, documentSchema } from './schemas.js';
 import { fromCents, parseMoneyInput, toCents } from './money.js';
 import { daysInMonth, toISODate, MONTHS_PT_SHORT } from './dates.js';
 import { DEFAULT_PAYROLL_COMMISSIONS, payrollCommissionsSchema } from './commissions.js';
+import { normBank } from './bank.js';
 import { DEFAULT_PAYROLL_PAYSLIPS, payrollPayslipsSchema } from './payslips.js';
 
 /**
@@ -211,6 +212,10 @@ const phoneSchema = z.string().max(32).nullish().transform((v, ctx) => {
   return formatPhoneBR(v);
 });
 
+export const EMPLOYEE_ACCOUNT_KINDS = ['checking', 'savings', 'salary', 'payment'] as const;
+export type EmployeeAccountKind = (typeof EMPLOYEE_ACCOUNT_KINDS)[number];
+export const EMPLOYEE_ACCOUNT_KIND_LABEL: Record<EmployeeAccountKind, string> = { checking: 'Corrente', savings: 'Poupança', salary: 'Salário', payment: 'Pagamento' };
+
 export const employeeSchema = z.object({
   name: z.string().trim().min(1, 'Informe o nome').max(120),
   document: documentSchema.optional(),
@@ -226,6 +231,12 @@ export const employeeSchema = z.object({
   payslipCode: z.string().max(20).nullish().transform((v) => (v && v.trim() ? v.trim() : null)),
   /** Tem holerite, mas não recebe pela empresa (sócio que não trabalha, acordo…): a pagar e custo ficam zerados. */
   payslipOnly: z.boolean().default(false),
+  /** Conta do funcionário: código do banco (3 dígitos), agência, conta e tipo. */
+  bankCode: optText(8).transform((v) => (v ? normBank(v) : null)),
+  bankBranch: optText(20),
+  bankAccount: optText(30),
+  bankAccountKind: z.enum(EMPLOYEE_ACCOUNT_KINDS).nullish().or(z.literal('').transform(() => null)).transform((v) => v ?? null),
+  /** Anotação livre antiga ("Banco / agência / conta" num campo só); os campos acima a substituem. */
   bankInfo: optText(255),
   notes: optText(1000),
 });

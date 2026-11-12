@@ -190,7 +190,7 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
     try {
       await put(`/api/payroll/employees/${e.id}`, {
         name: e.name, document: e.document ?? '', role: e.role, admissionDate: e.admissionDate, terminationDate: e.terminationDate, active: e.active, pixKey: e.pixKey,
-        phone: e.phone, sellerCode: e.sellerCode, payslipCode: e.payslipCode, bankInfo: e.bankInfo, notes: e.notes, payslipOnly: false,
+        phone: e.phone, sellerCode: e.sellerCode, payslipCode: e.payslipCode, bankInfo: e.bankInfo, bankCode: e.bankCode, bankBranch: e.bankBranch, bankAccount: e.bankAccount, bankAccountKind: e.bankAccountKind, notes: e.notes, payslipOnly: false,
       });
       await qc.invalidateQueries({ queryKey: ['bills'] });
       toast.success(`${e.name} agora recebe pela empresa`);

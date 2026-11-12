@@ -1,13 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { PayrollKind, PayrollSection, PayrollSettings, SalesSeller } from '@nopaper/shared';
+import type { EmployeeAccountKind, PayrollKind, PayrollSection, PayrollSettings, SalesSeller } from '@nopaper/shared';
 import { errMsg, get, put } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import type { Bill } from '@/lib/types';
 
 export interface Employee {
   id: string; name: string; document: string | null; role: string | null; admissionDate: string | null; terminationDate: string | null;
-  active: boolean; pixKey: string | null; phone: string | null; sellerCode: string | null; payslipCode: string | null; payslipOnly: boolean; bankInfo: string | null; notes: string | null; months: number; lastRef: string | null;
+  active: boolean; pixKey: string | null; phone: string | null; sellerCode: string | null; payslipCode: string | null; payslipOnly: boolean; bankInfo: string | null; bankCode: string | null; bankBranch: string | null; bankAccount: string | null; bankAccountKind: EmployeeAccountKind | null; notes: string | null; months: number; lastRef: string | null;
 }
 export interface Rubric { id: string; name: string; section: PayrollSection; kind: PayrollKind; fixed: boolean; active: boolean; laborCharges: boolean; sortOrder: number; usage: number }
 export interface PayrollMeta { settings: PayrollSettings; rubrics: Rubric[]; employees: Employee[] }

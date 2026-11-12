@@ -4,6 +4,7 @@ import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-rea
 import { MONTHS_PT, MONTHS_PT_SHORT, formatDateBR, parseISODate, todayISO } from '@nopaper/shared';
 import { cn } from '@/lib/utils';
 
+const YEARS = 20;
 const WEEK = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
 /**
@@ -18,12 +19,18 @@ export function DatePicker({ value, onChange, disabled, min, max, clearable, pla
   const today = todayISO();
   const base = parseISODate(value || today);
   const [view, setView] = useState({ y: base.y, m: base.m });
-  const [mode, setMode] = useState<'days' | 'months'>('days');
+  const [mode, setMode] = useState<'days' | 'months' | 'years'>('days');
+  // 1º ano da página de anos (20 por página; a maior parte para trás: datas antigas são o caso comum)
+  const [yearStart, setYearStart] = useState(base.y - 14);
   // ao abrir, mostra o mês da data escolhida (ou o atual)
   useEffect(() => { if (open) { const b = parseISODate(value || today); setView({ y: b.y, m: b.m }); setMode('days'); } }, [open, value, today]);
 
   const shift = (n: number) => setView((v) => { const t = v.y * 12 + (v.m - 1) + n; return { y: Math.floor(t / 12), m: (t % 12) + 1 }; });
   const out = (iso: string) => (!!min && iso < min) || (!!max && iso > max);
+  const openYears = () => { setYearStart(view.y - 14); setMode('years'); };
+  const prev = () => (mode === 'days' ? shift(-1) : mode === 'months' ? shift(-12) : setYearStart((y) => y - YEARS));
+  const next = () => (mode === 'days' ? shift(1) : mode === 'months' ? shift(12) : setYearStart((y) => y + YEARS));
+  const stepLabel = mode === 'days' ? 'mês' : mode === 'months' ? 'ano' : 'anos';
   const pick = (iso: string) => { if (out(iso)) return; onChange(iso); setOpen(false); };
 
   // grade de 6 semanas começando no domingo, com os dias dos meses vizinhos esmaecidos
@@ -49,14 +56,21 @@ export function DatePicker({ value, onChange, disabled, min, max, clearable, pla
         <Popover.Content align="start" sideOffset={6} collisionPadding={12}
           className="z-[6000] w-[min(296px,calc(100vw-24px))] rounded-xl border border-line bg-raised p-2 shadow-2xl">
           <div className="mb-1 flex items-center justify-between gap-1">
-            <button type="button" aria-label={mode === 'days' ? 'Mês anterior' : 'Ano anterior'} onClick={() => (mode === 'days' ? shift(-1) : shift(-12))}
-              className="grid size-9 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"><ChevronLeft className="size-4" /></button>
-            <button type="button" onClick={() => setMode(mode === 'days' ? 'months' : 'days')}
-              className="h-9 flex-1 rounded-md font-display text-sm font-semibold hover:bg-surface-2" aria-label="Escolher mês e ano">
-              {mode === 'days' ? `${MONTHS_PT[view.m - 1]} ${view.y}` : view.y}
-            </button>
-            <button type="button" aria-label={mode === 'days' ? 'Próximo mês' : 'Próximo ano'} onClick={() => (mode === 'days' ? shift(1) : shift(12))}
-              className="grid size-9 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"><ChevronRight className="size-4" /></button>
+            <button type="button" aria-label={mode === 'days' ? 'Mês anterior' : mode === 'months' ? 'Ano anterior' : 'Anos anteriores'} onClick={prev}
+              className="grid size-9 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"><ChevronLeft className="size-4" /></button>
+            <div className="flex min-w-0 flex-1 items-center justify-center gap-0.5 font-display text-sm font-semibold">
+              {mode === 'days' && (
+                <button type="button" onClick={() => setMode('months')} aria-label="Escolher o mês" className="h-9 rounded-md px-2 hover:bg-surface-2">{MONTHS_PT[view.m - 1]}</button>
+              )}
+              {mode === 'years' ? (
+                <button type="button" onClick={() => setMode('days')} aria-label="Voltar aos dias" className="h-9 rounded-md px-2 tnum hover:bg-surface-2">{yearStart} – {yearStart + YEARS - 1}</button>
+              ) : (
+                <button type="button" onClick={openYears} aria-label="Escolher o ano" title="Escolher o ano"
+                  className="inline-flex h-9 items-center gap-0.5 rounded-md px-2 tnum hover:bg-surface-2">{view.y}<ChevronDown className="size-3.5 text-faint" /></button>
+              )}
+            </div>
+            <button type="button" aria-label={`Próximo${mode === 'years' ? 's' : ''} ${stepLabel}`} onClick={next}
+              className="grid size-9 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"><ChevronRight className="size-4" /></button>
           </div>
 
           {mode === 'days' ? (
@@ -77,6 +91,16 @@ export function DatePicker({ value, onChange, disabled, min, max, clearable, pla
                 })}
               </div>
             </>
+          ) : mode === 'years' ? (
+            <div className="grid grid-cols-4 gap-1">
+              {Array.from({ length: YEARS }, (_, i) => yearStart + i).map((y) => (
+                <button key={y} type="button" onClick={() => { setView({ y, m: view.m }); setMode('months'); }}
+                  className={cn('h-10 rounded-md text-sm tnum transition-colors', view.y === y ? 'bg-accent font-semibold text-accent-ink' : 'text-ink hover:bg-surface-2',
+                    y === Number(today.slice(0, 4)) && view.y !== y && 'ring-1 ring-inset ring-accent/60 font-semibold text-accent')}>
+                  {y}
+                </button>
+              ))}
+            </div>
           ) : (
             <div className="grid grid-cols-3 gap-1">
               {MONTHS_PT_SHORT.map((label, i) => (

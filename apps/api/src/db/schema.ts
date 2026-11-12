@@ -301,7 +301,13 @@ export const employees = pgTable('employees', {
   payslipCode: varchar('payslip_code', { length: 20 }),
   /** Tem holerite, mas não recebe pela empresa: valor a pagar e custo zerados, sem conta a pagar. */
   payslipOnly: boolean('payslip_only').notNull().default(false),
+  /** Anotação livre antiga; substituída pelos campos separados abaixo. */
   bankInfo: varchar('bank_info', { length: 255 }),
+  bankCode: varchar('bank_code', { length: 8 }),
+  bankBranch: varchar('bank_branch', { length: 20 }),
+  bankAccount: varchar('bank_account', { length: 30 }),
+  /** checking | savings | salary | payment */
+  bankAccountKind: varchar('bank_account_kind', { length: 16 }),
   /** Aceite do termo de assinatura eletrônica de holerites (uma vez por funcionário). */
   esignAcceptedAt: timestamp('esign_accepted_at', { withTimezone: true }),
   esignTermVersion: varchar('esign_term_version', { length: 8 }),

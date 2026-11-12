@@ -2,42 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, FileText, Landmark, RotateCcw, Trash2, Upload } from 'lucide-react';
-import { BANK_ACCOUNT_KINDS, BANK_ACCOUNT_KIND_LABEL, BANK_NAMES, bankName, normBank, formatBRL, formatDateBR, type BankAccountInput } from '@nopaper/shared';
+import { BANK_ACCOUNT_KINDS, BANK_ACCOUNT_KIND_LABEL, bankName, formatBRL, formatDateBR, type BankAccountInput } from '@nopaper/shared';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { Button, Field, Input, Select, Spinner, Switch, Textarea } from '@/components/ui/base';
-import { Combobox } from '@/components/ui/combobox';
+import { BankPicker } from '@/components/ui/bank-picker';
 import { api, del, post, put, errMsg } from '@/lib/api';
 import { useCan } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
 import { useBankImports, type BankAccount, type ReadStatement } from './data';
-
-const BANKS = Object.entries(BANK_NAMES).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
-const bankText = (code: string | null) => (code ? `${BANK_NAMES[code] ?? 'Banco'} (${code})` : '');
-const BANK_OPTIONS = BANKS.map(([code]) => bankText(code));
-
-/**
- * Banco com busca: digite o nome ou o código (3 números). Campo próprio em vez do <select> nativo,
- * que alguns navegadores desenham fora do lugar dentro de diálogos animados.
- */
-function BankPicker({ value, onChange }: { value: string | null; onChange: (code: string | null) => void }) {
-  const [text, setText] = useState(bankText(value));
-  useEffect(() => { setText((t) => (codeOf(t) === value ? t : bankText(value))); }, [value]);
-  const codeOf = (t: string): string | null => {
-    const v = t.trim();
-    if (!v) return null;
-    const m = /\((\d{1,4})\)\s*$/.exec(v) ?? /^(\d{1,4})$/.exec(v);
-    if (m) return normBank(m[1]);
-    const byName = BANKS.find(([, n]) => n.toLowerCase() === v.toLowerCase());
-    return byName ? byName[0] : null;
-  };
-  const code = codeOf(text);
-  return (
-    <Field label="Banco" hint={text.trim() && !code ? 'Escolha da lista ou digite o código do banco (3 números).' : code ? undefined : 'Digite o nome ou o código.'}>
-      <Combobox value={text} options={BANK_OPTIONS} maxLength={60} placeholder="Ex.: Sicoob, Itaú, 756"
-        onChange={(t) => { setText(t); const c = codeOf(t); if (c !== value && (c || !t.trim())) onChange(c); }} />
-    </Field>
-  );
-}
 
 // ------------------------------------------------------------------ cadastro da conta bancária
 export function AccountDialog({ open, account, onClose, onSaved }: { open: boolean; account: BankAccount | null; onClose: () => void; onSaved: (a: BankAccount) => void }) {

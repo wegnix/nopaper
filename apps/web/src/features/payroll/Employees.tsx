@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronRight, Ghost, MessageCircle, Search, Trash2, UserPlus, UsersRound } from 'lucide-react';
-import { MONTHS_PT_SHORT, formatBRL, formatDateBR, formatPhoneBR, fromCents, refLabelPT, toCents, whatsappLink } from '@nopaper/shared';
+import { BriefcaseBusiness, Check, ChevronRight, CircleHelp, Ghost, MessageCircle, NotebookPen, Search, Trash2, UserPlus, UsersRound, Wallet } from 'lucide-react';
+import { EMPLOYEE_ACCOUNT_KINDS, EMPLOYEE_ACCOUNT_KIND_LABEL, MONTHS_PT_SHORT, PIX_KEY_TYPE_LABEL, detectPixKeyType, parseBankText, pixKeyCandidates, formatBRL, formatDateBR, formatPhoneBR, fromCents, refLabelPT, toCents, whatsappLink } from '@nopaper/shared';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { DatePicker } from '@/components/ui/date-picker';
-import { Button, Card, Empty, Field, Input, Segmented, Switch, Textarea } from '@/components/ui/base';
+import { Button, Card, Empty, Field, Input, Segmented, Select, Switch, Textarea } from '@/components/ui/base';
+import { BankPicker } from '@/components/ui/bank-picker';
 import { DocumentField } from '@/components/ui/document-input';
 import { api, get, post, put, errMsg } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
+import type { EmployeeAccountKind } from '@nopaper/shared';
 import { payrollKey, type Employee } from './data';
 
 const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
@@ -68,7 +70,7 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
   const qc = useQueryClient();
   const confirm = useConfirm();
   const orgId = useSession((s) => s.orgId);
-  const blank = { name: '', document: '', role: '', admissionDate: '', terminationDate: '', active: true, pixKey: '', phone: '', sellerCode: '', payslipCode: '', payslipOnly: false, bankInfo: '', notes: '' };
+  const blank = { name: '', document: '', role: '', admissionDate: '', terminationDate: '', active: true, pixKey: '', phone: '', sellerCode: '', payslipCode: '', payslipOnly: false, bankInfo: '', bankCode: null as string | null, bankBranch: '', bankAccount: '', bankAccountKind: '' as EmployeeAccountKind | '', notes: '' };
   const [f, setF, form] = useFormState(blank);
   const [tab, setTab] = useState<'data' | 'history'>('data');
   const [busy, setBusy] = useState(false);
@@ -77,7 +79,8 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
     setTab('data');
     form.load(emp ? {
       name: emp.name, document: emp.document ?? '', role: emp.role ?? '', admissionDate: emp.admissionDate ?? '', terminationDate: emp.terminationDate ?? '',
-      active: emp.active, pixKey: emp.pixKey ?? '', phone: emp.phone ?? '', sellerCode: emp.sellerCode ?? '', payslipCode: emp.payslipCode ?? '', payslipOnly: emp.payslipOnly, bankInfo: emp.bankInfo ?? '', notes: emp.notes ?? '',
+      active: emp.active, pixKey: emp.pixKey ?? '', phone: emp.phone ?? '', sellerCode: emp.sellerCode ?? '', payslipCode: emp.payslipCode ?? '', payslipOnly: emp.payslipOnly, bankInfo: emp.bankInfo ?? '',
+      bankCode: emp.bankCode, bankBranch: emp.bankBranch ?? '', bankAccount: emp.bankAccount ?? '', bankAccountKind: emp.bankAccountKind ?? '', notes: emp.notes ?? '',
     } : blank);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, emp?.id]);
@@ -89,10 +92,13 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
   const save = async () => {
     setBusy(true);
     try {
-      const r = emp ? await put<Employee>(`/api/payroll/employees/${emp.id}`, f) : await post<Employee>('/api/payroll/employees', f);
+      // com os campos separados preenchidos, a anotação antiga de banco deixa de existir
+      const body = { ...f, bankInfo: f.bankCode || f.bankBranch.trim() || f.bankAccount.trim() ? '' : f.bankInfo };
+      const r = emp ? await put<Employee>(`/api/payroll/employees/${emp.id}`, body) : await post<Employee>('/api/payroll/employees', body);
       qc.invalidateQueries({ queryKey: ['bills'] });
       toast.success(emp ? 'Funcionário salvo' : 'Funcionário cadastrado');
-      form.markSaved(f);
+      form.markSaved(body);
+      setF(body);
       onCreated({ ...r, months: emp?.months ?? 0, lastRef: emp?.lastRef ?? null });
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
@@ -102,6 +108,12 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
     try { await api('DELETE', `/api/payroll/employees/${emp.id}`); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Funcionário apagado'); onClose(); } catch (e) { toast.error(errMsg(e)); }
   };
   const wa = whatsappLink(f.phone);
+  /** Passa a anotação antiga ("Bradesco ag. 123 cc 456-7") para os campos; o que não der para ler fica para a pessoa. */
+  const fillBank = () => {
+    const b = parseBankText(f.bankInfo);
+    if (!b.bankCode && !b.branch && !b.account) { toast.info('Não consegui separar esse texto: preencha os campos e salve.'); return; }
+    setF((p) => ({ ...p, bankCode: p.bankCode ?? b.bankCode, bankBranch: p.bankBranch || (b.branch ?? ''), bankAccount: p.bankAccount || (b.account ?? ''), bankAccountKind: p.bankAccountKind || (b.kind ?? '') }));
+  };
   return (
     <Dialog open={open} onClose={onClose} dirty={form.dirty && !ro} size="lg" title={emp ? emp.name : 'Novo funcionário'}
       footer={tab === 'data' ? <SaveFooter dirty={form.dirty} isNew={!emp} readOnly={ro} saving={busy} canSave={!!f.name.trim()} onSave={save} onClose={onClose}
@@ -109,30 +121,51 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
         : <SaveFooter dirty={form.dirty} readOnly onSave={save} onClose={onClose} />}>
       {emp && <Segmented className="mb-4" value={tab} onChange={setTab} options={[{ value: 'data', label: 'Dados' }, { value: 'history', label: `Histórico (${emp.months})` }]} />}
       {tab === 'data' ? (
-        <fieldset disabled={ro} className="grid gap-4 sm:grid-cols-2">
-          <Field label="Nome" required className="sm:col-span-2"><Input autoFocus={!emp} maxLength={120} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-          <DocumentField label="CPF" value={f.document} onChange={(document) => setF({ ...f, document })} />
-          <Field label="Cargo / função"><Input maxLength={64} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} placeholder="Ex.: Balconista, Farmacêutico" /></Field>
-          <Field label="Admissão"><DatePicker clearable placeholder="Não informada" value={f.admissionDate} onChange={(admissionDate) => setF({ ...f, admissionDate })} disabled={ro} /></Field>
-          <Field label="Desligamento"><DatePicker clearable placeholder="Ainda trabalha aqui" value={f.terminationDate} min={f.admissionDate || undefined} onChange={(terminationDate) => setF({ ...f, terminationDate, active: terminationDate ? false : f.active })} disabled={ro} /></Field>
-          <Field label="Telefone / WhatsApp">
+        <fieldset disabled={ro} className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-12">
+          <Field label="Nome" required className="col-span-2 sm:col-span-8"><Input autoFocus={!emp} maxLength={120} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
+          <DocumentField cpfOnly label="CPF" className="col-span-2 sm:col-span-4" value={f.document} onChange={(document) => setF({ ...f, document })} />
+          <Field label="Cargo / função" className="col-span-2 sm:col-span-7"><Input maxLength={64} value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} placeholder="Ex.: Balconista, Farmacêutico" /></Field>
+          <Field label="Telefone / WhatsApp" className="col-span-2 sm:col-span-5">
             <div className="flex gap-2">
-              <Input type="tel" inputMode="tel" autoComplete="off" maxLength={32} className="min-w-0 flex-1" value={f.phone} placeholder="(11) 91234-5678"
+              <Input type="tel" inputMode="tel" autoComplete="off" maxLength={32} className="min-w-0 flex-1 tnum" value={f.phone} placeholder="(11) 91234-5678"
                 onChange={(e) => setF({ ...f, phone: e.target.value })} onBlur={() => setF((p) => ({ ...p, phone: p.phone ? formatPhoneBR(p.phone) : '' }))} />
-              {wa && <a href={wa} target="_blank" rel="noreferrer" className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-medium text-ok hover:bg-ok/10 pointer-coarse:h-11" title="Abrir conversa no WhatsApp"><MessageCircle className="size-4" /> WhatsApp</a>}
+              {wa && <a href={wa} target="_blank" rel="noreferrer" aria-label="Abrir conversa no WhatsApp" title="Abrir conversa no WhatsApp" className="grid size-10 shrink-0 place-items-center rounded-lg border border-line text-ok hover:bg-ok/10 pointer-coarse:size-11"><MessageCircle className="size-4" /></a>}
             </div>
           </Field>
-          <Field label="Chave PIX" hint="Vai para a conta a pagar do salário."><Input maxLength={140} value={f.pixKey} onChange={(e) => setF({ ...f, pixKey: e.target.value })} /></Field>
-          <Field label="Código de vendedor" hint="O número ao lado do nome no relatório de vendas (“Vendedor: 2 …”). Vazio = não recebe comissão.">
-            <Input inputMode="numeric" maxLength={20} className="tnum" value={f.sellerCode} placeholder="Não recebe comissão" onChange={(e) => setF({ ...f, sellerCode: e.target.value })} />
+
+          <SectionTitle icon={<BriefcaseBusiness className="size-3.5" />}>Na empresa</SectionTitle>
+          <Field label="Admissão" className="sm:col-span-4"><DatePicker clearable placeholder="Não informada" value={f.admissionDate} max={f.terminationDate || undefined} onChange={(admissionDate) => setF({ ...f, admissionDate })} disabled={ro} /></Field>
+          <Field label="Desligamento" className="sm:col-span-4"><DatePicker clearable placeholder="Trabalha aqui" value={f.terminationDate} min={f.admissionDate || undefined} onChange={(terminationDate) => setF({ ...f, terminationDate, active: terminationDate ? false : f.active })} disabled={ro} /></Field>
+          <Field label="Cód. vendedor" className="sm:col-span-2"><Input inputMode="numeric" maxLength={20} className="tnum" value={f.sellerCode} placeholder="—" onChange={(e) => setF({ ...f, sellerCode: e.target.value })} /></Field>
+          <Field label="Matrícula" className="sm:col-span-2"><Input inputMode="numeric" maxLength={20} className="tnum" value={f.payslipCode} placeholder="—" onChange={(e) => setF({ ...f, payslipCode: e.target.value })} /></Field>
+          <p className="col-span-full -mt-2 text-xs leading-relaxed text-faint">
+            <b className="font-medium text-muted">Cód. vendedor</b>: o número ao lado do nome no relatório de vendas (vazio = não recebe comissão). <b className="font-medium text-muted">Matrícula</b>: o número antes do nome no holerite do contador.
+          </p>
+
+          <SectionTitle icon={<Wallet className="size-3.5" />}>Para pagar o salário</SectionTitle>
+          <PixKeyField className="col-span-2 sm:col-span-12" value={f.pixKey} onChange={(pixKey) => setF((p) => ({ ...p, pixKey }))} cpf={f.document} phone={f.phone} readOnly={ro} />
+          {f.bankInfo && (
+            <div className="col-span-full flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-line bg-surface-2/50 px-3 py-2 text-sm">
+              <span className="min-w-0 flex-1 text-muted">Estava anotado: <b className="font-medium text-ink">{f.bankInfo}</b></span>
+              {!ro && <Button size="sm" variant="secondary" onClick={fillBank}>Passar para os campos</Button>}
+            </div>
+          )}
+          <BankPicker className="col-span-2 sm:col-span-4" value={f.bankCode} onChange={(bankCode) => setF((p) => ({ ...p, bankCode }))} />
+          <Field label="Agência" className="sm:col-span-2"><Input inputMode="numeric" maxLength={20} className="tnum" value={f.bankBranch} placeholder="0000" onChange={(e) => setF({ ...f, bankBranch: e.target.value })} /></Field>
+          <Field label="Conta" className="sm:col-span-3"><Input maxLength={30} className="tnum" value={f.bankAccount} placeholder="00000-0" onChange={(e) => setF({ ...f, bankAccount: e.target.value })} /></Field>
+          <Field label="Tipo de conta" className="col-span-2 sm:col-span-3">
+            <Select value={f.bankAccountKind} onChange={(e) => setF({ ...f, bankAccountKind: e.target.value as typeof f.bankAccountKind })} disabled={ro}>
+              <option value="">Não informado</option>
+              {EMPLOYEE_ACCOUNT_KINDS.map((k) => <option key={k} value={k}>{EMPLOYEE_ACCOUNT_KIND_LABEL[k]}</option>)}
+            </Select>
           </Field>
-          <Field label="Matrícula no holerite" hint="O número antes do nome no holerite do contador. Liga o holerite importado a esta pessoa.">
-            <Input inputMode="numeric" maxLength={20} className="tnum" value={f.payslipCode} placeholder="Não informada" onChange={(e) => setF({ ...f, payslipCode: e.target.value })} />
-          </Field>
-          <Field label="Banco / agência / conta"><Input maxLength={255} value={f.bankInfo} onChange={(e) => setF({ ...f, bankInfo: e.target.value })} placeholder="Ex.: Bradesco 237 · ag. 0000 · cc 00000-0" /></Field>
-          <Field label="Observações" className="sm:col-span-2"><Textarea maxLength={1000} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
-          <div className="sm:col-span-2"><Switch checked={f.payslipOnly} onChange={(payslipOnly) => setF({ ...f, payslipOnly })} label="Só holerite (não recebe pela empresa)" hint="Para quem tem holerite mas não é pago pela empresa (sócio que não trabalha, acordo…). O holerite fica registrado no mês, sem valor a pagar, sem conta a pagar e sem custo." /></div>
-          <div className="sm:col-span-2"><Switch checked={f.active} onChange={(active) => setF({ ...f, active })} label="Ativo" hint="Só os ativos entram automaticamente ao abrir um mês novo. O histórico de quem saiu continua." /></div>
+
+          <SectionTitle icon={<NotebookPen className="size-3.5" />}>Outros</SectionTitle>
+          <Field label="Observações" className="col-span-full"><Textarea maxLength={1000} rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
+          <div className="col-span-full grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-line p-3"><Switch checked={f.active} onChange={(active) => setF({ ...f, active })} label="Ativo" hint="Só os ativos entram sozinhos ao abrir um mês novo. O histórico de quem saiu continua." /></div>
+            <div className="rounded-xl border border-line p-3"><Switch checked={f.payslipOnly} onChange={(payslipOnly) => setF({ ...f, payslipOnly })} label="Só holerite (não recebe pela empresa)" hint="Sócio que não trabalha, acordo… O holerite fica no mês, sem valor a pagar, sem conta e sem custo." /></div>
+          </div>
         </fieldset>
       ) : hist.isLoading ? <p className="py-10 text-center text-sm text-muted">Carregando…</p> : !hist.data?.length ? (
         <p className="py-10 text-center text-sm text-muted">Sem meses na folha.</p>
@@ -140,6 +173,50 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
         <EmployeeHistory rows={hist.data} onOpenMonth={onOpenMonth} />
       )}
     </Dialog>
+  );
+}
+
+function SectionTitle({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+  return (
+    <h3 className="col-span-full mt-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-faint">
+      <span className="text-accent">{icon}</span>{children}<span className="h-px flex-1 bg-line" />
+    </h3>
+  );
+}
+
+/** Chave PIX com o tipo reconhecido marcado no fim do campo (CPF, celular, e-mail…). */
+function PixKeyField({ value, onChange, cpf, phone, readOnly, className }: { value: string; onChange: (v: string) => void; cpf: string; phone: string; readOnly: boolean; className?: string }) {
+  const types = pixKeyCandidates(value);
+  const filled = !!value.trim();
+  const tag = !filled ? null : types.length ? types.map((t) => PIX_KEY_TYPE_LABEL[t]).join(' ou ') : 'Não reconhecida';
+  // atalhos: a chave costuma ser o CPF ou o celular já digitados acima
+  const shortcuts = filled || readOnly ? [] : [
+    detectPixKeyType(cpf) === 'cpf' && { label: 'Usar o CPF', value: cpf },
+    whatsappLink(phone) && { label: 'Usar o celular', value: formatPhoneBR(phone) },
+  ].filter((s): s is { label: string; value: string } => !!s);
+  return (
+    <Field label="Chave PIX" className={className}
+      hint={filled && !types.length ? 'Não parece CPF, CNPJ, celular, e-mail nem chave aleatória. Confira se está completa.'
+        : types.length > 1 ? 'Estes 11 números servem de CPF e de celular; na hora de pagar você escolhe.'
+          : 'Vai para a conta a pagar do salário.'}>
+      <div className="relative">
+        <Input maxLength={140} autoComplete="off" spellCheck={false} className={cn('font-mono text-[13px]', tag && 'pr-36')} value={value} placeholder="CPF, celular, e-mail ou aleatória"
+          onChange={(e) => onChange(e.target.value)} onBlur={() => onChange(value.trim())} />
+        {tag && (
+          <span className={cn('pointer-events-none absolute right-1.5 top-1/2 inline-flex h-7 max-w-[8.25rem] -translate-y-1/2 items-center gap-1 truncate rounded-md px-2 text-xs font-medium',
+            types.length ? 'bg-accent-soft text-accent' : 'bg-warn/15 text-warn')}>
+            {types.length ? <Check className="size-3.5 shrink-0" /> : <CircleHelp className="size-3.5 shrink-0" />}{tag}
+          </span>
+        )}
+      </div>
+      {shortcuts.length > 0 && (
+        <span className="flex flex-wrap gap-1.5">
+          {shortcuts.map((s) => (
+            <button key={s.label} type="button" onClick={() => onChange(s.value)} className="h-7 rounded-full border border-line px-2.5 text-xs font-medium text-muted hover:border-accent hover:text-accent pointer-coarse:h-9">{s.label}</button>
+          ))}
+        </span>
+      )}
+    </Field>
   );
 }
 

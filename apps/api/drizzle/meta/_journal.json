@@ -225,6 +225,13 @@
       "when": 1794415876974,
       "tag": "0031_accounting_term_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794515691824,
+      "tag": "0032_employee_bank_fields",
+      "breakpoints": true
     }
   ]
 }

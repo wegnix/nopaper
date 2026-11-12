@@ -27,6 +27,7 @@ const FIELD: Record<string, string> = {
   description: 'Descrição', amount: 'Valor', dueDate: 'Vencimento', categoryId: 'Categoria', folderId: 'Pasta', status: 'Situação',
   paidAt: 'Data da baixa', paidAmount: 'Valor pago', notes: 'Observações', relatedPerson: 'Pessoa', paymentMethod: 'Forma de pagamento',
   barcode: 'Código de barras', pixKey: 'PIX', name: 'Nome', kind: 'Tipo', document: 'CPF/CNPJ', timezone: 'Fuso horário', active: 'Ativo',
+  bankCode: 'Banco', bankBranch: 'Agência', bankAccount: 'Conta', bankAccountKind: 'Tipo de conta', bankInfo: 'Banco (anotação antiga)',
   groups: 'Grupos', isAdmin: 'Administrador', email: 'E-mail', username: 'Usuário', isSuperadmin: 'Admin da plataforma', canCreateOrgs: 'Pode criar espaços',
 };
 const MONEY = new Set(['amount', 'paidAmount']);

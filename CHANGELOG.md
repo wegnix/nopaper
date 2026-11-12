@@ -8,6 +8,21 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.15.0] - 2026-11-12
+
+### Melhorado
+- **Cadastro de funcionários reorganizado**: a janela ficou dividida em blocos (dados da pessoa, na empresa,
+  para pagar o salário) e cada campo tem um tamanho de acordo com o que vai nele — código de vendedor e
+  matrícula do holerite, por exemplo, ficaram pequenos, lado a lado com as datas.
+- **Chave PIX com o tipo reconhecido**: ao digitar, o fim do campo mostra se a chave é CPF, CNPJ, celular,
+  e-mail ou aleatória (ou avisa quando não parece uma chave completa). Com o campo vazio, os botões
+  "Usar o CPF" e "Usar o celular" aproveitam o que já está no cadastro.
+- **Banco, agência e conta em campos separados** no funcionário, com o banco escolhido da lista (nome e
+  código, como em Contas bancárias) e o tipo de conta. O que estava anotado no campo antigo continua à
+  vista, com o botão "Passar para os campos" — é só conferir e salvar.
+- **Calendário com escolha de ano**: em qualquer campo de data, clique no ano para abrir uma grade de anos
+  (e no mês para a de meses). Uma admissão de 2015 agora se escolhe em quatro cliques.
+
 ## [1.14.0] - 2026-11-11
 
 ### Novo
