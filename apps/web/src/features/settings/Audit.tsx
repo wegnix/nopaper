@@ -3,11 +3,11 @@ import { Navigate } from 'react-router';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown, Download, Globe, ListTree, Monitor, Search, X } from 'lucide-react';
-import { PERMISSIONS, formatBRL, formatDateBR, isPermission } from '@nopaper/shared';
+import { PERMISSIONS, billTerms, formatBRL, formatDateBR, isPermission } from '@nopaper/shared';
 import { Button, Card, Input, Segmented, Select, Spinner, Switch } from '@/components/ui/base';
 import { get } from '@/lib/api';
 import { useCategories, useFolders } from '@/lib/queries';
-import { useSession } from '@/lib/session';
+import { useOrg, useSession } from '@/lib/session';
 import { cn, downloadBlob } from '@/lib/utils';
 
 interface Log {
@@ -46,7 +46,8 @@ const DETAILED_KEY = 'np:audit-detailed';
 const readDetailed = () => { try { return localStorage.getItem(DETAILED_KEY) === '1'; } catch { return false; } };
 
 export function AuditPage() {
-  return <AuditView endpoint="/api/audit" usersEndpoint="/api/audit/users" areas={ORG_AREAS} title="Auditoria" subtitle="Tudo o que foi feito neste espaço, do mais recente para o mais antigo." />;
+  const kind = useOrg()?.kind;
+  return <AuditView endpoint="/api/audit" usersEndpoint="/api/audit/users" areas={ORG_AREAS.map(([k, l]): [string, string] => [k, billTerms(l, kind)])} title="Auditoria" subtitle="Tudo o que foi feito neste espaço, do mais recente para o mais antigo." />;
 }
 
 export function PlatformAuditPage() {

@@ -12,7 +12,7 @@ import { Tooltip } from '@/components/ui/base';
 import { useSidebar } from '@/lib/sidebar';
 import { endSession, useIdleLogout } from '@/lib/idle';
 import { Logo } from './Logo';
-import { NAV, NAV_ACCOUNTANT_INBOX, NAV_BOTTOM, navVisible, type NavItem } from './nav';
+import { NAV, NAV_ACCOUNTANT_INBOX, NAV_BOTTOM, navLabel, navVisible, type NavItem } from './nav';
 import { useAccountantOnly, useAccountingInbox, useAccountingPending } from '@/features/accounting/data';
 import { CommandPalette } from './CommandPalette';
 import { NewOrgDialog } from './NewOrgDialog';
@@ -28,9 +28,9 @@ function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNaviga
   return (
     <>
       {[...items.filter((i) => navVisible(i, can, kind) && !(accountantOnly && i.to === '/contador')), ...(accountantOnly && items === NAV ? [NAV_ACCOUNTANT_INBOX] : [])].map((i) => (
-        <Tooltip key={i.to} content={collapsed ? i.label : null} side="right">
+        <Tooltip key={i.to} content={collapsed ? navLabel(i, kind) : null} side="right">
           <NavLink
-            to={i.to} end={i.to === '/'} onClick={onNavigate} aria-label={collapsed ? i.label : undefined}
+            to={i.to} end={i.to === '/'} onClick={onNavigate} aria-label={collapsed ? navLabel(i, kind) : undefined}
             className={({ isActive }) => cn(
               'group relative flex items-center gap-3 rounded-lg px-[11px] h-10 text-sm font-medium transition-colors',
               isActive ? 'text-ink bg-surface-2' : 'text-muted hover:text-ink hover:bg-surface-2/60',
@@ -40,7 +40,7 @@ function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNaviga
               <>
                 {isActive && <motion.span layoutId="nav-active" className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-accent" transition={{ type: 'spring', stiffness: 500, damping: 40 }} />}
                 <i.icon className={cn('size-[18px] shrink-0', isActive && 'text-accent')} />
-                <span className={cn('flex-1 truncate whitespace-nowrap transition-opacity duration-150', collapsed && 'opacity-0')}>{i.label}</span>
+                <span className={cn('flex-1 truncate whitespace-nowrap transition-opacity duration-150', collapsed && 'opacity-0')}>{navLabel(i, kind)}</span>
                 {badge(i) > 0 && <span className={cn('grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white tnum', collapsed && 'absolute right-1 top-1 h-4 min-w-4 px-1 text-[10px]')} aria-label={`${badge(i)} para conferir`}>{badge(i)}</span>}
                 {i.soon && !collapsed && <span className="rounded px-1.5 text-[10px] font-semibold text-faint border border-line">em breve</span>}
               </>

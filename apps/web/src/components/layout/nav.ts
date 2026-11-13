@@ -1,5 +1,5 @@
 import { ArrowDownLeft, ArrowUpRight, BarChart3, CreditCard, FileUp, Inbox, Landmark, LayoutDashboard, Settings, UsersRound, type LucideIcon } from 'lucide-react';
-import type { Permission } from '@nopaper/shared';
+import { billNames, type Permission } from '@nopaper/shared';
 
 /** `companyOnly`: só aparece em espaço do tipo Empresa. */
 /** `anyPerm`: aparece para quem tem qualquer uma das permissões. */
@@ -17,6 +17,10 @@ export const NAV: NavItem[] = [
 /** Só no menu do contador: o que o espaço mandou para ele. */
 export const NAV_ACCOUNTANT_INBOX: NavItem = { to: '/recebidos', label: 'Recebidos', icon: Inbox };
 export const NAV_BOTTOM: NavItem[] = [{ to: '/config', label: 'Configurações', icon: Settings }];
+
+/** Nome do item neste espaço: no Pessoal as contas viram Despesas / Receitas. */
+export const navLabel = (i: NavItem, kind: string | undefined) =>
+  (i.to === '/pagar' ? billNames('payable', kind).title : i.to === '/receber' ? billNames('receivable', kind).title : i.label);
 
 /** Item visível para a pessoa neste espaço. */
 export const navVisible = (i: NavItem, can: (p: Permission) => boolean, kind: 'personal' | 'company' | undefined) =>

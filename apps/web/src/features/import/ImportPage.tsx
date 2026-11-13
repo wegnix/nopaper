@@ -15,7 +15,7 @@ import { CategoryChip } from '@/components/ui/chips';
 import { useConfirm } from '@/components/ui/dialog';
 import { api, errMsg, get, post } from '@/lib/api';
 import { useCategories, useFolders } from '@/lib/queries';
-import { useCan, useSession } from '@/lib/session';
+import { useBillNames, useCan, useSession } from '@/lib/session';
 import { cn, isTouch, plural } from '@/lib/utils';
 
 interface ReadResult { fileName: string; sheets: ImportSheet[] }
@@ -26,6 +26,7 @@ type RowFilter = 'all' | 'warn' | 'skip' | 'dup';
 
 export function ImportPage() {
   const can = useCan();
+  const names = useBillNames();
   const orgId = useSession((s) => s.orgId);
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -158,7 +159,7 @@ export function ImportPage() {
   return (
     <div className="flex flex-col gap-6 pb-24">
       <div className="flex flex-col gap-2">
-        <Link to={type === 'receivable' ? '/receber' : '/pagar'} className="inline-flex w-fit items-center gap-1 text-sm text-muted hover:text-ink"><ChevronLeft className="size-4" />{type === 'receivable' ? 'Contas a receber' : 'Contas a pagar'}</Link>
+        <Link to={type === 'receivable' ? '/receber' : '/pagar'} className="inline-flex w-fit items-center gap-1 text-sm text-muted hover:text-ink"><ChevronLeft className="size-4" />{names(type).title}</Link>
         <PageHeader title="Importar planilha" description="Traga suas contas de uma planilha .xlsx ou .csv. Nada é gravado antes de você conferir a prévia." />
       </div>
 
@@ -197,7 +198,7 @@ export function ImportPage() {
 
             {can('payable.create') && can('receivable.create') && (
               <Field label="Importar como">
-                <Segmented value={type} onChange={setType} options={[{ value: 'payable', label: 'Contas a pagar' }, { value: 'receivable', label: 'Contas a receber' }]} />
+                <Segmented value={type} onChange={setType} options={[{ value: 'payable', label: names('payable').title }, { value: 'receivable', label: names('receivable').title }]} />
               </Field>
             )}
 

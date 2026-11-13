@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
-import { ALL_PERMISSIONS, DEFAULT_OPERATOR_PERMISSIONS, DEFAULT_READONLY_PERMISSIONS, PERMISSIONS, permissionRequires, withRequired, type Permission } from '@nopaper/shared';
+import { ALL_PERMISSIONS, DEFAULT_OPERATOR_PERMISSIONS, DEFAULT_READONLY_PERMISSIONS, PERMISSIONS, billTerms, permissionRequires, withRequired, type Permission } from '@nopaper/shared';
 import { Button, Card, Checkbox, Field, IconButton, Input, Switch, Tooltip } from '@/components/ui/base';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { del, get, post, put, errMsg } from '@/lib/api';
@@ -91,7 +91,7 @@ function GroupForm({ group, onClose, onSaved }: { group: Partial<Group>; onClose
                   <section key={g} className="rounded-xl border border-line p-3.5">
                     <div className="mb-2.5 flex items-center gap-2">
                       <Checkbox checked={on === keys.length} indeterminate={on > 0 && on < keys.length} disabled={!keys.some(grantable)} onChange={(v) => toggleSection(keys, v)}
-                        label={<span className="text-[13px] font-semibold">{g}</span>} />
+                        label={<span className="text-[13px] font-semibold">{billTerms(g, org?.kind)}</span>} />
                       <span className="ml-auto text-[11px] text-faint tnum">{on}/{keys.length}</span>
                     </div>
                     <div className="flex flex-col gap-2.5 pl-1">
@@ -101,7 +101,7 @@ function GroupForm({ group, onClose, onSaved }: { group: Partial<Group>; onClose
                           <Tooltip key={p} content={locked ? 'Você não tem esta permissão, então não pode concedê-la.' : null} side="left">
                             <div className={cn(locked && 'opacity-50')}>
                               <Checkbox checked={f.permissions.has(p)} disabled={locked} onChange={(v) => toggle(p, v)}
-                                label={<span className="flex flex-col"><span className="text-sm text-ink">{d.label}</span>{d.hint && <span className="text-xs text-faint leading-snug">{d.hint}</span>}</span>} />
+                                label={<span className="flex flex-col"><span className="text-sm text-ink">{billTerms(d.label, org?.kind)}</span>{d.hint && <span className="text-xs text-faint leading-snug">{billTerms(d.hint, org?.kind)}</span>}</span>} />
                             </div>
                           </Tooltip>
                         );
@@ -120,6 +120,7 @@ function GroupForm({ group, onClose, onSaved }: { group: Partial<Group>; onClose
 }
 
 export function GroupsPage() {
+  const orgKind = useOrg()?.kind;
   const { data = [] } = useGroups();
   const [editing, setEditing] = useState<Partial<Group> | null>(null);
   const confirm = useConfirm();
@@ -145,7 +146,7 @@ export function GroupsPage() {
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {Object.entries(byGroup).map(([sec, perms]) => {
                     const n = perms.filter(([p]) => g.permissions.includes(p)).length;
-                    return n ? <span key={sec} className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">{sec} {n === perms.length ? '· tudo' : `${n}/${perms.length}`}</span> : null;
+                    return n ? <span key={sec} className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">{billTerms(sec, orgKind)} {n === perms.length ? '· tudo' : `${n}/${perms.length}`}</span> : null;
                   })}
                 </div>
               )}

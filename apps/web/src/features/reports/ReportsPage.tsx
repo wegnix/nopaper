@@ -6,7 +6,7 @@ import { COLOR_PRESETS, isColorKey, MONTHS_PT, MONTHS_PT_SHORT, formatBRL, toCen
 import { Button, Card, Segmented, Spinner } from '@/components/ui/base';
 import { get, qs } from '@/lib/api';
 import { useCategories, useFolders } from '@/lib/queries';
-import { useCan, useSession } from '@/lib/session';
+import { useBillNames, useCan, useSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
 import { CountUp } from '@/features/bills/KpiRibbon';
 import { compact, niceMax, pct } from './format';
@@ -43,6 +43,8 @@ export function ReportsPage() {
   const catMap = useMemo(() => new Map(cats.map((c) => [c.id, c])), [cats]);
   const folderMap = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
   const r = q.data;
+  const names = useBillNames();
+  // situacao= (vazio) = "Todas": o padrão da lista é Pendentes, e o relatório fala de tudo
   const listPath = type === 'payable' ? '/pagar' : '/receber';
   const word = type === 'payable' ? { done: 'Pago', open: 'A pagar', verb: 'pagas' } : { done: 'Recebido', open: 'A receber', verb: 'recebidas' };
 
@@ -59,7 +61,7 @@ export function ReportsPage() {
         </div>
         {canP && canR && (
           <Segmented value={type} onChange={(v) => set('tipo', v === 'receivable' ? 'receber' : null)}
-            options={[{ value: 'payable', label: 'Contas a pagar' }, { value: 'receivable', label: 'Contas a receber' }]} />
+            options={[{ value: 'payable', label: names('payable').title }, { value: 'receivable', label: names('receivable').title }]} />
         )}
         <div className="flex items-center rounded-lg border border-line bg-surface">
           <button className="grid size-10 place-items-center text-muted hover:text-ink" onClick={() => set('ano', String(year - 1))} aria-label="Ano anterior"><ChevronLeft className="size-4" /></button>
@@ -106,7 +108,7 @@ export function ReportsPage() {
               <span className="flex items-center gap-1.5 text-xs text-muted"><span className="size-2.5 rounded-sm bg-[var(--np-chart-1)]" />{word.done}</span>
               <span className="flex items-center gap-1.5 text-xs text-muted"><span className="size-2.5 rounded-sm bg-[var(--np-chart-2)]" />{word.open}</span>
             </div>
-            <MonthlyChart months={r.months} year={r.year} today={r.today} labels={word} onPick={(m) => `${listPath}?ano=${r.year}&mes=${m}`} />
+            <MonthlyChart months={r.months} year={r.year} today={r.today} labels={word} onPick={(m) => `${listPath}?ano=${r.year}&mes=${m}&situacao=`} />
             <details className="mt-4 group">
               <summary className="cursor-pointer text-xs text-accent hover:underline list-none">Ver em tabela</summary>
               <MonthTable months={r.months} type={type} labels={word} />
@@ -121,7 +123,7 @@ export function ReportsPage() {
                 rows={r.byCategory.map((c) => ({
                   key: c.categoryId, label: catMap.get(c.categoryId)?.label ?? '—', color: catMap.get(c.categoryId)?.color,
                   cents: toCents(c.total), sub: `${c.count} ${c.count === 1 ? 'conta' : 'contas'} · ${pct(toCents(c.paid), toCents(c.total))}% ${word.verb}`,
-                  to: `${listPath}?ano=${r.year}&categoria=${c.categoryId}`,
+                  to: `${listPath}?ano=${r.year}&categoria=${c.categoryId}&situacao=`,
                 }))} />
             </Card>
 
@@ -132,7 +134,7 @@ export function ReportsPage() {
                   {r.top.map((t, i) => (
                     <li key={t.description} className="flex items-center gap-3 py-2 text-sm">
                       <span className="w-5 text-right text-xs text-faint tnum">{i + 1}</span>
-                      <Link to={`${listPath}?ano=${r.year}&busca=${encodeURIComponent(t.description)}`} className="min-w-0 flex-1 truncate hover:text-accent">{t.description}</Link>
+                      <Link to={`${listPath}?ano=${r.year}&busca=${encodeURIComponent(t.description)}&situacao=`} className="min-w-0 flex-1 truncate hover:text-accent">{t.description}</Link>
                       <span className="text-xs text-faint">{t.count}×</span>
                       <span className="shrink-0 text-right tnum font-medium sm:w-28">{formatBRL(t.total)}</span>
                     </li>
@@ -147,7 +149,7 @@ export function ReportsPage() {
                     rows={r.byFolder.map((f) => ({
                       key: f.folderId ?? 'none', label: f.folderId ? folderMap.get(f.folderId)?.label ?? '—' : 'Sem pasta', color: f.folderId ? folderMap.get(f.folderId)?.color : undefined,
                       cents: toCents(f.total), sub: `${f.count} ${f.count === 1 ? 'conta' : 'contas'}`,
-                      to: f.folderId ? `${listPath}?ano=${r.year}&pasta=${f.folderId}` : undefined,
+                      to: f.folderId ? `${listPath}?ano=${r.year}&pasta=${f.folderId}&situacao=` : undefined,
                     }))} />
                 </Card>
               )}

@@ -5,7 +5,8 @@ import { Moon, Plus, Building2, FileSpreadsheet, Settings, Users, Shield } from 
 import { useQueryClient } from '@tanstack/react-query';
 import { useCan, useOrg, useSession } from '@/lib/session';
 import { useTheme } from '@/lib/theme';
-import { NAV, navVisible } from './nav';
+import { billNames } from '@nopaper/shared';
+import { NAV, navLabel, navVisible } from './nav';
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const nav = useNavigate();
@@ -28,14 +29,14 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
             <Command.List className="max-h-[50vh] overflow-y-auto p-2">
               <Command.Empty className="px-3 py-6 text-center text-sm text-faint">Nada encontrado.</Command.Empty>
               <Command.Group heading="Ações" className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-faint">
-                {can('payable.create') && <Command.Item className={item} onSelect={() => go('/pagar?nova=1')}><Plus className="size-4" /> Nova conta a pagar</Command.Item>}
-                {can('receivable.create') && <Command.Item className={item} onSelect={() => go('/receber?nova=1')}><Plus className="size-4" /> Nova conta a receber</Command.Item>}
+                {can('payable.create') && <Command.Item className={item} onSelect={() => go('/pagar?nova=1')}><Plus className="size-4" /> {billNames('payable', kind).new}</Command.Item>}
+                {can('receivable.create') && <Command.Item className={item} onSelect={() => go('/receber?nova=1')}><Plus className="size-4" /> {billNames('receivable', kind).new}</Command.Item>}
                 {can('bills.import') && (can('payable.create') || can('receivable.create')) && <Command.Item className={item} value="importar planilha excel xlsx csv" onSelect={() => go('/importar')}><FileSpreadsheet className="size-4" /> Importar planilha</Command.Item>}
                 <Command.Item className={item} onSelect={() => { theme.toggle(); onClose(); }}><Moon className="size-4" /> Alternar tema claro/escuro</Command.Item>
               </Command.Group>
               <Command.Group heading="Ir para" className="[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-faint">
                 {NAV.filter((n) => navVisible(n, can, kind)).map((n) => (
-                  <Command.Item key={n.to} className={item} onSelect={() => go(n.to)}><n.icon className="size-4" /> {n.label}</Command.Item>
+                  <Command.Item key={n.to} className={item} onSelect={() => go(n.to)}><n.icon className="size-4" /> {navLabel(n, kind)}</Command.Item>
                 ))}
                 <Command.Item className={item} onSelect={() => go('/config')}><Settings className="size-4" /> Configurações</Command.Item>
                 {can('members.manage') && <Command.Item className={item} onSelect={() => go('/config/membros')}><Users className="size-4" /> Membros</Command.Item>}

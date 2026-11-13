@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, lt, notInArray, sql } from 'drizzle-orm';
 import {
-  addDaysISO, alertConfigSchema, formatBRL, formatDateBR, sumMoney, todayISO, diffDaysISO, type AlertConfig, type BillType,
+  addDaysISO, alertConfigSchema, billNames, formatBRL, formatDateBR, sumMoney, todayISO, diffDaysISO, type AlertConfig, type BillType,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { env } from '../env.js';
@@ -28,7 +28,6 @@ interface Item { description: string; amount: string; dueDate: string }
 interface Section { title: string; items: Item[]; tone: 'overdue' | 'today' | 'soon' }
 interface TypeDigest { type: BillType; sections: Section[] }
 
-const TYPE_TITLE: Record<BillType, string> = { payable: 'Contas a pagar', receivable: 'Contas a receber' };
 const MAX_ITEMS = 15;
 
 async function digestFor(orgId: string, type: BillType, rule: AlertConfig['payable'], today: string, hidden: string[]): Promise<TypeDigest | null> {
@@ -54,10 +53,10 @@ async function digestFor(orgId: string, type: BillType, rule: AlertConfig['payab
   return sections.length ? { type, sections } : null;
 }
 
-export interface Digest { orgName: string; today: string; parts: TypeDigest[]; count: number }
+export interface Digest { orgName: string; /** Perfil do espaço: no Pessoal as contas são Despesas / Receitas. */ orgKind: string; today: string; parts: TypeDigest[]; count: number }
 
 export async function buildDigest(orgId: string, cfg: AlertConfig): Promise<Digest> {
-  const [org] = await db.select({ name: schema.organizations.name, tz: schema.organizations.timezone }).from(schema.organizations).where(eq(schema.organizations.id, orgId));
+  const [org] = await db.select({ name: schema.organizations.name, kind: schema.organizations.kind, tz: schema.organizations.timezone }).from(schema.organizations).where(eq(schema.organizations.id, orgId));
   const today = todayISO(org?.tz);
   const hidden = cfg.includeRestricted ? [] : await restrictedCategoryIds(orgId);
   const parts = (await Promise.all([
@@ -65,7 +64,7 @@ export async function buildDigest(orgId: string, cfg: AlertConfig): Promise<Dige
     digestFor(orgId, 'receivable', cfg.receivable, today, hidden),
   ])).filter((p): p is TypeDigest => !!p);
   const count = parts.reduce((a, p) => a + p.sections.reduce((b, s) => b + s.items.length, 0), 0);
-  return { orgName: org?.name ?? 'NoPaper', today, parts, count };
+  return { orgName: org?.name ?? 'NoPaper', orgKind: org?.kind ?? 'company', today, parts, count };
 }
 
 const path = (t: BillType) => (t === 'payable' ? 'pagar' : 'receber');
@@ -75,7 +74,7 @@ export function digestTelegram(d: Digest): string {
   const out: string[] = [`<b>NoPaper · ${escapeHtml(d.orgName)}</b>`, `Resumo de ${formatDateBR(d.today)}`];
   if (!d.parts.length) out.push('', 'Nenhuma conta vencida ou vencendo nos dias configurados. ✨');
   for (const p of d.parts) {
-    out.push('', `<b>${TYPE_TITLE[p.type]}</b>`);
+    out.push('', `<b>${billNames(p.type, d.orgKind).title}</b>`);
     for (const s of p.sections) {
       const icon = s.tone === 'overdue' ? '🔴' : s.tone === 'today' ? '🟡' : '🔵';
       out.push(`${icon} <b>${escapeHtml(s.title)}</b> — ${formatBRL(sumMoney(s.items.map((i) => i.amount)))}`);
@@ -84,7 +83,7 @@ export function digestTelegram(d: Digest): string {
       }
       if (s.items.length > MAX_ITEMS) out.push(`<i>… e mais ${s.items.length - MAX_ITEMS}</i>`);
     }
-    out.push(`<a href="${env.APP_URL}/${path(p.type)}">Abrir ${TYPE_TITLE[p.type].toLowerCase()}</a>`);
+    out.push(`<a href="${env.APP_URL}/${path(p.type)}">Abrir ${billNames(p.type, d.orgKind).title.toLowerCase()}</a>`);
   }
   return out.join('\n');
 }
@@ -98,8 +97,8 @@ export function digestEmail(d: Digest): { subject: string; html: string; text: s
   const text: string[] = [`${d.orgName} — resumo de ${formatDateBR(d.today)}`];
   if (!d.parts.length) { html += '<p>Nenhuma conta vencida ou vencendo nos dias configurados.</p>'; text.push('', 'Nenhuma conta vencida ou vencendo nos dias configurados.'); }
   for (const p of d.parts) {
-    html += `<h3 style="margin:24px 0 8px;font-size:16px">${TYPE_TITLE[p.type]}</h3>`;
-    text.push('', TYPE_TITLE[p.type].toUpperCase());
+    html += `<h3 style="margin:24px 0 8px;font-size:16px">${billNames(p.type, d.orgKind).title}</h3>`;
+    text.push('', billNames(p.type, d.orgKind).title.toUpperCase());
     for (const s of p.sections) {
       const tot = formatBRL(sumMoney(s.items.map((i) => i.amount)));
       html += `<p style="margin:14px 0 6px;font-weight:600;color:${color[s.tone]}">${escapeHtml(s.title)} · ${tot}</p><table style="width:100%;border-collapse:collapse;font-size:14px">`;
@@ -110,7 +109,7 @@ export function digestEmail(d: Digest): { subject: string; html: string; text: s
       }
       html += '</table>';
     }
-    html += `<p style="margin:12px 0 0"><a href="${env.APP_URL}/${path(p.type)}" style="color:#5b4be8">Abrir ${TYPE_TITLE[p.type].toLowerCase()}</a></p>`;
+    html += `<p style="margin:12px 0 0"><a href="${env.APP_URL}/${path(p.type)}" style="color:#5b4be8">Abrir ${billNames(p.type, d.orgKind).title.toLowerCase()}</a></p>`;
     text.push(`${env.APP_URL}/${path(p.type)}`);
   }
   html += `<p style="margin:32px 0 0;font-size:12px;color:#8a93a8">Você recebe este e-mail porque está na lista de alertas do espaço ${escapeHtml(d.orgName)} no nopaper.</p></div>`;

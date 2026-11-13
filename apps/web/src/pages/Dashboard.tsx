@@ -111,7 +111,7 @@ export function DashboardPage() {
                 <Link to="/relatorios" className="text-xs text-accent hover:underline">relatórios</Link>
               </div>
               <MonthlyChart months={year.data.months} year={year.data.year} today={year.data.today} height={190}
-                labels={{ done: 'Pago', open: 'A pagar' }} onPick={(m) => `/pagar?ano=${year.data!.year}&mes=${m}`} />
+                labels={{ done: 'Pago', open: 'A pagar' }} onPick={(m) => `/pagar?ano=${year.data!.year}&mes=${m}&situacao=`} />
             </Card>
           )}
           {showCards && (

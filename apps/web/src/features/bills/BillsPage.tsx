@@ -10,7 +10,7 @@ import { ColorChip } from '@/components/ui/chips';
 import { useConfirm } from '@/components/ui/dialog';
 import { get, post, qs, errMsg } from '@/lib/api';
 import { useCategories, useFolders } from '@/lib/queries';
-import { useCan, useSession, useBillPerms } from '@/lib/session';
+import { useBillNames, useCan, useSession, useBillPerms } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
 import type { Bill, Summary } from '@/lib/types';
 import { KpiRibbon } from './KpiRibbon';
@@ -25,6 +25,7 @@ type Status = '' | 'pending' | 'paid' | 'overdue' | 'due_soon';
 
 export function BillsPage({ type }: { type: BillType }) {
   const l = L[type];
+  const names = useBillNames()(type);
   const can = useCan();
   const perm = useBillPerms(type);
   const orgId = useSession((s) => s.orgId);
@@ -36,8 +37,8 @@ export function BillsPage({ type }: { type: BillType }) {
   // filtros na URL (dá para compartilhar/voltar)
   const year = Number(sp.get('ano')) || Number(now.slice(0, 4));
   const month = Number(sp.get('mes')) || Number(now.slice(5, 7));
-  // padrão "Todas": pagas e pendentes do mês (inclusive faturas de cartão já pagas)
-  const status = (sp.get('situacao') ?? '') as Status;
+  // padrão "Pendentes" (pedido do usuário em 13/11); "Todas" fica na URL como situacao= (vazio)
+  const status = (sp.get('situacao') ?? 'pending') as Status;
   const categoryId = sp.get('categoria') ?? '';
   const folderId = sp.get('pasta') ?? '';
   const search = sp.get('busca') ?? '';
@@ -149,13 +150,13 @@ export function BillsPage({ type }: { type: BillType }) {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title={l.title}
+        title={names.title}
         actions={<>
           {can('bills.folders') && <Button size="sm" variant="ghost" icon={<FolderOpen className="size-4" />} onClick={() => setMgr('folder')} title="Pastas" className="max-sm:size-9 max-sm:px-0"><span className="max-sm:sr-only">Pastas</span></Button>}
           {can('bills.categories') && <Button size="sm" variant="ghost" icon={<Tag className="size-4" />} onClick={() => setMgr('cat')} title="Categorias" className="max-sm:size-9 max-sm:px-0"><span className="max-sm:sr-only">Categorias</span></Button>}
           {can('bills.import') && perm.create && <Link to={type === 'receivable' ? '/importar?tipo=receber' : '/importar'} title="Importar" className="inline-flex h-8 max-sm:size-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 max-sm:px-0 text-[13px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-ink"><FileSpreadsheet className="size-4" /><span className="max-sm:sr-only">Importar</span></Link>}
           {can('bills.export') && <Button size="sm" variant="ghost" icon={<Archive className="size-4" />} onClick={() => setMgr('export')} title="Exportar" className="max-sm:size-9 max-sm:px-0"><span className="max-sm:sr-only">Exportar</span></Button>}
-          {perm.create && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setForm({ open: true, bill: null })} className="max-sm:ml-auto">{l.new}</Button>}
+          {perm.create && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setForm({ open: true, bill: null })} className="max-sm:ml-auto">{names.new}</Button>}
         </>}
       />
 
@@ -231,7 +232,7 @@ export function BillsPage({ type }: { type: BillType }) {
         {listQ.isLoading ? <div className="grid place-items-center py-20"><Spinner /></div>
           : bills.length === 0 ? (
             <Empty icon={<Wallet className="size-5" />} title={activeFilters || status ? 'Nenhuma conta com estes filtros' : `Nenhuma conta em ${MONTHS_PT[month - 1].toLowerCase()}`}
-              action={perm.create && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setForm({ open: true, bill: null })}>{l.new}</Button>}>
+              action={perm.create && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setForm({ open: true, bill: null })}>{names.new}</Button>}>
               {status === 'pending' ? 'Tudo em dia neste mês. Troque o filtro para “Todas” para ver as já quitadas.' : 'Ajuste o mês ou os filtros acima.'}
             </Empty>
           ) : (

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useBillPerms } from '@/lib/session';
+import { useBillNames, useBillPerms } from '@/lib/session';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, Barcode, CheckCircle2, Eye, Infinity as InfinityIcon, QrCode, Sparkles, Trash2, X } from 'lucide-react';
@@ -55,6 +55,7 @@ async function uploadAttachment(billId: string, file: File, slot: AttachmentSlot
 
 export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecurrence, onView, seed, onCreated }: Props) {
   const l = L[type];
+  const names = useBillNames()(type);
   const [current, setCurrent] = useState<Bill | null>(bill);
   /** Depois de criar, a janela continua aberta editando a conta criada. */
   const isEdit = !!current;
@@ -209,7 +210,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
   return (
     <Dialog
       open={open} onClose={onClose} size="lg"
-      title={isEdit ? 'Editar conta' : l.new}
+      title={isEdit ? 'Editar conta' : names.new}
       description={isEdit && current ? <span className="inline-flex items-center gap-2">{RECURRENCE_LABEL[current.recurrenceType]}{current.installmentNumber && ` · parcela ${current.installmentNumber}/${current.totalInstallments}`}{current.isIndefinite && <span className="inline-flex items-center gap-1 text-accent"><InfinityIcon className="size-3.5" /> sem data para acabar</span>}</span> : (isTouch() ? 'Envie' : 'Arraste') + ' o boleto ou a nota para preencher automaticamente.'}
       dirty={dirty}
       footer={<SaveFooter dirty={dirty} isNew={!isEdit} saving={busy} canSave={!!valid} onSave={submit} onClose={onClose} saveLabel={isEdit ? 'Salvar' : 'Criar conta'} />}

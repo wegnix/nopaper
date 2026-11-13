@@ -6,7 +6,7 @@ import { CheckCircle2, ExternalLink, Mail, Plus, Send, Trash2, X, XCircle } from
 import { ALERT_DAY_OPTIONS, type AlertConfig } from '@nopaper/shared';
 import { Button, Card, Field, IconButton, Input, Select, Switch } from '@/components/ui/base';
 import { api, errMsg, get, post, put } from '@/lib/api';
-import { useCan, useSession } from '@/lib/session';
+import { useBillNames, useCan, useSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
 
 interface Delivery { id: string; channel: 'telegram' | 'email'; target: string; status: 'ok' | 'error'; items: number; test: boolean; error: string | null; createdAt: string }
@@ -20,6 +20,7 @@ const dayLabel = (d: number) => (d === 0 ? 'No dia' : d === 1 ? '1 dia antes' : 
 export function AlertsPage() {
   const orgId = useSession((s) => s.orgId);
   const can = useCan();
+  const names = useBillNames();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['alerts', orgId], queryFn: () => get<AlertsView>('/api/alerts') });
   const [f, setF] = useState<AlertConfig | null>(null);
@@ -130,8 +131,8 @@ export function AlertsPage() {
           <div className="self-end pb-2 text-xs text-faint">{v.lastSentOn ? `Último resumo processado em ${v.lastSentOn.split('-').reverse().join('/')}.` : 'Nenhum resumo enviado ainda.'}</div>
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {can('payable.view') && rule('payable', 'Contas a pagar')}
-          {can('receivable.view') && rule('receivable', 'Contas a receber')}
+          {can('payable.view') && rule('payable', names('payable').title)}
+          {can('receivable.view') && rule('receivable', names('receivable').title)}
         </div>
         <div className="mt-4"><Switch checked={f.accounting} onChange={(accounting) => setF({ ...f, accounting })} label="Avisar quando o contador enviar documentos" hint="Na hora do envio (holerites, guias, boletos), pelos mesmos canais." /></div>
         {can('bills.view_restricted') && (

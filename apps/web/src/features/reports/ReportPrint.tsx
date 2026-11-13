@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { COLOR_PRESETS, isColorKey, MONTHS_PT, MONTHS_PT_SHORT, formatBRL, toCents } from '@nopaper/shared';
+import { COLOR_PRESETS, isColorKey, MONTHS_PT, MONTHS_PT_SHORT, formatBRL, toCents, billNames } from '@nopaper/shared';
 import { useOrg, useSession } from '@/lib/session';
 import type { Category, Folder } from '@/lib/types';
 import { compact, niceMax, pct } from './format';
@@ -141,7 +141,7 @@ export function ReportPrint({ report: r, catMap, folderMap }: { report: Report; 
         );
       })()}
 
-      <footer className="pd-foot">NoPaper · {org?.name} · {payable ? 'Contas a pagar' : 'Contas a receber'} {r.year} · gerado em {generated}</footer>
+      <footer className="pd-foot">NoPaper · {org?.name} · {billNames(r.type, org?.kind).title} {r.year} · gerado em {generated}</footer>
     </div>,
     document.body,
   );

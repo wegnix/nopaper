@@ -8,6 +8,15 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.15.1] - 2026-11-13
+
+### Melhorado
+- **Despesas e Receitas no espaço Pessoal**: em espaços do perfil Pessoal, "Contas a pagar" passa a se
+  chamar **Despesas** e "Contas a receber", **Receitas** — no menu, nos títulos, nos relatórios, na
+  importação, nos alertas e nas permissões. Em espaços do perfil Empresa os nomes continuam os mesmos.
+- **A lista de contas abre em "Pendentes"**: ao entrar em Contas a pagar ou a receber, aparece primeiro o
+  que ainda falta pagar ou receber no mês. "Todas", "Vencidas" e "Pagas" continuam a um clique.
+
 ## [1.15.0] - 2026-11-12
 
 ### Melhorado

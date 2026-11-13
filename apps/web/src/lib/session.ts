@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Permission } from '@nopaper/shared';
+import { billNames, type BillType, type Permission } from '@nopaper/shared';
 
 export interface SessionUser {
   id: string; email: string; username: string; name: string; isSuperadmin: boolean; mustChangePassword?: boolean; canCreateOrgs?: boolean;
@@ -73,6 +73,12 @@ export function useCan() {
 }
 
 export interface BillPerms { view: boolean; create: boolean; edit: boolean; pay: boolean; delete: boolean }
+/** Nomes das contas no espaço atual (Pessoal: Despesas/Receitas; Empresa: Contas a pagar/receber). */
+export function useBillNames() {
+  const kind = useOrg()?.kind;
+  return (type: BillType) => billNames(type, kind);
+}
+
 /** O que a pessoa pode fazer com contas a pagar/receber neste espaço. */
 export function useBillPerms(type: 'payable' | 'receivable'): BillPerms {
   const can = useCan();

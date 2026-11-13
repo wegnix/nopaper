@@ -23,6 +23,29 @@ const optText = (max: number) =>
 
 export const BILL_TYPES = ['payable', 'receivable'] as const;
 export type BillType = (typeof BILL_TYPES)[number];
+/**
+ * Como as contas são chamadas conforme o perfil do espaço: no Pessoal, "Despesas" e "Receitas";
+ * no Empresa, "Contas a pagar" e "Contas a receber". Só rótulo — rotas, permissões e dados são os mesmos.
+ */
+export interface BillNames { title: string; one: string; many: string; new: string }
+const BILL_NAMES: Record<'personal' | 'company', Record<BillType, BillNames>> = {
+  company: {
+    payable: { title: 'Contas a pagar', one: 'conta a pagar', many: 'contas a pagar', new: 'Nova conta a pagar' },
+    receivable: { title: 'Contas a receber', one: 'conta a receber', many: 'contas a receber', new: 'Nova conta a receber' },
+  },
+  personal: {
+    payable: { title: 'Despesas', one: 'despesa', many: 'despesas', new: 'Nova despesa' },
+    receivable: { title: 'Receitas', one: 'receita', many: 'receitas', new: 'Nova receita' },
+  },
+};
+/** Troca "Contas a pagar/receber" (e singular/minúsculas) de um texto pelos nomes do perfil do espaço. */
+export function billTerms(text: string, orgKind: string | null | undefined): string {
+  if (orgKind !== 'personal') return text;
+  return text
+    .replace(/Contas a pagar/g, 'Despesas').replace(/contas a pagar/g, 'despesas').replace(/Conta a pagar/g, 'Despesa').replace(/conta a pagar/g, 'despesa')
+    .replace(/Contas a receber/g, 'Receitas').replace(/contas a receber/g, 'receitas').replace(/Conta a receber/g, 'Receita').replace(/conta a receber/g, 'receita');
+}
+export const billNames = (type: BillType, orgKind: string | null | undefined): BillNames => BILL_NAMES[orgKind === 'personal' ? 'personal' : 'company'][type];
 export const RECURRENCE_TYPES = ['once', 'weekly', 'biweekly', 'monthly', 'yearly', 'installments'] as const;
 export type RecurrenceType = (typeof RECURRENCE_TYPES)[number];
 /** Tipos que repetem num intervalo fixo e podem não ter data para acabar. */

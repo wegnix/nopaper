@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import archiver from 'archiver';
 import { and, eq, gte, lte, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import { billListQuerySchema, exportSchema, MONTHS_PT, monthRange, formatDateBR, ATTACHMENT_SLOT_LABEL, type AttachmentSlot } from '@nopaper/shared';
+import { billListQuerySchema, billNames, exportSchema, MONTHS_PT, monthRange, formatDateBR, ATTACHMENT_SLOT_LABEL, type AttachmentSlot } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { parse } from '../lib/validate.js';
 import { forbidden } from '../lib/errors.js';
@@ -34,7 +34,7 @@ export default async function exportRoutes(app: FastifyInstance) {
       .orderBy(schema.bills.dueDate);
     const atts = bills.length ? await db.select().from(schema.attachments).where(inArray(schema.attachments.billId, bills.map((r) => r.b.id))) : [];
 
-    const typeLabel = body.type === 'payable' ? 'Contas a Pagar' : 'Contas a Receber';
+    const typeLabel = req.org!.kind === 'personal' ? billNames(body.type, 'personal').title : body.type === 'payable' ? 'Contas a Pagar' : 'Contas a Receber';
     const periodLabel = body.month ? `${String(body.month).padStart(2, '0')}/${body.year}` : `Ano ${body.year}`;
     const fileBase = `${body.type === 'payable' ? 'contas-pagar' : 'contas-receber'}-${body.year}${body.month ? '-' + String(body.month).padStart(2, '0') : ''}`;
 
@@ -111,7 +111,7 @@ export default async function exportRoutes(app: FastifyInstance) {
       attachments: (Object.keys(b.attachments) as AttachmentSlot[]).map((s) => ATTACHMENT_SLOT_LABEL[s]).join(', '),
     }));
 
-    const typeLabel = q.type === 'payable' ? 'Contas a pagar' : 'Contas a receber';
+    const typeLabel = billNames(q.type, req.org!.kind).title;
     const period = q.status === 'overdue' ? 'vencidas (todos os meses)' : q.month && q.year ? `${MONTHS_PT[q.month - 1].toLowerCase()} de ${q.year}` : q.year ? `ano ${q.year}` : 'todos os períodos';
     const statusLabel: Record<string, string> = { pending: 'pendentes', paid: q.type === 'payable' ? 'pagas' : 'recebidas', due_soon: 'próximos 7 dias' };
     const filters = [

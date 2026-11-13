@@ -10,7 +10,7 @@ import { CategoryChip, StatusChip } from '@/components/ui/chips';
 import { useConfirm } from '@/components/ui/dialog';
 import { api, get, post, errMsg } from '@/lib/api';
 import { useCardCategories } from '@/lib/queries';
-import { useCan, useSession } from '@/lib/session';
+import { useBillNames, useCan, useSession } from '@/lib/session';
 import { cn, isTouch } from '@/lib/utils';
 import type { Bill, Card as CardT, CardTx, StatementView } from '@/lib/types';
 import { CountUp } from '@/features/bills/KpiRibbon';
@@ -25,6 +25,7 @@ const STATUS = { open: { status: 'pending' as const, label: 'Aberta' }, closed: 
 
 export function CardsPage() {
   const can = useCan();
+  const payName = useBillNames()('payable');
   const canEdit = can('cards.edit');
   const canManage = can('cards.manage');
   const canPay = can('payable.pay');
@@ -67,7 +68,7 @@ export function CardsPage() {
   }, [st]);
 
   const unpay = async (b: Bill) => {
-    if (!(await confirm({ title: 'Reverter o pagamento da fatura?', body: <>A fatura volta para <b>Pendente</b> aqui e em Contas a pagar. A data e o valor pagos são limpos; o comprovante continua anexado.</>, confirmLabel: 'Reverter' }))) return;
+    if (!(await confirm({ title: 'Reverter o pagamento da fatura?', body: <>A fatura volta para <b>Pendente</b> aqui e em {payName.title}. A data e o valor pagos são limpos; o comprovante continua anexado.</>, confirmLabel: 'Reverter' }))) return;
     try { await post(`/api/bills/${b.id}/unpay`); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Pagamento revertido'); } catch (e) { toast.error(errMsg(e)); }
   };
   const removeTx = async (t: CardTx) => {
@@ -88,7 +89,7 @@ export function CardsPage() {
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
-      <PageHeader title="Cartões de crédito" description="Lance as compras no cartão; cada fatura vira uma conta a pagar automaticamente."
+      <PageHeader title="Cartões de crédito" description={`Lance as compras no cartão; cada fatura vira uma ${payName.one} automaticamente.`}
         actions={<>
           <Button variant="ghost" icon={<Tags className="size-4" />} onClick={() => setCatsOpen(true)}>Categorias</Button>
           {canManage && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCardForm({ open: true, card: null })}>Novo cartão</Button>}
@@ -140,10 +141,10 @@ export function CardsPage() {
                       <Wallet className="size-3.5 text-accent" />
                       {st.bill ? (
                         <>
-                          <span>Esta fatura é uma conta a pagar de <b className="text-ink">{MONTHS_PT[Number(st.bill.dueDate.slice(5, 7)) - 1]} de {st.bill.dueDate.slice(0, 4)}</b> ({st.bill.status === 'paid' ? 'paga' : 'pendente'}).</span>
-                          <Link to={`/pagar?ano=${st.bill.dueDate.slice(0, 4)}&mes=${Number(st.bill.dueDate.slice(5, 7))}&situacao=`} className="font-medium text-accent hover:underline">Ver em Contas a pagar</Link>
+                          <span>Esta fatura é uma {payName.one} de <b className="text-ink">{MONTHS_PT[Number(st.bill.dueDate.slice(5, 7)) - 1]} de {st.bill.dueDate.slice(0, 4)}</b> ({st.bill.status === 'paid' ? 'paga' : 'pendente'}).</span>
+                          <Link to={`/pagar?ano=${st.bill.dueDate.slice(0, 4)}&mes=${Number(st.bill.dueDate.slice(5, 7))}&situacao=`} className="font-medium text-accent hover:underline">Ver em {payName.title}</Link>
                         </>
-                      ) : <span>A conta a pagar desta fatura é criada no primeiro lançamento e entra em Contas a pagar no mês do vencimento.</span>}
+                      ) : <span>A {payName.one} desta fatura é criada no primeiro lançamento e entra em {payName.title} no mês do vencimento.</span>}
                     </p>
                   )}
                   {catFilter && (
@@ -216,7 +217,7 @@ export function CardsPage() {
                   </ul>
                   {byCat.rows.length > 0 && <p className="mt-3 flex justify-between border-t border-line pt-3 text-sm"><span className="text-muted">Total consumido</span><b className="tnum">{formatBRL(byCat.total / 100)}</b></p>}
                   {byCat.rows.length > 1 && <p className="mt-2 text-xs text-faint">{isTouch() ? 'Toque' : 'Clique'} numa categoria para ver só as compras dela.</p>}
-                  {st?.bill && <p className="mt-6 text-xs text-faint">Conta a pagar vinculada: “{st.bill.description}”, {st.bill.status === 'paid' ? `paga em ${formatDateBR(st.bill.paidAt)}` : 'pendente'}.</p>}
+                  {st?.bill && <p className="mt-6 text-xs text-faint">{payName.one[0].toUpperCase() + payName.one.slice(1)} vinculada: “{st.bill.description}”, {st.bill.status === 'paid' ? `paga em ${formatDateBR(st.bill.paidAt)}` : 'pendente'}.</p>}
                 </aside>
               </div>
             </Card>

@@ -2,14 +2,15 @@ import { diffDaysISO, type BillType } from '@nopaper/shared';
 import type { DisplayStatus } from '@/components/ui/chips';
 import type { Bill } from '@/lib/types';
 
+/** Palavras por tipo de conta. O nome da tela e do botão "Nova…" depende do perfil do espaço: `useBillNames`. */
 export const L = {
   payable: {
-    title: 'Contas a pagar', one: 'conta a pagar', new: 'Nova conta a pagar', paid: 'Paga', paidPl: 'Pagas', payAction: 'Pagar',
+    paid: 'Paga', paidPl: 'Pagas', payAction: 'Pagar',
     paidAt: 'Pago em', paidKpi: 'Pago no mês', markPaid: 'Marcar como paga', confirmPay: 'Confirmar pagamento', paidAmount: 'Valor pago',
     overdue: 'Vencida', overduePl: 'Vencidas', unpay: 'Reverter pagamento', person: 'Pessoa relacionada', bulk: 'Pagar selecionadas',
   },
   receivable: {
-    title: 'Contas a receber', one: 'conta a receber', new: 'Nova conta a receber', paid: 'Recebida', paidPl: 'Recebidas', payAction: 'Receber',
+    paid: 'Recebida', paidPl: 'Recebidas', payAction: 'Receber',
     paidAt: 'Recebido em', paidKpi: 'Recebido no mês', markPaid: 'Marcar como recebida', confirmPay: 'Confirmar recebimento', paidAmount: 'Valor recebido',
     overdue: 'Atrasada', overduePl: 'Atrasadas', unpay: 'Reverter recebimento', person: 'Cliente / pagador', bulk: 'Receber selecionadas',
   },
