@@ -8,6 +8,13 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.21.1] - 2026-11-13
+
+### Corrigido
+- **Modo embutido sem espaço liberado**: a tela "Nenhum espaço disponível aqui" agora tem o botão "Abrir o NoPaper
+  em outra aba", que leva direto aos dados do espaço fora do outro sistema, para ligar a chave. Antes não havia
+  como sair dessa tela.
+
 ## [1.21.0] - 2026-11-13
 
 ### Novo

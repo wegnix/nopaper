@@ -204,6 +204,12 @@ export function AppShell() {
                     ? 'Seus espaços não estão liberados para aparecer dentro de outro sistema. Um administrador do espaço libera isso abrindo o NoPaper direto, em Configurações → Dados do espaço.'
                     : 'Sua conta ainda não participa de nenhum espaço. Peça a um administrador para adicionar você.'}
                 </p>
+                {embedBlocked && (
+                  // saída do beco: abre o NoPaper fora do outro sistema (?embed=0 desliga o modo embutido na aba nova)
+                  <a href="/config/organizacao?embed=0" target="_blank" rel="noreferrer" className="mt-4 inline-flex h-10 items-center justify-center rounded-lg bg-accent px-4 text-sm font-semibold text-accent-ink hover:opacity-90">
+                    Abrir o NoPaper em outra aba
+                  </a>
+                )}
               </div>
             ) : <Outlet />}
           </motion.div>
