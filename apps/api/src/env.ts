@@ -27,6 +27,8 @@ const schema = z.object({
   STORAGE_QUOTA_MB: z.coerce.number().int().min(1).default(5120),
   /** Webhooks: aceitar endereços http e de rede interna (só para instalações em rede própria e no dev). */
   WEBHOOK_ALLOW_PRIVATE: z.preprocess((v) => v === '1' || v === 'true', z.boolean()).default(false),
+  /** Sites que podem exibir o NoPaper em quadro (iframe), separados por vírgula. Vazio = nenhum. */
+  EMBED_ALLOWED_ORIGINS: z.string().default('').transform((v) => v.split(',').map((s) => s.trim()).filter((s) => /^https?:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(s))),
   TZ_DEFAULT: z.string().default('America/Sao_Paulo'),
   LOG_LEVEL: z.string().default('info'),
   /** Chave para cifrar segredos guardados no banco (opcional; padrão: derivada do JWT_SECRET). */

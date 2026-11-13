@@ -44,6 +44,7 @@ services:
       ACCOUNTING_MAX_UPLOAD_MB: ${ACCOUNTING_MAX_UPLOAD_MB:-200}
       STORAGE_QUOTA_MB: ${STORAGE_QUOTA_MB:-5120}
       WEBHOOK_ALLOW_PRIVATE: ${WEBHOOK_ALLOW_PRIVATE:-}
+      EMBED_ALLOWED_ORIGINS: ${EMBED_ALLOWED_ORIGINS:-}
       # atualização pela interface: de onde vêm as versões (dono/repositório no GitHub)
       UPDATE_REPO: ${UPDATE_REPO:-wegnix/nopaper}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -57,11 +58,14 @@ services:
     image: nopaper-web:latest
     restart: unless-stopped
     depends_on: [api]
+    environment:
+      EMBED_ALLOWED_ORIGINS: ${EMBED_ALLOWED_ORIGINS:-}
     networks: [internal, traefik]
     labels:
       - traefik.enable=true
       - traefik.docker.network=${TRAEFIK_NETWORK:-traefik}
-      - traefik.http.routers.nopaper.rule=Host(`${APP_DOMAIN:?defina APP_DOMAIN no .env}`)
+      # APP_EXTRA_DOMAIN (opcional): 2º endereço para o mesmo NoPaper; vazio = repete o principal
+      - traefik.http.routers.nopaper.rule=Host(`${APP_DOMAIN:?defina APP_DOMAIN no .env}`) || Host(`${APP_EXTRA_DOMAIN:-${APP_DOMAIN}}`)
       - traefik.http.routers.nopaper.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
       - traefik.http.routers.nopaper.tls=true
       - traefik.http.routers.nopaper.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}

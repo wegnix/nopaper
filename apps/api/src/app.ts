@@ -50,7 +50,15 @@ export async function buildApp() {
     bodyLimit: 2 * 1024 * 1024,
   });
 
-  await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'same-origin' } });
+  // Embutir em outro sistema (EMBED_ALLOWED_ORIGINS): o X-Frame-Options não aceita lista, então sai e
+  // entra "frame-ancestors". Em produção quem manda é o nginx (docker/nginx-embed.sh); aqui vale para
+  // o dev e para o visualizador de arquivos, que é um quadro dentro do quadro.
+  const embedders = env.EMBED_ALLOWED_ORIGINS;
+  await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'same-origin' }, ...(embedders.length ? { frameguard: false } : {}) });
+  if (embedders.length) {
+    const ancestors = `frame-ancestors 'self' ${embedders.join(' ')}`;
+    app.addHook('onSend', async (_req, reply) => { if (!reply.hasHeader('content-security-policy')) reply.header('content-security-policy', ancestors); });
+  }
   await app.register(cookie);
   await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute' });
   await app.register(multipart);

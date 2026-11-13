@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { DropdownMenu } from 'radix-ui';
-import { Check, ChevronsUpDown, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Sun, User, X } from 'lucide-react';
+import { Check, ChevronsUpDown, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, User, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useSession, useOrg, useCan } from '@/lib/session';
@@ -16,6 +16,7 @@ import { OrgAvatar } from '@/components/ui/org-avatar';
 import { NAV, NAV_ACCOUNTANT_INBOX, NAV_BOTTOM, navLabel, navVisible, type NavItem } from './nav';
 import { useAccountantOnly, useAccountingInbox, useAccountingPending } from '@/features/accounting/data';
 import { CommandPalette } from './CommandPalette';
+import { EMBEDDED, notifyHost } from '@/lib/embed';
 import { NewOrgDialog } from './NewOrgDialog';
 
 function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigate?: () => void; collapsed?: boolean }) {
@@ -53,7 +54,7 @@ function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNaviga
   );
 }
 
-function OrgSwitcher({ onNew, collapsed }: { onNew: () => void; collapsed?: boolean }) {
+function OrgSwitcher({ onNew, collapsed, slim }: { onNew: () => void; collapsed?: boolean; /** Faixa do modo embutido: uma linha só. */ slim?: boolean }) {
   const { orgs, setOrg } = useSession();
   const canCreate = useSession((s) => !!(s.user?.isSuperadmin || s.user?.canCreateOrgs));
   const org = useOrg();
@@ -63,11 +64,13 @@ function OrgSwitcher({ onNew, collapsed }: { onNew: () => void; collapsed?: bool
     <DropdownMenu.Root>
       <Tooltip content={collapsed ? `${org?.name} · trocar de espaço` : null} side="right">
         <DropdownMenu.Trigger className={cn(
-          'w-full flex items-center gap-3 rounded-xl border border-line bg-surface-2 text-left hover:border-line-strong transition-colors',
-          collapsed ? 'p-[3px]' : 'px-2.5 py-2',
+          'flex items-center text-left transition-colors',
+          slim ? 'min-w-0 gap-2 rounded-lg px-1.5 py-1 hover:bg-surface-2' : 'w-full gap-3 rounded-xl border border-line bg-surface-2 hover:border-line-strong',
+          !slim && (collapsed ? 'p-[3px]' : 'px-2.5 py-2'),
         )}>
-          <OrgAvatar name={org?.name} logo={org?.logo} />
-          {!collapsed && <>
+          <OrgAvatar name={org?.name} logo={org?.logo} className={slim ? 'size-6 rounded-md text-xs' : undefined} />
+          {slim && <><span className="min-w-0 truncate text-sm font-semibold">{org?.name}</span><ChevronsUpDown className="size-3.5 shrink-0 text-faint" /></>}
+          {!collapsed && !slim && <>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold">{org?.name}</span>
               <span className="block text-xs text-faint">{org?.kind === 'personal' ? 'Pessoal' : 'Empresa'}</span>
@@ -137,6 +140,8 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, [accountantOnly]);
   useEffect(() => setDrawer(false), [loc.pathname]);
+  // embutido em outro sistema: avisa em que tela está, para o menu de lá acompanhar
+  useEffect(() => notifyHost(loc.pathname + loc.search), [loc.pathname, loc.search]);
   // servidor atualizado e este front ainda é o antigo (aba aberta ou PWA em cache): oferece recarregar
   const serverVersion = useSession((s) => s.serverVersion);
   useEffect(() => {
@@ -151,6 +156,50 @@ export function AppShell() {
     await endSession();
     nav('/login');
   };
+
+  const accountMenu = (slim: boolean) => (
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger className={cn('flex items-center gap-2 rounded-lg hover:bg-surface-2', slim ? 'p-1' : 'h-11 sm:h-auto px-1.5 sm:pl-1 sm:pr-2 py-1')} aria-label="Menu da conta">
+          <span className={cn('grid place-items-center rounded-full bg-accent text-accent-ink font-semibold', slim ? 'size-7 text-xs' : 'size-8 text-sm')}>{user?.name.slice(0, 1).toUpperCase()}</span>
+          {!slim && <span className="hidden md:block text-sm font-medium max-w-[140px] truncate">{user?.name.split(' ')[0]}</span>}
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content align="end" sideOffset={6} className="z-[6000] w-56 rounded-xl border border-line bg-raised p-1.5 shadow-2xl">
+            <div className="px-2 py-1.5"><p className="text-sm font-medium truncate">{user?.name}</p><p className="text-xs text-faint truncate">{user?.email}</p></div>
+            <DropdownMenu.Separator className="my-1 h-px bg-line" />
+            <DropdownMenu.Item onSelect={() => nav('/config/perfil')} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm outline-none data-[highlighted]:bg-surface-2 cursor-pointer"><User className="size-4 text-faint" /> Meu perfil</DropdownMenu.Item>
+            {slim && <DropdownMenu.Item onSelect={() => nav('/config')} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm outline-none data-[highlighted]:bg-surface-2 cursor-pointer"><Settings className="size-4 text-faint" /> Configurações</DropdownMenu.Item>}
+            <DropdownMenu.Item onSelect={logout} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-danger outline-none data-[highlighted]:bg-surface-2 cursor-pointer"><LogOut className="size-4" /> Sair</DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+  );
+
+  // dentro de outro sistema: sem menu lateral nem cabeçalho (quem embute tem os dele); fica só uma
+  // faixa fina com o que não pode sumir — trocar de espaço, buscar, tema e a conta (perfil, sair)
+  if (EMBEDDED) {
+    return (
+      <div className="flex h-dvh flex-col overflow-hidden">
+        <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line px-2 sm:px-3">
+          <OrgSwitcher onNew={() => setNewOrg(true)} slim />
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
+            {!accountantOnly && <button onClick={() => setPalette(true)} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink pointer-coarse:size-10" aria-label="Buscar ou ir para (Ctrl K)"><Search className="size-4" /></button>}
+            <button onClick={toggle} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink pointer-coarse:size-10" aria-label="Alternar tema">
+              {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </button>
+            {accountMenu(true)}
+          </div>
+        </div>
+        <main className="flex-1 overflow-y-auto overscroll-contain">
+          <motion.div key={loc.pathname.split('/')[1]} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: 'easeOut' }} className="w-full px-3 py-4 sm:px-4 md:px-5 md:py-5">
+            <Outlet />
+          </motion.div>
+        </main>
+        <CommandPalette open={palette} onClose={() => setPalette(false)} />
+        <NewOrgDialog open={newOrg} onClose={() => setNewOrg(false)} />
+      </div>
+    );
+  }
 
   return (
     <div className="safe-x flex h-dvh overflow-hidden">
@@ -203,20 +252,7 @@ export function AppShell() {
             <button onClick={toggle} className="grid size-11 sm:size-9 place-items-center rounded-lg text-muted hover:text-ink hover:bg-surface-2" aria-label="Alternar tema">
               {theme === 'dark' ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
             </button>
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger className="flex h-11 sm:h-auto items-center gap-2 rounded-lg px-1.5 sm:pl-1 sm:pr-2 py-1 hover:bg-surface-2" aria-label="Menu da conta">
-                <span className="grid size-8 place-items-center rounded-full bg-accent text-accent-ink text-sm font-semibold">{user?.name.slice(0, 1).toUpperCase()}</span>
-                <span className="hidden md:block text-sm font-medium max-w-[140px] truncate">{user?.name.split(' ')[0]}</span>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content align="end" sideOffset={6} className="z-[6000] w-56 rounded-xl border border-line bg-raised p-1.5 shadow-2xl">
-                  <div className="px-2 py-1.5"><p className="text-sm font-medium truncate">{user?.name}</p><p className="text-xs text-faint truncate">{user?.email}</p></div>
-                  <DropdownMenu.Separator className="my-1 h-px bg-line" />
-                  <DropdownMenu.Item onSelect={() => nav('/config/perfil')} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm outline-none data-[highlighted]:bg-surface-2 cursor-pointer"><User className="size-4 text-faint" /> Meu perfil</DropdownMenu.Item>
-                  <DropdownMenu.Item onSelect={logout} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-danger outline-none data-[highlighted]:bg-surface-2 cursor-pointer"><LogOut className="size-4" /> Sair</DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
+            {accountMenu(false)}
           </div>
          </div>
         </header>

@@ -8,6 +8,20 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.20.0] - 2026-11-13
+
+### Novo
+- **NoPaper dentro de outro sistema (modo embutido)**: quando o NoPaper é aberto em um quadro (iframe) de outro
+  sistema, ou com `?embed=1` no endereço, ele esconde o menu lateral e o cabeçalho e mostra só a tela, com uma
+  faixa fina para trocar de espaço, buscar, mudar o tema e sair. O modo se mantém ao navegar, ao recarregar e
+  depois do login, e o NoPaper avisa a página de fora a cada troca de tela, para o menu de lá acompanhar.
+- **Quem pode embutir**: nova variável `EMBED_ALLOWED_ORIGINS` no `.env` do servidor, com os sites autorizados a
+  exibir o NoPaper em quadro (ex.: `https://sistema.exemplo.com`). Vazia, nada muda: nenhum outro site consegue
+  embutir. Cada pessoa continua entrando com a própria conta; para o login funcionar dentro do quadro, o NoPaper
+  e o outro sistema precisam estar no mesmo domínio registrado.
+- **Segundo endereço** (`APP_EXTRA_DOMAIN` no `.env`): o mesmo NoPaper pode responder em mais um domínio, com
+  certificado emitido pelo Traefik. Passo a passo no manual de publicação, seção 11a.
+
 ## [1.19.0] - 2026-11-13
 
 ### Novo

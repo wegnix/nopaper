@@ -296,6 +296,26 @@ Tudo em **Configurações → Plataforma** (só o administrador da plataforma v�
 Mantenha **sempre uma cópia fora do servidor** (o remoto acima, ou copiando os arquivos de
 `/storage/nopaper/backups/` para outro lugar, ex.: `rsync -a /storage/nopaper/backups/ outro-servidor:backups-nopaper/`).
 
+## 11a. Exibir o NoPaper dentro de outro sistema (opcional)
+
+Outro sistema pode mostrar as telas do NoPaper dentro dele, em um quadro (iframe). O NoPaper esconde o próprio
+menu e mostra só a tela; cada pessoa continua entrando com a própria conta do NoPaper.
+
+1. **Autorize o site** no `.env`: `EMBED_ALLOWED_ORIGINS=https://app.outrosistema.com` (vários, separados por
+   vírgula). Vazio, nenhum outro site consegue embutir.
+2. **Mesmo domínio registrado.** O login só funciona dentro do quadro se o NoPaper e o outro sistema estiverem
+   no mesmo domínio registrado (`nopaper.outrosistema.com` dentro de `app.outrosistema.com`). Se o seu NoPaper
+   está em outro domínio, dê a ele um segundo endereço: crie o registro de DNS apontando para este servidor
+   (como no passo 2) e ponha no `.env` `APP_EXTRA_DOMAIN=nopaper.outrosistema.com`. O Traefik emite o
+   certificado sozinho. O endereço principal continua valendo, e é ele que vai nos links de e-mail.
+3. **Aplique:** `docker compose up -d` (ou faça uma atualização pela interface).
+4. No outro sistema, o quadro aponta para as telas: `/pagar`, `/receber`, `/cartoes`, `/bancos`, `/folha`,
+   `/contador`, `/relatorios`. A cada troca de tela o NoPaper avisa a página de fora com
+   `postMessage({ source: 'nopaper', type: 'route', path })`.
+
+Quem entra por um endereço não fica logado no outro: é o mesmo sistema e os mesmos dados, mas o navegador
+trata cada endereço como um login separado.
+
 ## 12. Atualizar para uma versão nova
 
 Versões seguem SemVer: `1.0.x` (correção) e `1.x.0` (novidades) é só atualizar; `x.0.0` (maior)
