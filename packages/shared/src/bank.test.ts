@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { accountKey, candidatesFor, decodeOfx, normBank, ofxAmount, parseBankText, ofxDate, parseOfx, suggestMatches, txDescription, type MatchBill } from './bank.js';
+import { accountKey, sameAccountKey, candidatesFor, decodeOfx, normBank, ofxAmount, parseBankText, ofxDate, parseOfx, suggestMatches, txDescription, type MatchBill } from './bank.js';
 
 // OFX 1.02 (SGML) fictício, no padrão dos bancos brasileiros
 const SGML = `OFXHEADER:100
@@ -95,4 +95,16 @@ test('parseBankText: anotação livre do funcionário vira campos', () => {
   assert.deepEqual(parseBankText('Banco do Brasil agência 1234-5 conta corrente 9876-X'), { bankCode: '001', branch: '1234-5', account: '9876-X', kind: 'checking' });
   assert.deepEqual(parseBankText('Cooperativa (756) Ag 4355 Conta: 48287-0'), { bankCode: '756', branch: '4355', account: '48287-0', kind: null });
   assert.deepEqual(parseBankText('ver com o RH'), { bankCode: null, branch: null, account: null, kind: null });
+});
+
+test('conta do arquivo × cadastro: agência com ou sem o dígito é a mesma conta', () => {
+  const file = accountKey('756', '1234-5', '12345-6');
+  assert.ok(sameAccountKey(file, accountKey('756', '1234-5', '12345-6')));
+  assert.ok(sameAccountKey(file, accountKey('756', '1234', '12345-6')), 'cadastro sem o dígito da agência');
+  assert.ok(sameAccountKey(file, accountKey('756', '', '12345-6')), 'cadastro sem agência');
+  assert.ok(!sameAccountKey(file, accountKey('756', '1239', '12345-6')), 'outra agência');
+  assert.ok(!sameAccountKey(file, accountKey('756', '12', '12345-6')), 'agência que só começa igual');
+  assert.ok(!sameAccountKey(file, accountKey('756', '1234', '12345-7')), 'outra conta');
+  assert.ok(!sameAccountKey(file, accountKey('001', '1234-5', '12345-6')), 'outro banco');
+  assert.ok(!sameAccountKey(file, null));
 });

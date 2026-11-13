@@ -111,6 +111,8 @@ export const cardOfxImportSchema = z.object({
   ref: z.string().regex(/^\d{4}-\d{2}$/, 'Escolha a fatura'),
   /** Parcela n de N: cria também as parcelas seguintes nas próximas faturas. */
   futureInstallments: z.boolean().default(true),
+  /** Conta do cartão no arquivo (ACCTID): o cartão guarda a da 1ª importação, para reconhecer as próximas. */
+  accountId: z.string().trim().max(40).nullish(),
   items: z.array(z.object({
     fitId: z.string().min(1).max(120),
     date: isoDate,

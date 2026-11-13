@@ -163,6 +163,19 @@ export const accountKey = (bank: string | null | undefined, branch: string | nul
   [normBank(bank) ?? '', ...[branch, account].map((v) => (v ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '').replace(/^0+/, ''))].join('|');
 
 // ------------------------------------------------------------------ cadastro
+/**
+ * A conta do arquivo é a cadastrada? Mesmo banco e mesma conta; a agência pode estar com ou sem o
+ * dígito (o OFX costuma trazer "1234-5" e o cadastro, editado à mão, só "1234") ou faltar de um lado.
+ */
+export function sameAccountKey(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const [ba, ga = '', ca = ''] = a.split('|'), [bb, gb = '', cb = ''] = b.split('|');
+  if (ba !== bb || !ca || ca !== cb) return false;
+  const [short, long] = ga.length <= gb.length ? [ga, gb] : [gb, ga];
+  return !short || (long.length - short.length === 1 && long.startsWith(short));
+}
+
 export const BANK_ACCOUNT_KINDS = ['checking', 'savings', 'other'] as const;
 export const BANK_ACCOUNT_KIND_LABEL: Record<(typeof BANK_ACCOUNT_KINDS)[number], string> = { checking: 'Conta corrente', savings: 'Poupança', other: 'Outra' };
 const optText = (max: number) => z.string().max(max).nullish().transform((v) => (v && v.trim() ? v.trim() : null));

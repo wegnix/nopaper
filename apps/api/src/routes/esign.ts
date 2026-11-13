@@ -16,6 +16,7 @@ import { assertCompany, loadPeriod } from '../services/payroll.js';
 import { buildSignedPdf, buildTermPdf, splitPayslips } from '../services/esign.js';
 import { resolveRecipient } from '../services/accounting.js';
 import { assertStorageRoom } from '../services/storageQuota.js';
+import { checkPayslipsSpace } from '../services/spaceCheck.js';
 
 type Row = typeof schema.payslipSignatures.$inferSelect;
 const digits = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '');
@@ -115,7 +116,7 @@ export default async function esignRoutes(app: FastifyInstance) {
    * Quem já assinou esta competência fica como está; quem ainda não assinou recebe o arquivo novo
    * (o link continua o mesmo).
    */
-  app.post<{ Params: { id: string } }>('/api/payroll/periods/:id/signatures', edit, async (req) => {
+  app.post<{ Params: { id: string }; Querystring: { force?: string } }>('/api/payroll/periods/:id/signatures', edit, async (req) => {
     const orgId = req.org!.id;
     const p = await loadPeriod(orgId, req.params.id);
     const org = await orgOf(orgId);
@@ -139,6 +140,11 @@ export default async function esignRoutes(app: FastifyInstance) {
     try { split = await splitPayslips(buf); } catch { throw badRequest('Não consegui ler este PDF. Peça o arquivo de novo ao contador e tente outra vez.'); }
     if (!split.slips.length) throw badRequest('Não achei holerites neste PDF. Ele precisa ser o PDF original do contador, não uma foto ou digitalização.', 'payslips_unknown');
     if (!split.ref) throw badRequest('Não achei o mês (competência) neste PDF de holerites.');
+    // holerites de outra empresa: para e avisa; a tela pergunta e manda de novo com ?force=1
+    if ((req.query as { force?: string }).force !== '1') {
+      const spaceCheck = await checkPayslipsSpace(req, { company: split.company, companyDocument: split.companyDocument, slips: split.slips.map((x) => x.slip) });
+      if (spaceCheck) throw new HttpError(409, 'Estes holerites não parecem ser deste espaço.', 'wrong_space', { spaceCheck });
+    }
     await assertStorageRoom(orgId, split.slips.reduce((n, x) => n + x.pdf.length, 0));
     const competence = split.ref;
 

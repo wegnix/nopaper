@@ -70,6 +70,25 @@ export default async function orgRoutes(app: FastifyInstance) {
     return { embedVisible: org.embedVisible };
   });
 
+  /**
+   * Espaço privado: tira o espaço do alcance da Plataforma (ver `services/privacy.ts`). Só o dono liga
+   * e desliga — nem um administrador do espaço, nem um administrador da plataforma.
+   */
+  app.put('/api/org/private', { preHandler: requireOrg }, async (req) => {
+    const body = parse(z.object({ private: z.boolean() }), req.body);
+    if (!req.org!.isOwner) throw forbidden('Só o dono do espaço pode ligar ou desligar o espaço privado');
+    const [before] = await db.select({ isPrivate: schema.organizations.isPrivate }).from(schema.organizations).where(eq(schema.organizations.id, req.org!.id));
+    const [org] = await db.update(schema.organizations).set({ isPrivate: body.private }).where(eq(schema.organizations.id, req.org!.id)).returning();
+    if (before?.isPrivate !== org.isPrivate) {
+      await audit(req, {
+        action: 'org.private', entityType: 'organization', entityId: org.id,
+        description: org.isPrivate ? `Tornou o espaço ${org.name} privado` : `Desligou o espaço privado em ${org.name}`,
+        details: { changes: { isPrivate: { from: !org.isPrivate, to: org.isPrivate } } },
+      });
+    }
+    return { isPrivate: org.isPrivate };
+  });
+
   // ---------------------------------------------------------- senhas de PDF
   app.get('/api/org/pdf-passwords', { preHandler: requirePerm('org.settings') }, async (req) => listPdfRules(req.org!.id));
 

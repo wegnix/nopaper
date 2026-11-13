@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Navigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Building2, Crown, KeyRound, LogOut, Pencil, Search, ShieldCheck, Trash2, UserCheck, UserPlus, UserX } from 'lucide-react';
+import { Building2, Crown, KeyRound, Lock, LogOut, Pencil, Search, ShieldCheck, Trash2, UserCheck, UserPlus, UserX } from 'lucide-react';
 import { usernameFromEmail } from '@nopaper/shared';
 import { Button, Card, Checkbox, Field, IconButton, Input, Select, Spinner, Switch } from '@/components/ui/base';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
@@ -14,7 +14,10 @@ import { when } from './common';
 interface PUser {
   id: string; name: string; email: string; username: string; active: boolean; isSuperadmin: boolean; canCreateOrgs: boolean;
   mustChangePassword: boolean; lastLoginAt: string | null; createdAt: string; sessions: number;
-  orgs: Array<{ id: string; name: string; isOwner: boolean; active: boolean; groupIds: string[] }>;
+  /** `locked` = espaço privado que você não administra: a plataforma não mexe nele. */
+  orgs: Array<{ id: string; name: string; isOwner: boolean; active: boolean; groupIds: string[]; locked?: boolean }>;
+  /** Participa de espaço privado: a senha não pode ser definida pela plataforma. */
+  passwordLocked?: boolean;
 }
 
 type Filter = '' | 'admins' | 'creators' | 'inactive';
@@ -94,7 +97,7 @@ export function UsersPage() {
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {u.orgs.map((o) => (
                       <span key={o.id} className={cn('inline-flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted', !o.active && 'line-through')}>
-                        {o.isOwner && <Crown className="size-3 text-warn" />}{o.name}
+                        {o.isOwner && <Crown className="size-3 text-warn" />}{o.locked && <Lock className="size-3" />}{o.name}
                       </span>
                     ))}
                   </div>
@@ -102,7 +105,7 @@ export function UsersPage() {
               </div>
               <div className="flex items-center gap-0.5 max-sm:w-full max-sm:justify-end">
                 <IconButton label="Encerrar sessões" onClick={() => logoutAll(u)} disabled={!u.sessions}><LogOut className="size-4" /></IconButton>
-                {u.id !== me.id && <IconButton label="Definir senha provisória" onClick={() => setResetting(u)}><KeyRound className="size-4" /></IconButton>}
+                {u.id !== me.id && <IconButton label={u.passwordLocked ? 'Participa de um espaço privado: a senha não pode ser definida pela plataforma' : 'Definir senha provisória'} disabled={u.passwordLocked} onClick={() => setResetting(u)}><KeyRound className="size-4" /></IconButton>}
                 <IconButton label="Editar" onClick={() => setEditing(u)}><Pencil className="size-4" /></IconButton>
                 {u.id !== me.id && <IconButton label={u.active ? 'Desativar (bloqueia o acesso, mantém a conta)' : 'Reativar a conta'} onClick={() => toggleActive(u)}>{u.active ? <UserX className="size-4" /> : <UserCheck className="size-4 text-ok" />}</IconButton>}
                 {u.id !== me.id && <IconButton label="Remover a conta" tone="danger" onClick={() => remove(u)}><Trash2 className="size-4" /></IconButton>}
@@ -212,9 +215,10 @@ function UserOrgs({ user }: { user: PUser }) {
       {user.orgs.map((o) => (
         <div key={o.id} className="rounded-lg border border-line/70 p-3">
           <div className="flex items-center gap-2">
-            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium">{o.isOwner && <Crown className="size-3.5 shrink-0 text-warn" />}<span className="truncate">{o.name}</span>{o.isOwner && <span className="shrink-0 text-xs font-normal text-faint">dono</span>}{!o.active && <span className="shrink-0 text-xs font-normal text-danger">acesso desativado</span>}</span>
-            {!o.isOwner && <IconButton label={`Tirar de ${o.name}`} tone="danger" onClick={() => remove(o)}><Trash2 className="size-4" /></IconButton>}
+            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium">{o.isOwner && <Crown className="size-3.5 shrink-0 text-warn" />}{o.locked && <Lock className="size-3.5 shrink-0 text-muted" />}<span className="truncate">{o.name}</span>{o.isOwner && <span className="shrink-0 text-xs font-normal text-faint">dono</span>}{!o.active && <span className="shrink-0 text-xs font-normal text-danger">acesso desativado</span>}</span>
+            {!o.isOwner && !o.locked && <IconButton label={`Tirar de ${o.name}`} tone="danger" onClick={() => remove(o)}><Trash2 className="size-4" /></IconButton>}
           </div>
+          {o.locked && <p className="mt-1 text-xs text-faint">Espaço privado: só os administradores dele definem quem participa e com que acesso.</p>}
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
             {(byId.get(o.id)?.groups ?? []).map((g) => (
               <Checkbox key={g.id} checked={o.groupIds.includes(g.id)} onChange={(v) => setGroups(o.id, toggle(o.groupIds, g.id, v))} label={<span className="text-sm">{g.name}{g.isAdmin && <span className="ml-1 text-xs text-faint">acesso total</span>}</span>} />

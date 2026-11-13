@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, asc, between, desc, eq, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import {
-  BANK_ACCOUNT_KIND_LABEL, MATCH_WINDOW, accountKey, bankAccountSchema, bankImportSchema, bankName, billPerm, decodeOfx, formatBRL, formatDateBR, normBank,
+  BANK_ACCOUNT_KIND_LABEL, MATCH_WINDOW, accountKey, sameAccountKey, bankAccountSchema, bankImportSchema, bankName, billPerm, decodeOfx, formatBRL, formatDateBR, normBank,
   OFX_MAX_TRANSACTIONS, parseOfx, reconcileSchema, type BillType,
 } from '@nopaper/shared';
 import { db, schema, type DBOrTx } from '../db/client.js';
@@ -11,6 +11,7 @@ import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
 import { assertCategoryUsable, assertFolder, createBills, deleteBillsWithFiles, loadBill, restrictedCategoryIds, serialize } from '../services/bills.js';
+import { checkBankSpace } from '../services/spaceCheck.js';
 
 const view = { preHandler: requirePerm('bank.view') };
 const imp = { preHandler: requirePerm('bank.import') };
@@ -98,9 +99,11 @@ export default async function bankRoutes(app: FastifyInstance) {
     if (!ofx.statements.length) throw badRequest(`Não consegui ler este arquivo como extrato OFX. ${ofx.warnings.join(' ')} No banco, exporte o extrato no formato OFX.`, 'ofx_invalid');
     const accounts = await db.select().from(schema.bankAccounts).where(eq(schema.bankAccounts.orgId, req.org!.id));
     const statements = [];
+    const unknown: string[] = [];
     for (const s of ofx.statements) {
       const key = accountKey(s.bankId, s.branchId, s.accountId);
-      const account = accounts.find((a) => a.matchKey === key) ?? null;
+      const account = accounts.find((a) => a.matchKey === key) ?? accounts.find((a) => sameAccountKey(a.matchKey, key)) ?? null;
+      if (!account && s.accountId) unknown.push(key);
       let duplicates = 0;
       if (account && s.transactions.length) {
         const ids = s.transactions.map((t) => t.fitId);
@@ -114,7 +117,7 @@ export default async function bankRoutes(app: FastifyInstance) {
         suggested: { name: `${bankName(s.bankId)} ${s.kind === 'creditcard' ? 'cartão' : BANK_ACCOUNT_KIND_LABEL[kind].toLowerCase()}`.slice(0, 80), bankCode: normBank(s.bankId), branch: s.branchId, accountNumber: s.accountId, kind },
       });
     }
-    return { fileName: file.filename.slice(0, 200), org: ofx.org, statements, warnings: ofx.warnings };
+    return { fileName: file.filename.slice(0, 200), org: ofx.org, statements, warnings: ofx.warnings, spaceCheck: await checkBankSpace(req, unknown) };
   });
 
   app.post('/api/bank/import', imp, async (req) => {

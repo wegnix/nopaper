@@ -5,7 +5,7 @@ import { AlertTriangle, Check, FileText, Ghost, Lock, Minus, Plus, Upload, UserP
 import { MoneyInput } from '@/features/bills/MoneyInput';
 import {
   PAYSLIP_ADJUST_NOTE, addMonthsRef, formatBRL, fromCents, isProLabore, payrollTotals, payslipEmployeeFor, payslipOk, payslipRubricFor, payslipRubricName, personKey, refLabelPT, titleCaseName, toCents,
-  type PayrollCosts, type PayrollPayslipsSettings, type Payslip, type PayslipItem, type PayslipReport,
+  type PayrollCosts, type PayrollPayslipsSettings, type Payslip, type PayslipItem, type PayslipReport, type SpaceCheck,
 } from '@nopaper/shared';
 import { Dialog } from '@/components/ui/dialog';
 import { Button, Select, Spinner } from '@/components/ui/base';
@@ -13,6 +13,7 @@ import { api, post, put, errMsg } from '@/lib/api';
 import { cn, plural } from '@/lib/utils';
 import { useMonth, type Employee, type Entry, type Period, type PeriodSummary, type Rubric } from './data';
 import { AccountantPayslipDocs } from './AccountantDocs';
+import { WrongSpaceAlert, WrongSpaceNote, useSpaceGuard } from '@/components/WrongSpace';
 
 interface ApplyResult {
   applied: Array<{ employee: string; net: string; total: string; created: boolean }>;
@@ -45,7 +46,8 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
   const fileRef = useRef<HTMLInputElement>(null);
   /** Documento da área do contador que está sendo lido (veio pelo link "Importar na folha" ou foi escolhido aqui). */
   const [doc, setDoc] = useState<string | null>(docId ?? null);
-  const [file, setFile] = useState<{ fileName: string; report: PayslipReport } | null>(null);
+  const [file, setFile] = useState<{ fileName: string; report: PayslipReport; spaceCheck?: SpaceCheck | null } | null>(null);
+  const guard = useSpaceGuard(file?.spaceCheck);
   const [reading, setReading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [links, setLinks] = useState<Record<string, Link>>({});
@@ -79,8 +81,8 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
     setReading(true); setDoc(fromDoc);
     try {
       const fd = new FormData(); if (f) fd.append('file', f);
-      const r = f ? await api<{ fileName: string; report: PayslipReport }>('POST', '/api/payroll/payslips/read', fd)
-        : await post<{ fileName: string; report: PayslipReport }>(`/api/accounting/documents/${fromDoc}/payslips`);
+      const r = f ? await api<{ fileName: string; report: PayslipReport; spaceCheck?: SpaceCheck | null }>('POST', '/api/payroll/payslips/read', fd)
+        : await post<{ fileName: string; report: PayslipReport; spaceCheck?: SpaceCheck | null }>(`/api/accounting/documents/${fromDoc}/payslips`);
       setLinks({}); setChoice({}); setAgreed({}); setOpenAgreed({});
       setFile(r);
       const rr = r.report.ref ? folhaOf(r.report.ref) : null;
@@ -198,12 +200,12 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
   };
   const linkValue = (r: (typeof rows)[number]) => (r.emp ? r.emp.id : r.creating === 'ghost' ? GHOST : r.creating === 'normal' ? NEW : '');
   const setLink = (code: string, v: string) => setLinks({ ...links, [code]: v === '' ? null : v === NEW ? { create: 'normal' } : v === GHOST ? { create: 'ghost' } : { employeeId: v } });
-  const blocked = !period || !toApply.length || undecided.length > 0 || adjustMissing;
+  const blocked = guard.blocked || !period || !toApply.length || undecided.length > 0 || adjustMissing;
 
   return (
     <Dialog open={open} onClose={onClose} size="xl" title="Importar holerites"
       description="Envie o PDF dos holerites que o contador manda. Cada holerite entra detalhado no lançamento do funcionário (salário, INSS, descontos…) já conferido com o valor líquido. Metas, comissões e descontos por fora não mudam."
-      footer={file ? <>
+      footer={file && !guard.blocked ? <>
         <Button variant="ghost" className="mr-auto" onClick={() => setFile(null)}>Trocar arquivo</Button>
         <Button variant="ghost" onClick={onClose}>Fechar</Button>
         <Button variant="primary" loading={busy} disabled={blocked} onClick={run}>
@@ -222,8 +224,12 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
             <span className="text-xs text-faint">Um arquivo com os holerites de todos do mês (as duas vias de cada um contam uma vez só).</span>
           </button>
         </div>
+      ) : guard.blocked ? (
+        <WrongSpaceAlert check={guard.check!} subject="Estes holerites" risk="os salários, descontos e o valor líquido destes holerites entram na folha deste espaço, por cima do que estiver lançado."
+          onOtherFile={() => setFile(null)} onContinue={guard.accept} />
       ) : (
         <div className="flex flex-col gap-4">
+          {guard.accepted && <WrongSpaceNote check={guard.check!} />}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-surface-2/60 px-3.5 py-2.5 text-sm">
             <span className="inline-flex min-w-0 items-center gap-1.5"><FileText className="size-4 shrink-0 text-faint" /><span className="truncate">{file.fileName}</span></span>
             {file.report.company && <span className="min-w-0 truncate text-muted">{file.report.company}</span>}

@@ -18,6 +18,7 @@ import { loadBill, restrictedCategoryIds } from '../services/bills.js';
 import { accountantsOf, resolveRecipient } from '../services/accounting.js';
 import { assertStorageRoom, storageInfo } from '../services/storageQuota.js';
 import { escapeHtml, sendEmail, telegramSend, telegramToken } from '../services/notify.js';
+import { checkPayslipsSpace } from '../services/spaceCheck.js';
 
 type Doc = typeof schema.accountingDocuments.$inferSelect;
 const MAX_FILES = 20;
@@ -315,7 +316,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
     try { cells = await pdfToCells(await readStoredFile(d.storageKey), 200); } catch { throw badRequest('Não consegui ler este PDF.'); }
     const report = parsePayslips(cells);
     if (!report.slips.length) throw badRequest('Não achei holerites neste PDF. Ele precisa ser o PDF original do sistema de folha, não uma foto ou digitalização.', 'payslips_unknown');
-    return { fileName: d.originalName, report };
+    return { fileName: d.originalName, report, spaceCheck: await checkPayslipsSpace(req, report) };
   });
 
   /** URL assinada (10 min) para ver/baixar. */

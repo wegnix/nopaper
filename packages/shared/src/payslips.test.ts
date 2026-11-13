@@ -35,6 +35,7 @@ const BIA = slip({ title: 'Pro-labore', code: '12', name: 'BIA TESTE', adm: '26/
 test('lê os holerites, separa vencimento de desconto pela coluna e ignora a 2ª via', () => {
   const rep = parsePayslips([...ANA, ...ANA, ...BIA, ...BIA]);
   assert.equal(rep.company, 'EMPRESA EXEMPLO LTDA');
+  assert.equal(rep.companyDocument, '00.000.000/0001-00');
   assert.equal(rep.ref, '2027-03');
   assert.deepEqual(rep.warnings, []);
   assert.equal(rep.slips.length, 2);

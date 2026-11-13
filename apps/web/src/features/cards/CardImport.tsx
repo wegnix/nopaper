@@ -3,11 +3,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, CheckCircle2, FileText, Info, Layers, RotateCcw, Upload } from 'lucide-react';
 import {
-  addMonthsRef, cycleForRef, formatBRL, formatDateBR, fromCents, matchExistingCardTx, suggestCardRef, toCents, type CardOfxLine,
+  addMonthsRef, cycleForRef, formatBRL, formatDateBR, fromCents, matchExistingCardTx, suggestCardRef, toCents, type CardOfxLine, type SpaceCheck,
 } from '@nopaper/shared';
 import { Dialog, useConfirm } from '@/components/ui/dialog';
 import { Button, Checkbox, Field, Input, Select, Spinner, Switch } from '@/components/ui/base';
 import { api, del, get, post, errMsg } from '@/lib/api';
+import { WrongSpaceAlert, WrongSpaceNote, useSpaceGuard } from '@/components/WrongSpace';
 import { useCardCategories } from '@/lib/queries';
 import { useSession } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
@@ -15,7 +16,7 @@ import type { Card, StatementView } from '@/lib/types';
 import { refLabel } from './CardForms';
 
 type Line = CardOfxLine & { suggestedCategoryId: string | null; suggestedFrom: 'shop' | 'rule' | null };
-interface ReadResult { fileName: string; bank: string | null; accountId: string | null; balance: string | null; balanceDate: string | null; warnings: string[]; lines: Line[] }
+interface ReadResult { fileName: string; bank: string | null; accountId: string | null; balance: string | null; balanceDate: string | null; warnings: string[]; lines: Line[]; knownCard?: { id: string; name: string } | null; spaceCheck?: SpaceCheck | null }
 interface RowState { checked: boolean; description: string; categoryId: string }
 interface CardImportRow { id: string; fileName: string; rowCount: number; totalAmount: string; createdAt: string; createdBy: string | null; parcels: number; refs: string[]; paidRefs: string[] }
 
@@ -39,6 +40,7 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
   const { data: payCats = [] } = useCardCategories(open);
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<ReadResult | null>(null);
+  const guard = useSpaceGuard(file?.spaceCheck);
   const [reading, setReading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [cardId, setCardId] = useState(initialCardId);
@@ -76,6 +78,8 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
         checked: l.kind !== 'payment', description: l.description,
         categoryId: l.suggestedCategoryId && payCats.some((c) => c.id === l.suggestedCategoryId) ? l.suggestedCategoryId : '',
       }])));
+      // fatura de um cartão já conhecido (pelas importações anteriores): troca para ele
+      if (r.knownCard && cards.some((c) => c.id === r.knownCard!.id && c.active)) setCardId(r.knownCard.id);
       setFile(r);
     } catch (e) { toast.error(errMsg(e)); } finally { setReading(false); if (fileRef.current) fileRef.current.value = ''; }
   };
@@ -88,7 +92,13 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
   const paid = st?.status === 'paid';
   const missingCat = selected.some((l) => !(rows[l.fitId].categoryId || defaultCat));
   const missingDesc = selected.some((l) => !rows[l.fitId].description.trim());
-  const ok = !!card && !!ref && !!st && !paid && selected.length > 0 && !missingCat && !missingDesc;
+  // a conta do arquivo já é de outro cartão deste espaço, ou este cartão sempre recebeu faturas de outra conta
+  const otherCard = file?.knownCard && file.knownCard.id !== cardId ? file.knownCard : null;
+  const otherAccount = !otherCard && !!file?.accountId && !!card?.ofxAccount && card.ofxAccount !== file.accountId;
+  const [cardSure, setCardSure] = useState(false);
+  useEffect(() => { setCardSure(false); }, [file, cardId]);
+  const cardDoubt = !!otherCard || otherAccount;
+  const ok = !guard.blocked && (!cardDoubt || cardSure) && !!card && !!ref && !!st && !paid && selected.length > 0 && !missingCat && !missingDesc;
   const importableCount = (file?.lines ?? []).filter(importable).length;
   const allChecked = importableCount > 0 && selected.length === importableCount;
   const setRow = (id: string, patch: Partial<RowState>) => setRows((r) => ({ ...r, [id]: { ...r[id], ...patch } }));
@@ -99,7 +109,7 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
     setBusy(true);
     try {
       const r = await post<{ created: number; skipped: number; total: string; parcels?: number }>(`/api/cards/${card.id}/ofx/import`, {
-        fileName: file.fileName, ref, futureInstallments: future,
+        fileName: file.fileName, ref, futureInstallments: future, accountId: file.accountId,
         items: selected.map((l) => ({
           fitId: l.fitId, date: l.date, description: rows[l.fitId].description.trim(), amount: l.amount, categoryId: rows[l.fitId].categoryId || defaultCat,
           installment: l.installment, installments: l.installments, notes: l.memo && l.memo !== rows[l.fitId].description.trim() ? l.memo.slice(0, 1000) : null,
@@ -123,7 +133,7 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
   return (
     <Dialog open={open} onClose={onClose} size={file ? 'xl' : 'md'} title="Importar fatura do cartão (OFX)"
       description={file ? 'Confira a fatura, as descrições e as categorias. O que já está lançado é reconhecido e não entra de novo.' : 'Traga as compras da fatura direto do arquivo do banco, sem digitar uma por uma.'}
-      footer={file ? <>
+      footer={file && !guard.blocked ? <>
         <Button variant="ghost" className="mr-auto" onClick={() => setFile(null)}>Trocar arquivo</Button>
         <span className="hidden sm:block text-sm text-muted">{plural(selected.length, 'marcado', 'marcados')} · <b className="tnum text-ink">{formatBRL(fromCents(total))}</b></span>
         <Button variant="ghost" onClick={onClose}>Fechar</Button>
@@ -148,8 +158,12 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
           </div>
           <ImportHistory cardId={initialCardId} cardName={cards.find((c) => c.id === initialCardId)?.name ?? ''} open={open} />
         </div>
+      ) : guard.blocked ? (
+        <WrongSpaceAlert check={guard.check!} subject="Esta fatura" risk="as compras desta fatura entram num cartão deste espaço e mudam o valor da conta a pagar da fatura."
+          onOtherFile={() => setFile(null)} onContinue={guard.accept} />
       ) : (
         <div className="flex flex-col gap-4">
+          {guard.accepted && <WrongSpaceNote check={guard.check!} />}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
             <span className="flex min-w-0 items-center gap-1.5"><FileText className="size-4 shrink-0 text-faint" /><span className="truncate">{file.fileName}</span></span>
             {file.bank && <span>{file.bank}</span>}
@@ -158,6 +172,23 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
           </div>
           {file.warnings.map((w) => <p key={w} className="flex items-start gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{w}</p>)}
 
+          {cardDoubt && (
+            <div role="alert" className="flex flex-col gap-3 rounded-xl border-2 border-danger bg-danger/10 p-4">
+              <p className="flex items-start gap-2.5 text-sm">
+                <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" />
+                <span>
+                  <b className="block font-display text-base">Esta fatura parece ser de outro cartão</b>
+                  {otherCard
+                    ? <>As faturas desta conta (final {file.accountId?.slice(-4)}) sempre foram importadas no cartão <b>{otherCard.name}</b>, e você escolheu <b>{card?.name}</b>.</>
+                    : <>O cartão <b>{card?.name}</b> sempre recebeu faturas da conta final {card?.ofxAccount?.slice(-4)}, e este arquivo é da conta final {file.accountId?.slice(-4)}.</>}
+                </span>
+              </p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                {otherCard && <Button size="sm" variant="primary" onClick={() => setCardId(otherCard.id)}>Usar o cartão {otherCard.name}</Button>}
+                <Checkbox checked={cardSure} onChange={setCardSure} label={<>Conferi: quero importar em <b>{card?.name}</b> mesmo assim.</>} />
+              </div>
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Cartão">
               <Select value={cardId} onChange={(e) => setCardId(e.target.value)}>

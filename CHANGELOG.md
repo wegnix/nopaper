@@ -8,6 +8,33 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.22.0] - 2026-11-13
+
+### Novo
+- **Aviso de espaço errado nas importações**: quem participa de mais de um espaço pode abrir um e enviar o
+  arquivo de outro. Agora o NoPaper confere o arquivo antes de importar e, se ele não for do espaço aberto,
+  mostra um aviso em destaque com o que achou no arquivo, o botão para ir ao espaço certo e a opção de continuar
+  só depois de marcar que conferiu. Vale para:
+  - **Holerites** (Importar holerites e Assinaturas): compara o CNPJ impresso no holerite com o CNPJ do espaço
+    (matriz e filial contam como a mesma empresa); sem CNPJ para comparar, olha os funcionários.
+  - **Extrato bancário (OFX)**: avisa quando a conta do arquivo está cadastrada em outro espaço seu.
+  - **Fatura do cartão (OFX)**: o cartão guarda a conta da primeira fatura importada; nas seguintes, a tela
+    escolhe o cartão certo sozinha e avisa se a fatura for de outro cartão ou de outro espaço.
+  O nome do outro espaço só aparece para quem é membro dele; para os demais, o aviso diz apenas que o arquivo
+  não é deste espaço. Para o aviso dos holerites funcionar, preencha o CNPJ em Configuração do espaço.
+- **Espaço privado** (Configuração do espaço → Espaço privado): uma chave que só o dono do espaço liga. Com ela,
+  os administradores da plataforma que não administram aquele espaço deixam de alcançá-lo: não conseguem
+  incluir nem tirar membros, não definem senha provisória nem removem a conta de quem participa dele, e não
+  veem o nome do espaço nem a auditoria dele nas telas da Plataforma (aparece só "Espaço privado"). Serve para
+  quando há mais de um administrador da plataforma e cada um tem o seu espaço pessoal, ou uma empresa que os
+  outros não devem ver. Atenção a dois limites, escritos também na tela: quem participa de um espaço privado
+  só troca a própria senha (esqueceu → só quem tem acesso ao servidor redefine), e o backup da instalação
+  continua levando os dados de todos os espaços — quem baixa o backup ou acessa o servidor alcança esses dados.
+
+### Corrigido
+- **Extrato OFX não reconhecia a conta** quando a agência estava cadastrada sem o dígito e o arquivo do banco
+  trazia com ele (ou o contrário): a importação oferecia criar outra conta. Agora é reconhecida como a mesma.
+
 ## [1.21.4] - 2026-11-13
 
 ### Mudou

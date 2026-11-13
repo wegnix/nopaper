@@ -63,6 +63,8 @@ export const organizations = pgTable('organizations', {
   document: varchar('document', { length: 32 }),
   /** Aparece quando o NoPaper é aberto dentro de outro sistema (modo embutido)? Padrão: não. */
   embedVisible: boolean('embed_visible').notNull().default(false),
+  /** Espaço privado: a plataforma não mexe nos membros nem vê o espaço; só quem é do espaço (ver `services/privacy.ts`). */
+  isPrivate: boolean('is_private').notNull().default(false),
   /** Razão social: vai nos documentos legais (termo e comprovante de assinatura). `name` = nome fantasia. */
   legalName: varchar('legal_name', { length: 160 }),
   /** Dados cadastrais da empresa (perfil Empresa): inscrições, contato e endereço. */
@@ -286,6 +288,8 @@ export const cards = pgTable('cards', {
   billCategoryId: uuid('bill_category_id').notNull().references(() => categories.id, { onDelete: 'restrict' }),
   billFolderId: uuid('bill_folder_id').references(() => folders.id, { onDelete: 'set null' }),
   holder: varchar('holder', { length: 64 }),
+  /** Conta do cartão no banco (ACCTID da fatura em OFX), aprendida na 1ª importação: reconhece de que cartão é o arquivo. */
+  ofxAccount: varchar('ofx_account', { length: 40 }),
   active: boolean('active').notNull().default(true),
   createdBy: uuid('created_by'),
   createdAt: createdAt(),

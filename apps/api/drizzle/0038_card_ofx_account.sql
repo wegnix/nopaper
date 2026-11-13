@@ -1,0 +1,1 @@
+ALTER TABLE "cards" ADD COLUMN "ofx_account" varchar(40);

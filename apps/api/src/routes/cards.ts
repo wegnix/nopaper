@@ -17,6 +17,7 @@ import { assertCardCategories, categoryForRule, ensureCardCategories } from '../
 import {
   loadCard, ensureStatement, createPurchase, deleteTransactions, limitUsed, statementStatus, statementsOf, syncStatementBill,
 } from '../services/cards.js';
+import { checkCardSpace } from '../services/spaceCheck.js';
 
 const view = requirePerm('cards.view');
 const refName = (ref: string) => `${MONTHS_PT_SHORT[Number(ref.slice(5, 7)) - 1]}/${ref.slice(0, 4)}`;
@@ -230,6 +231,7 @@ export default async function cardRoutes(app: FastifyInstance) {
     for (const h of hist) if (h.categoryId) for (const k of cardDescKeys(h.description)) if (!known.has(k)) known.set(k, h.categoryId);
     const s0 = cc[0];
     return {
+      ...(await checkCardSpace(req, s0.accountId)),
       fileName: file.filename.slice(0, 200), bank: ofx.org, fid: ofx.fid, accountId: s0.accountId,
       balance: cc.length === 1 ? s0.balance : null, balanceDate: cc.length === 1 ? s0.balanceDate : null, warnings,
       lines: lines.map((l) => {
@@ -261,6 +263,8 @@ export default async function cardRoutes(app: FastifyInstance) {
       const dup = matchExistingCardTx(lines, existing);
       const items = body.items.filter((i) => !dup.has(i.fitId));
       if (!items.length) return { batchId: null, created: 0, skipped: dup.size, total: '0.00' };
+      // 1ª fatura importada: guarda a conta do arquivo, para reconhecer as próximas (e avisar se vierem para outro cartão/espaço)
+      if (body.accountId && !card.ofxAccount) await tx.update(schema.cards).set({ ofxAccount: body.accountId }).where(eq(schema.cards.id, card.id));
       const batchId = randomUUID();
       const total = fromCents(items.reduce((a, i) => a + toCents(i.amount), 0));
       await tx.insert(schema.importBatches).values({ id: batchId, orgId: req.org!.id, type: 'card', fileName: body.fileName, rowCount: items.length, totalAmount: total, createdBy: req.user!.id });

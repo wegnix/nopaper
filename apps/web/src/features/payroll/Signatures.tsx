@@ -1,17 +1,18 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, Copy, Download, FileSignature, FileUp, MessageCircle, PenLine, Send, X } from 'lucide-react';
-import { formatBRL, refLabelPT, whatsappLink, type PayslipSignatureRow } from '@nopaper/shared';
+import { formatBRL, refLabelPT, whatsappLink, type PayslipSignatureRow, type SpaceCheck } from '@nopaper/shared';
 import { Button, Empty, IconButton, Select, Spinner } from '@/components/ui/base';
 import { StatusChip } from '@/components/ui/chips';
 import { Dialog, useConfirm } from '@/components/ui/dialog';
-import { api, del, get, post, errMsg } from '@/lib/api';
+import { api, del, get, post, errMsg, ApiError } from '@/lib/api';
 import { useCan, useSession } from '@/lib/session';
 import { downloadBlob, plural } from '@/lib/utils';
 import { payrollKey } from './data';
 import { useAccountants, type AccountingDoc } from '@/features/accounting/data';
 import { AccountantPayslipDocs } from './AccountantDocs';
+import { WrongSpaceAlert } from '@/components/WrongSpace';
 
 const when = (iso: string) => { const d = new Date(iso); return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; };
 
@@ -71,20 +72,28 @@ export function SignaturesDialog({ open, onClose, periodId, refStr, payMonth }: 
 
   /** Qual documento do contador está sendo usado (para o "Lendo…" na lista). */
   const [fromDoc, setFromDoc] = useState<string | null>(null);
-  const upload = async (f: File | undefined, doc?: AccountingDoc) => {
+  // holerites de outra empresa: o servidor para (409 wrong_space) e a pessoa decide antes de mandar de novo
+  const [wrong, setWrong] = useState<{ check: SpaceCheck; f?: File; doc?: AccountingDoc } | null>(null);
+  useEffect(() => { if (!open) setWrong(null); }, [open]);
+  const upload = async (f: File | undefined, doc?: AccountingDoc, force = false) => {
     if (!f && !doc) return;
     setBusy(true); setFromDoc(doc?.id ?? null);
     try {
       const fd = new FormData(); if (f) fd.append('file', f);
       type Out = { competence: string; created: number; updated: number; terms: number; skipped: Array<{ name: string; reason: string }> };
       // PDF do computador, ou o que o contador já enviou pelo NoPaper (o servidor lê o arquivo guardado)
-      const r = doc ? await post<Out>(`/api/payroll/periods/${periodId}/signatures`, { docId: doc.id }) : await api<Out>('POST', `/api/payroll/periods/${periodId}/signatures`, fd);
+      const url = `/api/payroll/periods/${periodId}/signatures${force ? '?force=1' : ''}`;
+      const r = doc ? await post<Out>(url, { docId: doc.id }) : await api<Out>('POST', url, fd);
+      setWrong(null);
       setSkipped(r.skipped);
       const n = r.created + r.updated;
       if (n) toast.success(`${plural(n, 'holerite pronto', 'holerites prontos')} para assinar (${refLabelPT(r.competence)})${r.terms ? ` e ${plural(r.terms, 'termo de aceite', 'termos de aceite')} para quem ainda não assinou o termo` : ''}. Agora envie o link a cada funcionário.`);
       else toast.warning('Nenhum holerite novo para assinatura. Veja os avisos na janela.');
       reload();
-    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); setFromDoc(null); if (input.current) input.current.value = ''; }
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'wrong_space' && e.data?.spaceCheck) setWrong({ check: e.data.spaceCheck as SpaceCheck, f, doc });
+      else toast.error(errMsg(e));
+    } finally { setBusy(false); setFromDoc(null); if (input.current) input.current.value = ''; }
   };
   const linkOf = async (r: PayslipSignatureRow) => `${window.location.origin}/assinar/${(await get<{ token: string }>(`/api/payroll/signatures/${r.id}/link`)).token}`;
   const message = (r: PayslipSignatureRow, url: string) => (r.kind === 'term'
@@ -161,7 +170,12 @@ export function SignaturesDialog({ open, onClose, periodId, refStr, payMonth }: 
         <Button variant="ghost" onClick={onClose}>Fechar</Button>
       </>}>
       <div className="flex flex-col gap-4">
-        {canEdit && (
+        {wrong && (
+          <WrongSpaceAlert check={wrong.check} subject="Estes holerites" busy={busy}
+            risk="os funcionários deste espaço recebem para assinar holerites que são de outra empresa."
+            onOtherFile={() => setWrong(null)} onContinue={() => upload(wrong.f, wrong.doc, true)} />
+        )}
+        {canEdit && !wrong && (
           <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-line-strong bg-surface-2/50 p-3.5">
             <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent"><PenLine className="size-5" /></span>
             <p className="min-w-0 flex-1 text-sm text-muted">Use o <b className="text-ink">PDF dos holerites</b> do contador — o que ele enviou pelo NoPaper (abaixo) ou um arquivo do computador. O sistema separa o holerite de cada funcionário (pela matrícula) e cria os links.</p>
@@ -169,7 +183,7 @@ export function SignaturesDialog({ open, onClose, periodId, refStr, payMonth }: 
             <Button variant="primary" className="max-sm:w-full" loading={busy && !fromDoc} disabled={busy} icon={<FileUp className="size-4" />} onClick={() => input.current?.click()}>Escolher o PDF</Button>
           </div>
         )}
-        {canEdit && <AccountantPayslipDocs enabled={open} folhaRef={refStr} payMonth={payMonth} busy={busy ? fromDoc ?? 'x' : null} action="Enviar para assinatura" onPick={(d) => upload(undefined, d)} />}
+        {canEdit && !wrong && <AccountantPayslipDocs enabled={open} folhaRef={refStr} payMonth={payMonth} busy={busy ? fromDoc ?? 'x' : null} action="Enviar para assinatura" onPick={(d) => upload(undefined, d)} />}
         {skipped.length > 0 && (
           <div className="rounded-xl border border-warn/40 bg-warn/10 p-3.5 text-sm">
             <p className="flex items-center gap-2 font-medium"><AlertTriangle className="size-4 text-warn" />Ficaram de fora</p>

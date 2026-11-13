@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Building2, Check, FileBadge, ImageUp, KeyRound, MapPin, MessageCircle, Phone, Plus, Trash2, AppWindow } from 'lucide-react';
+import { Building2, Check, FileBadge, ImageUp, KeyRound, Lock, MapPin, MessageCircle, Phone, Plus, Trash2, AppWindow } from 'lucide-react';
 import { BR_STATES, ORG_LOGO_MAX_BYTES, PDF_RULE_SOURCES, PDF_RULE_SOURCE_LABEL, describePdfRule, documentError, formatDocument, formatPhoneBR, formatZipBR, whatsappLink, type PdfRulePart, type PdfRuleSource } from '@nopaper/shared';
 import { Button, Card, Field, IconButton, Segmented, Select, Input, Switch } from '@/components/ui/base';
 import { DocumentField } from '@/components/ui/document-input';
 import { get, put, errMsg } from '@/lib/api';
 import { OrgAvatar } from '@/components/ui/org-avatar';
-import { useFormState } from '@/components/ui/dialog';
-import { useCan, useSession } from '@/lib/session';
+import { useConfirm, useFormState } from '@/components/ui/dialog';
+import { useCan, useOrg, useSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
 
 const DETAILS = ['stateRegistration', 'cityRegistration', 'phone', 'whatsapp', 'email', 'website', 'zipCode', 'street', 'streetNumber', 'complement', 'district', 'city', 'state'] as const;
 type Detail = (typeof DETAILS)[number];
-type Org = { id: string; name: string; legalName: string | null; kind: 'personal' | 'company'; document: string | null; timezone: string; logo: string | null; embedVisible?: boolean } & Record<Detail, string | null>;
+type Org = { id: string; name: string; legalName: string | null; kind: 'personal' | 'company'; document: string | null; timezone: string; logo: string | null; embedVisible?: boolean; isPrivate?: boolean } & Record<Detail, string | null>;
 
 /**
  * Os 4 fusos oficiais do Brasil (sem horário de verão desde 2019). Cada um é gravado com uma zona
@@ -235,6 +235,47 @@ function EmbedCard({ org, canEdit, onChange }: { org: Org; canEdit: boolean; onC
   );
 }
 
+/**
+ * Espaço privado: tira o espaço do alcance da Plataforma (membros, senha de quem participa, nome nas
+ * listas). Só o dono liga e desliga; grava na hora. O que NÃO protege (backup, servidor) fica escrito
+ * no próprio cartão.
+ */
+function PrivateCard({ org, onChange }: { org: Org; onChange: (v: boolean) => void }) {
+  const isOwner = !!useOrg()?.isOwner;
+  const confirm = useConfirm();
+  const [busy, setBusy] = useState(false);
+  const on = !!org.isPrivate;
+  const toggle = async (next: boolean) => {
+    if (next && !(await confirm({
+      title: `Tornar “${org.name}” privado?`, confirmLabel: 'Tornar privado',
+      body: 'Os administradores da plataforma deixam de ver este espaço e de mexer em quem participa dele. Quem participa passa a depender da própria senha: ela não poderá mais ser redefinida pela plataforma.',
+    }))) return;
+    setBusy(true);
+    try {
+      const r = await put<{ isPrivate: boolean }>('/api/org/private', { private: next });
+      onChange(r.isPrivate);
+      toast.success(r.isPrivate ? 'Este espaço agora é privado' : 'Este espaço deixou de ser privado');
+    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+  };
+  return (
+    <Card className="p-5 xl:col-span-2">
+      <h2 className="flex items-center gap-2 font-display text-lg font-semibold"><span className="grid size-7 place-items-center rounded-lg bg-accent-soft text-accent"><Lock className="size-4" /></span>Espaço privado</h2>
+      <p className="mt-1 max-w-3xl text-sm text-muted">Deixa este espaço fora do alcance da administração da plataforma: só quem administra o espaço decide quem participa.</p>
+      <div className="mt-4 rounded-xl border border-line bg-surface-2/50 px-4 py-3">
+        <Switch checked={on} disabled={!isOwner || busy} onChange={toggle} label="Tornar este espaço privado"
+          hint={on ? 'Privado: os administradores da plataforma não veem este espaço, não incluem nem tiram membros e não definem senha para quem participa dele.'
+            : 'Aberto: um administrador da plataforma consegue se incluir neste espaço, ou incluir outras pessoas.'} />
+      </div>
+      {!isOwner && <p className="mt-2 text-xs text-faint">Só o dono do espaço pode mudar isto.</p>}
+      <ul className="mt-3 flex max-w-3xl list-disc flex-col gap-1 pl-5 text-xs leading-relaxed text-muted">
+        <li>Quem já é membro continua sendo: confira a lista em Membros.</li>
+        <li>Quem participa de um espaço privado troca a própria senha em Meu perfil. Se esquecer a senha, só quem tem acesso ao servidor consegue redefinir.</li>
+        <li>O backup da instalação continua levando os dados de todos os espaços, inclusive os privados. Quem baixa o arquivo de backup ou acessa o servidor alcança esses dados.</li>
+      </ul>
+    </Card>
+  );
+}
+
 /** Cartão de uma parte do cadastro: título com ícone e os campos numa grade de 12 colunas. */
 function Section({ icon, title, hint, children, top }: { icon: React.ReactNode; title: string; hint?: string; children: React.ReactNode; top?: React.ReactNode }) {
   return (
@@ -363,6 +404,7 @@ export function OrgPage() {
       <div className="grid gap-4 xl:grid-cols-2">
         <PdfPasswordsCard canEdit={canEdit} />
         <EmbedCard org={org} canEdit={canEdit} onChange={(embedVisible) => { setOrg({ ...org, embedVisible }); patchSession({ embedVisible }); }} />
+        <PrivateCard org={org} onChange={(isPrivate) => setOrg({ ...org, isPrivate })} />
       </div>
     </fieldset>
   );

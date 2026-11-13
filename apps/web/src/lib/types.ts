@@ -30,6 +30,8 @@ export interface Classification {
 export interface Card {
   id: string; name: string; brand: string; last4: string | null; color: string; limitAmount: string | null;
   closingDay: number; dueDay: number; billCategoryId: string; billFolderId: string | null; holder: string | null; active: boolean;
+  /** Conta do cartão no banco (da 1ª fatura importada em OFX). */
+  ofxAccount?: string | null;
   limitUsed: string; currentRef: string; currentTotal: string; currentClosing: string; currentDue: string;
 }
 export interface CardTx {

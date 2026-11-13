@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, FileText, Landmark, RotateCcw, Trash2, Upload } from 'lucide-react';
-import { BANK_ACCOUNT_KINDS, BANK_ACCOUNT_KIND_LABEL, bankName, formatBRL, formatDateBR, type BankAccountInput } from '@nopaper/shared';
+import { BANK_ACCOUNT_KINDS, BANK_ACCOUNT_KIND_LABEL, bankName, formatBRL, formatDateBR, type BankAccountInput, type SpaceCheck } from '@nopaper/shared';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { Button, Field, Input, Select, Spinner, Switch, Textarea } from '@/components/ui/base';
 import { BankPicker } from '@/components/ui/bank-picker';
 import { api, del, post, put, errMsg } from '@/lib/api';
 import { useCan } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
+import { WrongSpaceAlert, WrongSpaceNote, useSpaceGuard } from '@/components/WrongSpace';
 import { useBankImports, type BankAccount, type ReadStatement } from './data';
 
 // ------------------------------------------------------------------ cadastro da conta bancária
@@ -62,7 +63,7 @@ export function AccountDialog({ open, account, onClose, onSaved }: { open: boole
 }
 
 // ------------------------------------------------------------------ importar o OFX
-interface ReadResult { fileName: string; statements: ReadStatement[]; warnings: string[] }
+interface ReadResult { fileName: string; statements: ReadStatement[]; warnings: string[]; spaceCheck?: SpaceCheck | null }
 type Target = { mode: 'existing'; accountId: string } | { mode: 'new'; name: string };
 
 export function ImportOfxDialog({ open, onClose, accounts, onDone }: { open: boolean; onClose: () => void; accounts: BankAccount[]; onDone: (accountId: string, ref: string | null) => void }) {
@@ -70,6 +71,7 @@ export function ImportOfxDialog({ open, onClose, accounts, onDone }: { open: boo
   const can = useCan();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<ReadResult | null>(null);
+  const guard = useSpaceGuard(file?.spaceCheck);
   const [targets, setTargets] = useState<Target[]>([]);
   const [reading, setReading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -105,11 +107,11 @@ export function ImportOfxDialog({ open, onClose, accounts, onDone }: { open: boo
       onClose();
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
-  const ok = !!file && file.statements.some((s) => s.transactions.length) && targets.every((t) => (t.mode === 'existing' ? !!t.accountId : !!t.name.trim() && can('bank.manage')));
+  const ok = !guard.blocked && !!file && file.statements.some((s) => s.transactions.length) && targets.every((t) => (t.mode === 'existing' ? !!t.accountId : !!t.name.trim() && can('bank.manage')));
   return (
     <Dialog open={open} onClose={onClose} size="lg" title="Importar extrato (OFX)"
       description="Os lançamentos já importados antes são reconhecidos e não entram de novo."
-      footer={file ? <>
+      footer={file && !guard.blocked ? <>
         <Button variant="ghost" className="mr-auto" onClick={() => setFile(null)}>Trocar arquivo</Button>
         <Button variant="ghost" onClick={onClose}>Fechar</Button>
         <Button variant="primary" loading={busy} disabled={!ok} onClick={run}>Importar</Button>
@@ -128,8 +130,12 @@ export function ImportOfxDialog({ open, onClose, accounts, onDone }: { open: boo
             <p className="mt-1">No banco, em <b>Extrato → Exportar</b>, escolha <b>OFX</b> (no Sicoob: “OFX Padrão Unix”). Não precisa marcar a opção de datas em ISO 8601: o formato padrão é o mais seguro.</p>
           </div>
         </div>
+      ) : guard.blocked ? (
+        <WrongSpaceAlert check={guard.check!} subject="Este extrato" risk="a conta bancária é criada neste espaço e os lançamentos do extrato passam a ser conciliados com as contas daqui."
+          onOtherFile={() => setFile(null)} onContinue={guard.accept} />
       ) : (
         <div className="flex flex-col gap-3">
+          {guard.accepted && <WrongSpaceNote check={guard.check!} />}
           <p className="flex items-center gap-1.5 text-sm text-muted"><FileText className="size-4 text-faint" />{file.fileName}</p>
           {file.warnings.map((w) => <p key={w} className="flex items-start gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{w}</p>)}
           {file.statements.map((s, i) => {

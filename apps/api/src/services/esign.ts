@@ -6,21 +6,22 @@ import { pdfToPageCells } from './pdf.js';
  * Separa o PDF do contador em um PDF por funcionário (as páginas em que a matrícula aparece).
  * Lê página por página com o mesmo leitor da importação de holerites.
  */
-export async function splitPayslips(buf: Buffer): Promise<{ ref: string | null; company: string | null; slips: Array<{ slip: Payslip; pdf: Buffer }> }> {
+export async function splitPayslips(buf: Buffer): Promise<{ ref: string | null; company: string | null; companyDocument: string | null; slips: Array<{ slip: Payslip; pdf: Buffer }> }> {
   const pages = await pdfToPageCells(buf, 200);
   const found = new Map<string, { slip: Payslip; pages: number[] }>();
-  let ref: string | null = null, company: string | null = null;
+  let ref: string | null = null, company: string | null = null, companyDocument: string | null = null;
   pages.forEach((rows, i) => {
     const r = parsePayslips(rows);
     ref ??= r.ref;
     company ??= r.company;
+    companyDocument ??= r.companyDocument;
     for (const s of r.slips) {
       if (!s.code) continue;
       const hit = found.get(s.code);
       if (hit) { if (!hit.pages.includes(i)) hit.pages.push(i); } else found.set(s.code, { slip: s, pages: [i] });
     }
   });
-  if (!found.size) return { ref, company, slips: [] };
+  if (!found.size) return { ref, company, companyDocument, slips: [] };
   const src = await PDFDocument.load(buf, { ignoreEncryption: true });
   const slips: Array<{ slip: Payslip; pdf: Buffer }> = [];
   for (const f of found.values()) {
@@ -28,7 +29,7 @@ export async function splitPayslips(buf: Buffer): Promise<{ ref: string | null; 
     for (const p of await doc.copyPages(src, f.pages)) doc.addPage(p);
     slips.push({ slip: f.slip, pdf: Buffer.from(await doc.save()) });
   }
-  return { ref, company, slips };
+  return { ref, company, companyDocument, slips };
 }
 
 /** As fontes padrão do PDF só têm Latin-1: troca o que não existe para não quebrar a geração. */

@@ -54,12 +54,15 @@ export interface Payslip {
 }
 export interface PayslipReport {
   company: string | null;
+  /** CNPJ da empresa impresso no holerite (formatado), quando há — diz de que empresa é o arquivo. */
+  companyDocument: string | null;
   /** Competência (AAAA-MM). */
   ref: string | null;
   slips: Payslip[];
   warnings: string[];
 }
 
+const CNPJ_RE = /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/;
 const MONEY_RE = /^\d{1,3}(?:\.\d{3})*,\d{2}$/;
 const DATE_RE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 const MONTHS = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -83,7 +86,7 @@ export function payslipItemKey(code: string | null, name: string) {
  *   código é detalhe da anterior (contratos do consignado) e não entra.
  */
 export function parsePayslips(rows: PdfCell[][]): PayslipReport {
-  const out: PayslipReport = { company: null, ref: null, slips: [], warnings: [] };
+  const out: PayslipReport = { company: null, companyDocument: null, ref: null, slips: [], warnings: [] };
   const all: Payslip[] = [];
   let cur: Payslip | null = null;
   let state: 'head' | 'person' | 'role' | 'items' | 'totals' | 'net' | 'bases' | 'done' = 'done';
@@ -103,6 +106,7 @@ export function parsePayslips(rows: PdfCell[][]): PayslipReport {
     if (!row.length) continue;
     const text = join(row);
     const ntext = personKey(text);
+    if (!out.companyDocument) out.companyDocument = CNPJ_RE.exec(text)?.[0] ?? null;
 
     const title = row.find((c) => /(recibo|demonstrativo) de pagamento/i.test(c.s));
     if (title) {

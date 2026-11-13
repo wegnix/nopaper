@@ -1,5 +1,5 @@
 import type { FastifyRequest } from 'fastify';
-import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import type { Permission } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import type { DBOrTx } from '../db/client.js';
@@ -62,11 +62,13 @@ export function auditAreasFor(org: { isAdmin: boolean; can(p: Permission): boole
   return Object.entries(AREA_PERMS).filter(([, perms]) => perms.some((p) => org.can(p))).map(([area]) => area);
 }
 
-export async function queryAudit(scope: string | 'platform' | 'all', f: AuditQuery, hideRestricted: boolean, limit = 100, allowedAreas: string[] | null = null) {
+export async function queryAudit(scope: string | 'platform' | 'all', f: AuditQuery, hideRestricted: boolean, limit = 100, allowedAreas: string[] | null = null, excludeOrgs: string[] = []) {
   const t = schema.auditLogs;
   const conds = [];
   if (scope === 'platform') conds.push(isNull(t.orgId));
   else if (scope !== 'all') conds.push(eq(t.orgId, scope));
+  // espaços privados de que quem olha não participa (Plataforma → Todos os espaços)
+  if (excludeOrgs.length) conds.push(or(isNull(t.orgId), notInArray(t.orgId, excludeOrgs))!);
   if (f.before && /^\d+$/.test(f.before)) conds.push(lt(t.id, Number(f.before)));
   const areas = (f.area ?? '').split(',').map((a) => a.trim()).filter((a) => AREA_RE.test(a));
   if (areas.length) conds.push(or(...areas.map((a) => sql`${t.action} like ${a + '.%'}`))!);
@@ -91,9 +93,9 @@ export async function queryAudit(scope: string | 'platform' | 'all', f: AuditQue
 }
 
 /** Quem aparece na auditoria do escopo (para o filtro por pessoa). */
-export async function auditUsers(scope: string | 'platform' | 'all') {
+export async function auditUsers(scope: string | 'platform' | 'all', excludeOrgs: string[] = []) {
   const t = schema.auditLogs;
-  const where = scope === 'platform' ? isNull(t.orgId) : scope === 'all' ? undefined : eq(t.orgId, scope);
+  const where = scope === 'platform' ? isNull(t.orgId) : scope === 'all' ? (excludeOrgs.length ? or(isNull(t.orgId), notInArray(t.orgId, excludeOrgs)) : undefined) : eq(t.orgId, scope);
   const rows = await db.selectDistinctOn([t.userId], { id: t.userId, name: t.userName }).from(t).where(where).orderBy(t.userId, sql`${t.id} desc`);
   return rows.filter((r) => r.id).map((r) => ({ id: r.id!, name: r.name ?? '—' })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }

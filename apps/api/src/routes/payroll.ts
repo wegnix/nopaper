@@ -19,6 +19,7 @@ import {
   assertCompany, assertEntryEditable, deleteEntries, ensurePayrollDefaults, getPayrollSettings, loadEmployee, loadEntry,
   loadPeriod, paidBillsCount, recomputeCosts, restrictPayrollCategory, rewriteOpenEntries, rubricsOf, savePayrollSettings, syncEntries, writeEntry,
 } from '../services/payroll.js';
+import { checkPayslipsSpace } from '../services/spaceCheck.js';
 
 /** Violação de índice único (o drizzle embrulha o erro do pg em `cause`). */
 const isUniqueViolation = (err: unknown) => {
@@ -152,7 +153,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     try { cells = await pdfToCells(buf, 200); } catch { throw badRequest('Não consegui ler este PDF. Peça o arquivo de novo ao contador e tente outra vez.'); }
     const report = parsePayslips(cells);
     if (!report.slips.length) throw badRequest('Não achei holerites neste PDF. Ele precisa ser o PDF original do contador ("Recibo de Pagamento de Salário"), não uma foto ou digitalização.', 'payslips_unknown');
-    return { fileName: file.filename.slice(0, 200), report };
+    return { fileName: file.filename.slice(0, 200), report, spaceCheck: await checkPayslipsSpace(req, report) };
   });
 
   /**
