@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Folder, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Folder, Lock, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { COLOR_KEYS, COLOR_PRESETS, type ColorKey } from '@nopaper/shared';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { Button, Checkbox, Field, IconButton, Input, Segmented } from '@/components/ui/base';
 import { ColorChip } from '@/components/ui/chips';
 import { del, post, put, errMsg } from '@/lib/api';
-import { useCategories, useFolders } from '@/lib/queries';
+import { useSession } from '@/lib/session';
+import { useCategories, useFolders, useMyCategoryColors } from '@/lib/queries';
 import { useCan } from '@/lib/session';
 import { cn } from '@/lib/utils';
 import type { Category, Folder as FolderT } from '@/lib/types';
@@ -32,7 +33,7 @@ export function ColorPicker<K extends string = ColorKey>({ value, onChange, keys
 function CategoryForm({ initial, onClose, onSaved }: { initial: Partial<Category> | null; onClose: () => void; onSaved: (c: Category) => void }) {
   const can = useCan();
   const qc = useQueryClient();
-  const [f, setF, form] = useFormState({ label: initial?.label ?? '', color: (initial?.color ?? 'slate') as ColorKey, kind: initial?.kind ?? 'both', isRestricted: initial?.isRestricted ?? false });
+  const [f, setF, form] = useFormState({ label: initial?.label ?? '', color: (initial?.baseColor ?? initial?.color ?? 'slate') as ColorKey, kind: initial?.kind ?? 'both', isRestricted: initial?.isRestricted ?? false });
   const save = useMutation({
     mutationFn: (body: typeof f) => (initial?.id ? put<Category>(`/api/categories/${initial.id}`, body) : post<Category>('/api/categories', body)),
     onSuccess: (c, body) => {
@@ -92,6 +93,58 @@ export function CategoryManager({ open, onClose }: { open: boolean; onClose: () 
       </Dialog>
       {editing !== false && <CategoryForm initial={editing} onClose={() => setEditing(false)} onSaved={setEditing} />}
     </>
+  );
+}
+
+/**
+ * Cores das categorias só para quem está usando: cada pessoa pode trocar a cor com que vê cada
+ * categoria, sem mexer na cor do espaço (a dos outros). Fica guardado na conta, em qualquer aparelho.
+ */
+export function MyColorsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { data = [] } = useCategories();
+  const mine = useMyCategoryColors();
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const save = async (next: Record<string, string>) => {
+    setBusy(true);
+    try {
+      const r = await put<{ preferences: Record<string, unknown> }>('/api/auth/preferences', { preferences: { categoryColors: next } });
+      const s = useSession.getState();
+      if (s.user) useSession.setState({ user: { ...s.user, preferences: r.preferences } });
+    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+  };
+  const setColor = (c: Category, color: ColorKey) => {
+    const next = { ...mine };
+    // escolheu a própria cor do espaço = voltar ao padrão
+    if (color === (c.baseColor ?? c.color)) { if (!(c.id in next)) return; delete next[c.id]; } else next[c.id] = color;
+    void save(next);
+  };
+  const reset = (c: Category) => { const next = { ...mine }; delete next[c.id]; void save(next); };
+  const changed = data.filter((c) => c.baseColor).length;
+  return (
+    <Dialog open={open} onClose={onClose} title="Minhas cores" size="md"
+      description="Troque a cor com que você vê cada categoria. Vale só para você; as outras pessoas continuam vendo as cores do espaço."
+      footer={<>
+        <span className="mr-auto text-xs text-faint">{changed ? `${changed} cor(es) trocada(s) por você` : 'Você está vendo as cores do espaço'}</span>
+        {changed > 0 && <Button variant="ghost" disabled={busy} icon={<RotateCcw className="size-4" />} onClick={() => save(Object.fromEntries(Object.entries(mine).filter(([id]) => !data.some((c) => c.id === id))))}>Restaurar todas</Button>}
+        <Button variant="primary" onClick={onClose}>Fechar</Button>
+      </>}>
+      <ul className="-mx-1 divide-y divide-line">
+        {data.map((c) => (
+          <li key={c.id} className="px-1 py-2.5">
+            <div className="flex items-center gap-3">
+              <ColorChip color={c.color} icon={c.isRestricted ? <Lock className="size-3" /> : undefined}>{c.label}</ColorChip>
+              {c.baseColor && <span className="text-xs text-faint">cor do espaço: {COLOR_PRESETS[c.baseColor].label}</span>}
+              <span className="ml-auto flex items-center gap-1">
+                {c.baseColor && <IconButton label="Voltar à cor do espaço" onClick={() => reset(c)}><RotateCcw className="size-4" /></IconButton>}
+                <Button size="sm" variant={openId === c.id ? 'secondary' : 'ghost'} onClick={() => setOpenId(openId === c.id ? null : c.id)}>{openId === c.id ? 'Pronto' : 'Trocar cor'}</Button>
+              </span>
+            </div>
+            {openId === c.id && <div className="mt-3"><ColorPicker value={c.color} onChange={(color) => setColor(c, color)} /></div>}
+          </li>
+        ))}
+      </ul>
+    </Dialog>
   );
 }
 

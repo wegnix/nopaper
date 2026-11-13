@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import type { OrgKind } from '@nopaper/shared';
@@ -8,6 +8,7 @@ import { Logo } from '@/components/layout/Logo';
 import { useAuthScene } from './AuthScenes';
 import { post, get, errMsg } from '@/lib/api';
 import { useSession, type SessionPayload } from '@/lib/session';
+import { afterLoginPath } from '@/lib/utils';
 
 function AuthLayout({ children, title, subtitle }: { children: React.ReactNode; title: string; subtitle: string }) {
   const scene = useAuthScene();
@@ -39,6 +40,7 @@ function AuthLayout({ children, title, subtitle }: { children: React.ReactNode; 
 
 export function LoginPage() {
   const nav = useNavigate();
+  const loc = useLocation();
   const setSession = useSession((s) => s.setSession);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,7 +54,7 @@ export function LoginPage() {
     setBusy(true);
     try {
       setSession(await post<SessionPayload>('/api/auth/login', { login: email, password }));
-      nav('/', { replace: true });
+      nav(afterLoginPath(loc.state), { replace: true });
     } catch (err) { toast.error(errMsg(err)); } finally { setBusy(false); }
   };
   return (

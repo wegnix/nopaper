@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { isNull, and, eq, inArray, sql } from 'drizzle-orm';
-import { ORG_DETAIL_FIELDS, ORG_LOGO_MAX_BYTES, orgCreateSchema, orgDetailsSchema, orgLogoSchema, orgUpdateSchema, memberAddSchema, memberUpdateSchema, groupSchema, usernameFromEmail, PERMISSIONS, type Permission } from '@nopaper/shared';
+import { ORG_DETAIL_FIELDS, ORG_LOGO_MAX_BYTES, orgCreateSchema, orgDetailsSchema, orgLogoSchema, pdfPasswordsSchema, orgUpdateSchema, memberAddSchema, memberUpdateSchema, groupSchema, usernameFromEmail, PERMISSIONS, type Permission } from '@nopaper/shared';
 import { assertUsernameFree } from './auth.js';
 import { db, schema } from '../db/client.js';
 import { sniffMime } from '../lib/storage.js';
+import { listPdfRules, savePdfRules } from '../services/pdfPasswords.js';
 import { parse } from '../lib/validate.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { requireAuth, requirePerm, requireOrg, hashPassword, membershipsOf } from '../lib/auth.js';
@@ -54,6 +55,17 @@ export default async function orgRoutes(app: FastifyInstance) {
     const [org] = await db.update(schema.organizations).set({ logo }).where(eq(schema.organizations.id, req.org!.id)).returning();
     await audit(req, { action: 'org.logo', entityType: 'organization', entityId: org.id, description: logo ? `Trocou a logo do espaço ${org.name}` : `Removeu a logo do espaço ${org.name}` });
     return { logo: org.logo };
+  });
+
+  // ---------------------------------------------------------- senhas de PDF
+  app.get('/api/org/pdf-passwords', { preHandler: requirePerm('org.settings') }, async (req) => listPdfRules(req.org!.id));
+
+  app.put('/api/org/pdf-passwords', { preHandler: requirePerm('org.settings') }, async (req) => {
+    const { rules } = parse(pdfPasswordsSchema, req.body);
+    for (const r of rules) if (r.source !== 'org_document' && !r.id && !r.value?.trim()) throw badRequest(`Informe ${r.source === 'fixed' ? 'a senha' : 'o CPF/CNPJ'} da regra "${r.name}".`);
+    const saved = await savePdfRules(req.org!.id, rules);
+    await audit(req, { action: 'org.pdf_passwords', entityType: 'organization', entityId: req.org!.id, description: `Atualizou as regras de senha de PDF (${saved.length})`, details: { rules: saved.map((r) => r.name) } });
+    return listPdfRules(req.org!.id);
   });
 
   // ---------------------------------------------------------- membros

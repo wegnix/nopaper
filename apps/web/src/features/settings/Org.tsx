@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Building2, Check, FileBadge, ImageUp, MapPin, MessageCircle, Phone, Trash2 } from 'lucide-react';
-import { BR_STATES, ORG_LOGO_MAX_BYTES, documentError, formatPhoneBR, formatZipBR, whatsappLink } from '@nopaper/shared';
-import { Button, Card, Field, Segmented, Select, Input } from '@/components/ui/base';
+import { Building2, Check, FileBadge, ImageUp, KeyRound, MapPin, MessageCircle, Phone, Plus, Trash2 } from 'lucide-react';
+import { BR_STATES, ORG_LOGO_MAX_BYTES, PDF_RULE_SOURCES, PDF_RULE_SOURCE_LABEL, describePdfRule, documentError, formatDocument, formatPhoneBR, formatZipBR, whatsappLink, type PdfRulePart, type PdfRuleSource } from '@nopaper/shared';
+import { Button, Card, Field, IconButton, Segmented, Select, Input } from '@/components/ui/base';
 import { DocumentField } from '@/components/ui/document-input';
 import { get, put, errMsg } from '@/lib/api';
 import { OrgAvatar } from '@/components/ui/org-avatar';
@@ -100,6 +100,102 @@ function LogoField({ org, canEdit, onChange }: { org: Org; canEdit: boolean; onC
         <input ref={input} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ''; }} />
       </div>
     </div>
+  );
+}
+
+interface PdfRule { id?: string; name: string; source: PdfRuleSource; part: PdfRulePart; length: number; value: string; hasValue?: boolean; preview?: string | null }
+const NEW_RULE: PdfRule = { name: '', source: 'org_document', part: 'first', length: 4, value: '' };
+
+/**
+ * Regras de senha de PDF: faturas que chegam protegidas (Copel: 4 primeiros dígitos do CPF/CNPJ)
+ * são abertas sozinhas ao anexar. Cada mudança grava na hora; o valor guardado (outro CPF/CNPJ ou
+ * senha fixa) nunca volta para a tela.
+ */
+function PdfPasswordsCard({ canEdit }: { canEdit: boolean }) {
+  const orgId = useSession((s) => s.orgId);
+  const q = useQuery({ queryKey: ['pdf-passwords', orgId], enabled: canEdit, queryFn: () => get<{ orgHasDocument: boolean; rules: PdfRule[] }>('/api/org/pdf-passwords') });
+  const [rules, setRules] = useState<PdfRule[]>([]);
+  const [draft, setDraft] = useState<PdfRule | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (q.data) setRules(q.data.rules.map((r) => ({ ...r, value: '' }))); }, [q.data]);
+  if (!canEdit) return null;
+  const save = async (next: PdfRule[], msg: string) => {
+    setBusy(true);
+    try {
+      const r = await put<{ rules: PdfRule[] }>('/api/org/pdf-passwords', { rules: next.map(({ id, name, source, part, length, value }) => ({ id, name, source, part, length, value })) });
+      setRules(r.rules.map((x) => ({ ...x, value: '' }))); setDraft(null); toast.success(msg);
+      return true;
+    } catch (e) { toast.error(errMsg(e)); return false; } finally { setBusy(false); }
+  };
+  const d = draft;
+  const draftOk = !!d && d.name.trim().length > 0 && (d.source === 'org_document' || d.value.trim().length > 0);
+  return (
+    <Card className="p-5 xl:col-span-2">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="mr-auto min-w-0">
+          <h2 className="flex items-center gap-2 font-display text-lg font-semibold"><span className="grid size-7 place-items-center rounded-lg bg-accent-soft text-accent"><KeyRound className="size-4" /></span>Senhas de PDF</h2>
+          <p className="mt-1 max-w-3xl text-sm text-muted">Faturas que chegam em PDF protegido (a Copel usa os 4 primeiros dígitos do CPF/CNPJ) são abertas sozinhas ao anexar: o NoPaper tenta cada regra, lê o documento e guarda a cópia sem senha.</p>
+        </div>
+        {!d && <Button size="sm" icon={<Plus className="size-4" />} disabled={rules.length >= 30} onClick={() => setDraft({ ...NEW_RULE })}>Nova regra</Button>}
+      </div>
+      {q.data && !q.data.orgHasDocument && rules.some((r) => r.source === 'org_document') && (
+        <p className="mt-3 rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm">Preencha o CPF/CNPJ do espaço acima: sem ele, as regras que usam esse documento não produzem senha.</p>
+      )}
+      {rules.length > 0 && (
+        <ul className="mt-4 flex flex-wrap gap-2">
+          {rules.map((r) => (
+            <li key={r.id} className="flex min-w-0 max-w-full items-center gap-2.5 rounded-xl border border-line bg-surface-2/50 py-1.5 pl-3 pr-1.5">
+              <KeyRound className="size-4 shrink-0 text-accent" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{r.name}</span>
+                <span className="block text-xs text-muted sm:truncate">{describePdfRule(r)}{r.preview ? <> → <b className="font-mono font-medium text-ink">{r.preview}</b></> : r.source !== 'org_document' && <span className="text-faint"> · guardado cifrado</span>}</span>
+              </span>
+              <IconButton label={`Apagar a regra ${r.name}`} tone="danger" disabled={busy} onClick={() => save(rules.filter((x) => x.id !== r.id), 'Regra apagada')}><Trash2 className="size-4" /></IconButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!rules.length && !d && <p className="mt-4 text-sm text-faint">Nenhuma regra ainda. Sem regras, um PDF com senha é anexado como veio e pede a senha toda vez que for aberto.</p>}
+      {d && (
+        <div className="mt-4 rounded-xl border border-accent/40 bg-accent-soft/30 p-4">
+          {/* tudo numa linha só, cada campo do tamanho do que vai nele; no celular empilha */}
+          <div className="flex flex-wrap items-end gap-x-3 gap-y-3.5">
+            <Field label="Nome da regra" required className="w-full sm:w-40"><Input autoFocus maxLength={60} value={d.name} placeholder="Ex.: Copel" onChange={(e) => setDraft({ ...d, name: e.target.value })} /></Field>
+            <Field label="A senha vem de" className="w-full sm:w-48">
+              <Select value={d.source} onChange={(e) => setDraft({ ...d, source: e.target.value as PdfRuleSource, value: '' })}>
+                {PDF_RULE_SOURCES.map((s) => <option key={s} value={s}>{PDF_RULE_SOURCE_LABEL[s]}</option>)}
+              </Select>
+            </Field>
+            {d.source === 'other_document' && <Field label="CPF/CNPJ" required className="w-full sm:w-44"><Input inputMode="numeric" autoComplete="off" maxLength={18} className="tnum" placeholder="Só os números" value={d.value} onChange={(e) => setDraft({ ...d, value: formatDocument(e.target.value) })} /></Field>}
+            {d.source === 'fixed' && <Field label="Senha" required className="w-full sm:w-44"><Input autoComplete="off" maxLength={64} value={d.value} onChange={(e) => setDraft({ ...d, value: e.target.value })} /></Field>}
+            {d.source !== 'fixed' && <>
+              <Field label="Parte" className="w-[calc(50%-6px)] sm:w-[7.5rem]">
+                <Select value={d.part} onChange={(e) => setDraft({ ...d, part: e.target.value as PdfRulePart })}>
+                  <option value="first">Primeiros</option><option value="last">Últimos</option><option value="all">Todos</option>
+                </Select>
+              </Field>
+              {d.part !== 'all' && (
+                <Field label="Dígitos" className="w-[calc(50%-6px)] sm:w-20">
+                  <Select value={d.length} onChange={(e) => setDraft({ ...d, length: Number(e.target.value) })}>
+                    {Array.from({ length: 14 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+                  </Select>
+                </Field>
+              )}
+            </>}
+            <div className="flex w-full justify-end gap-2 sm:ml-auto sm:w-auto">
+              <Button variant="ghost" disabled={busy} onClick={() => setDraft(null)}>Cancelar</Button>
+              <Button variant="primary" loading={busy} disabled={!draftOk} onClick={() => save([...rules, d], 'Regra criada')}>Criar regra</Button>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-muted">
+            A senha será <b className="font-medium text-ink">{describePdfRule(d)}</b>
+            {d.source === 'org_document' && q.data?.orgHasDocument === false ? ' (preencha o CPF/CNPJ do espaço).' : '.'}
+            {d.source === 'other_document' && ' Use para conta em nome de outra pessoa; o documento fica guardado cifrado.'}
+            {d.source === 'fixed' && ' Fica guardada cifrada e não aparece mais na tela.'}
+          </p>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -233,6 +329,7 @@ export function OrgPage() {
           <Button variant="primary" loading={busy} disabled={!form.dirty || !!docErr || f.name.trim().length < 2} onClick={save}>Salvar</Button>
         </Card>
       )}
+      <div className="grid gap-4 xl:grid-cols-2"><PdfPasswordsCard canEdit={canEdit} /></div>
     </fieldset>
   );
 }

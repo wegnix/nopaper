@@ -4,6 +4,7 @@
  */
 import { findBoletoInText, parseBoleto, parsePix, parseMoneyInput, type AttachmentSlot } from '@nopaper/shared';
 import { pdfToText } from './pdf.js';
+import { ocrDocument } from './ocr.js';
 
 export type Kind = AttachmentSlot | 'unknown';
 export interface Classification {
@@ -41,7 +42,9 @@ const STRONG_BOLETO = [
   'guia da previdência social', 'guia da previdencia social', 'guia do fgts digital',
 ];
 const WEAK_BOLETO = ['linha digitável', 'linha digitavel', 'pagável em qualquer banco', 'pagavel em qualquer banco', 'ficha de compensação', 'ficha de compensacao', 'nosso número', 'nosso numero', 'boleto'];
-const WEAK_INVOICE = ['danfe', 'nota fiscal eletrônica', 'nota fiscal eletronica', 'nfcom', 'danfse', 'nfs-e', 'nfse', 'nota fiscal de serviços', 'nota fiscal de servicos', 'chave de acesso', 'modelo 55', 'modelo 62', 'modelo 65'];
+/** Holerite do contador (vai no lugar da nota fiscal nas contas de salário). */
+const PAYSLIP = ['recibo de pagamento de salário', 'recibo de pagamento de salario', 'demonstrativo de pagamento de salário', 'demonstrativo de pagamento de salario', 'recibo de pagamento de pro-labore', 'recibo de pagamento de pró-labore', 'holerite'];
+const WEAK_INVOICE = ['fatura de serviço', 'fatura de servico', 'dados da duplicata', 'danfe', 'nota fiscal eletrônica', 'nota fiscal eletronica', 'nfcom', 'danfse', 'nfs-e', 'nfse', 'nota fiscal de serviços', 'nota fiscal de servicos', 'chave de acesso', 'modelo 55', 'modelo 62', 'modelo 65'];
 const WEAK_PROOF = ['comprovante', 'transferência', 'transferencia', 'pix recebido', 'pix enviado', 'comprovante pix', 'ted ', 'doc ', 'recibo de pagamento', 'pagamento efetuado', 'pagamento realizado', 'id da transação', 'id da transacao'];
 
 const hits = (text: string, list: string[]) => list.filter((k) => text.includes(k)).slice(0, 3);
@@ -73,21 +76,19 @@ function extractExtras(text: string) {
   return { pixCode, pixKey, pixAmount, invoiceKey: nfKey?.[1] ?? null, amount, dueDate, beneficiary: bm?.[1]?.trim() ?? null };
 }
 
-export async function classifyDocument(buf: Buffer, mime: string, filename: string): Promise<Classification> {
-  const base: Classification = {
-    kind: 'unknown', confidence: 'low', reasons: [], barcode: null, amount: null, dueDate: null,
-    pixCode: null, pixKey: null, beneficiary: null, invoiceKey: null, textLength: 0,
-  };
-  if (mime !== 'application/pdf') {
-    const f = byFilename(filename);
-    return { ...base, ...f };
-  }
-  let raw = '';
-  try { raw = await pdfToText(buf); } catch (e) { console.warn('[classifier] falha ao ler PDF:', (e as Error).message); raw = ''; }
-  const text = raw.toLowerCase();
-  base.textLength = raw.length;
-  if (raw.trim().length < 20) return { ...base, ...byFilename(filename), reasons: ['PDF sem texto (escaneado?)', 'nome do arquivo'] };
+const BASE: Classification = {
+  kind: 'unknown', confidence: 'low', reasons: [], barcode: null, amount: null, dueDate: null,
+  pixCode: null, pixKey: null, beneficiary: null, invoiceKey: null, textLength: 0,
+};
 
+/**
+ * Classifica pelo texto do documento (extraído do PDF ou lido por OCR). Sem texto útil ou sem
+ * nenhum sinal conhecido → `unknown` (quem chama decide o próximo passo: OCR, nome do arquivo).
+ */
+export function classifyText(raw: string): Classification {
+  const base: Classification = { ...BASE, textLength: raw.length };
+  if (raw.trim().length < 20) return base;
+  const text = raw.toLowerCase();
   const extras = extractExtras(raw);
   const withBoleto = (kind: Kind, confidence: Classification['confidence'], reasons: string[]) => {
     const line = findBoletoInText(raw);
@@ -104,8 +105,15 @@ export async function classifyDocument(buf: Buffer, mime: string, filename: stri
   if (h.length) return { ...base, kind: 'payment_proof', confidence: 'high', reasons: h, amount: extras.amount };
   h = hits(text, STRONG_INVOICE);
   if (h.length) {
-    return { ...base, kind: 'invoice', confidence: h.some((x) => x === 'danfe' || x === 'nfcom') ? 'high' : 'medium', reasons: h, amount: extras.amount, invoiceKey: extras.invoiceKey, beneficiary: extras.beneficiary, dueDate: extras.dueDate, barcode: findBoletoInText(raw) };
+    // nota que já traz o boleto (fatura de luz, telefone): o código, o valor e o vencimento dele são aproveitados
+    const line = findBoletoInText(raw);
+    const info = line ? parseBoleto(line) : null;
+    return { ...base, kind: 'invoice', confidence: h.some((x) => x === 'danfe' || x === 'nfcom') ? 'high' : 'medium', reasons: h, amount: extras.amount ?? info?.amount ?? null, invoiceKey: extras.invoiceKey, beneficiary: extras.beneficiary, dueDate: extras.dueDate ?? info?.dueDate ?? null, barcode: line };
   }
+  // holerite: nas contas de salário ele é o documento da despesa (fica no lugar da nota fiscal);
+  // o comprovante é a transferência do banco
+  h = hits(text, PAYSLIP);
+  if (h.length) return { ...base, kind: 'invoice', confidence: 'medium', reasons: h };
   h = hits(text, STRONG_BOLETO);
   if (h.length) return withBoleto('boleto', 'high', h);
   if (findBoletoInText(raw)) return withBoleto('boleto', 'high', ['linha digitável válida']);
@@ -116,5 +124,44 @@ export async function classifyDocument(buf: Buffer, mime: string, filename: stri
   if (h.length) return { ...base, kind: 'invoice', confidence: 'low', reasons: h, amount: extras.amount, invoiceKey: extras.invoiceKey };
   h = hits(text, WEAK_PROOF);
   if (h.length) return { ...base, kind: 'payment_proof', confidence: 'medium', reasons: h, amount: extras.amount };
-  return { ...base, ...byFilename(filename) };
+  return base;
+}
+
+export async function classifyDocument(buf: Buffer, mime: string, filename: string): Promise<Classification> {
+  let fromText: Classification = BASE;
+  let locked = false; // PDF que só abre com senha (ex.: fatura da Copel): não dá para ler o conteúdo
+  if (mime === 'application/pdf') {
+    let raw = '';
+    try { raw = await pdfToText(buf); } catch (e) {
+      locked = (e as Error).name === 'PasswordException';
+      if (!locked) console.warn('[classifier] falha ao ler PDF:', (e as Error).message);
+    }
+    fromText = classifyText(raw);
+    if (fromText.kind !== 'unknown') return fromText;
+  }
+  // imagem, PDF escaneado ou com letras que não viram texto (guias de DARF/FGTS): tenta ler a imagem
+  const seen = await ocrDocument(buf, mime);
+  if (seen) {
+    const c = classifyText(seen.text);
+    const code = seen.barcode ? parseBoleto(seen.barcode) : null;
+    const pix = seen.pix ? parsePix(seen.pix) : null;
+    // Barras de boleto ou QR do PIX na página = documento para pagar. Isso vale mais que palavras
+    // soltas lidas por OCR (o canhoto da conta de água traz "comprovante"); só sinais fortes de
+    // comprovante ou de nota fiscal mantêm o tipo — e mesmo assim o código lido é aproveitado.
+    if (code?.valid || pix?.crcValid) {
+      const kind = c.confidence === 'high' && c.kind !== 'unknown' ? c.kind : 'boleto';
+      return {
+        ...c, kind, confidence: kind === 'boleto' ? 'high' : c.confidence,
+        reasons: [...c.reasons, code?.valid ? 'código de barras lido da imagem' : 'QR Code do PIX lido da imagem'],
+        barcode: code?.valid ? code.line : c.barcode,
+        amount: (code?.valid ? code.amount : null) ?? pix?.amount ?? c.amount,
+        dueDate: (code?.valid ? code.dueDate : null) ?? c.dueDate,
+        pixCode: pix?.crcValid ? seen.pix : c.pixCode, pixKey: pix?.crcValid ? pix.key : c.pixKey,
+      };
+    }
+    if (c.kind !== 'unknown') return { ...c, reasons: [...c.reasons, 'lido por OCR'] };
+  }
+  const reasons = locked ? ['PDF protegido por senha'] : mime === 'application/pdf' && fromText.textLength < 20 ? ['PDF sem texto (escaneado?)'] : [];
+  const f = byFilename(filename);
+  return { ...BASE, textLength: fromText.textLength, kind: f.kind, reasons: [...reasons, ...f.reasons] };
 }

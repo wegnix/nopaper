@@ -33,3 +33,12 @@ export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 
 
 /** Tela de toque (celular/tablet): troca textos como "arraste" e "clique" por "toque". */
 export const isTouch = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+
+/**
+ * Para onde ir depois de entrar: só os links do e-mail de alertas (`/pagar?codigo=…`) voltam para a
+ * página pedida; qualquer outro caso cai no Início, como sempre foi.
+ */
+export function afterLoginPath(state: unknown): string {
+  const from = (state as { from?: unknown } | null)?.from;
+  return typeof from === 'string' && /^\/(pagar|receber)\?[^#]*\bcodigo=[0-9a-f-]{36}\b/.test(from) ? from : '/';
+}

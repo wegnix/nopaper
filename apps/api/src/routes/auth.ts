@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
-import { loginSchema, changePasswordSchema, profileSchema } from '@nopaper/shared';
+import { loginSchema, changePasswordSchema, preferencesSchema, profileSchema } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { env, isProd } from '../env.js';
 import { parse } from '../lib/validate.js';
@@ -187,6 +187,15 @@ export default async function authRoutes(app: FastifyInstance) {
     if (emailChanged) await audit(req, { action: 'auth.email', entityType: 'user', entityId: req.user!.id, description: `Trocou o e-mail de ${cur.email} para ${body.email}`, details: { changes: { email: { from: cur.email, to: body.email } } } });
     if (body.name !== cur.name) await audit(req, { action: 'auth.profile', entityType: 'user', entityId: req.user!.id, description: `Trocou o nome de "${cur.name}" para "${body.name}"`, details: { changes: { name: { from: cur.name, to: body.name } } } });
     return mePayload(req.user!.id);
+  });
+
+  /** Preferências de tela da própria pessoa (ex.: cores das categorias só para ela). Junta com as que já existem. */
+  app.put('/api/auth/preferences', { preHandler: requireAuth }, async (req) => {
+    const { preferences } = parse(preferencesSchema, req.body);
+    const [cur] = await db.select({ preferences: schema.users.preferences }).from(schema.users).where(eq(schema.users.id, req.user!.id));
+    const next = { ...cur.preferences, ...preferences };
+    await db.update(schema.users).set({ preferences: next }).where(eq(schema.users.id, req.user!.id));
+    return { preferences: next };
   });
 
   app.post('/api/auth/password', { preHandler: requireAuth, ...strict }, async (req) => {

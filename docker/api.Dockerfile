@@ -13,7 +13,10 @@ RUN npm run build -w @nopaper/shared && npm run build -w @nopaper/api \
 # ---------- runtime
 FROM node:22-alpine
 # pg_dump + rclone + ssh para backups agendados
-RUN apk add --no-cache postgresql17-client rclone openssh-client tzdata tini su-exec
+# poppler-utils + tesseract + zbar (+ imagemagick, que abre as imagens para o zbar): leitura (OCR) de boletos, notas e comprovantes escaneados ou em foto;
+# qpdf: abre PDFs protegidos com as regras de senha do espaço
+RUN apk add --no-cache postgresql17-client rclone openssh-client tzdata tini su-exec \
+    poppler-utils tesseract-ocr tesseract-ocr-data-por zbar imagemagick qpdf
 ENV NODE_ENV=production TZ=America/Sao_Paulo PORT=3000 HOST=0.0.0.0 \
     STORAGE_DIR=/data/uploads BACKUP_DIR=/data/backups
 WORKDIR /app

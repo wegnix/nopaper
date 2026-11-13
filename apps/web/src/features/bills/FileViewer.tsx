@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, ExternalLink, Printer } from 'lucide-react';
 import { ATTACHMENT_SLOT_LABEL, type AttachmentSlot } from '@nopaper/shared';
 import { Dialog } from '@/components/ui/dialog';
@@ -17,7 +18,10 @@ export function FileViewer({ target, onClose }: { target: Target | null; onClose
     if (target) get<{ url: string; downloadUrl: string; mime: string; name: string }>(target.urlPath ?? `/api/attachments/${target.attachmentId}/url`).then(setData).catch((e) => setError(errMsg(e)));
   }, [target]);
 
+  const isImage = !!data?.mime.startsWith('image/');
   const print = () => {
+    // imagem: a cópia `.print-doc` abaixo é a única coisa que sai no papel (regra do index.css)
+    if (isImage) { window.print(); return; }
     const iframe = document.getElementById('np-viewer') as HTMLIFrameElement | null;
     try { iframe?.contentWindow?.print(); } catch { window.open(data?.url, '_blank'); }
   };
@@ -28,7 +32,7 @@ export function FileViewer({ target, onClose }: { target: Target | null; onClose
       description={data?.name}
       className="sm:h-[92dvh]"
       footer={data && <>
-        {!isAndroid && data.mime === 'application/pdf' && <Button variant="ghost" icon={<Printer className="size-4" />} onClick={print}>Imprimir</Button>}
+        {!isAndroid && (data.mime === 'application/pdf' || isImage) && <Button variant="ghost" icon={<Printer className="size-4" />} onClick={print}>Imprimir</Button>}
         <Button variant="ghost" icon={<ExternalLink className="size-4" />} onClick={() => window.open(data.url, '_blank', 'noopener')}>Abrir em nova aba</Button>
         <Button variant="primary" icon={<Download className="size-4" />} onClick={() => { location.href = data.downloadUrl; }}>Baixar</Button>
       </>}
@@ -42,6 +46,7 @@ export function FileViewer({ target, onClose }: { target: Target | null; onClose
             ? <div className="text-center text-sm text-[#333] p-6">A pré-visualização de PDF não funciona no Android.<br />Use “Abrir em nova aba” ou “Baixar”.</div>
             : <iframe id="np-viewer" title={data.name} src={data.url} className="h-full w-full" />)}
       </div>
+      {data && isImage && createPortal(<div className="print-doc"><img src={data.url} alt="" style={{ display: 'block', maxWidth: '100%', maxHeight: '260mm', margin: '0 auto' }} /></div>, document.body)}
     </Dialog>
   );
 }

@@ -1,11 +1,25 @@
+import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { isColorKey } from '@nopaper/shared';
 import { get } from './api';
 import { useSession } from './session';
 import type { CardCategory, Category, Folder } from './types';
 
+/** Cores que a pessoa escolheu só para ela (Contas → Cores): categoria → cor. */
+export function useMyCategoryColors(): Record<string, string> {
+  const raw = useSession((s) => s.user?.preferences?.categoryColors);
+  return useMemo(() => (raw && typeof raw === 'object' ? (raw as Record<string, string>) : {}), [raw]);
+}
+
+/** Categorias do espaço, já com a cor que esta pessoa escolheu para si (a do espaço fica em `baseColor`). */
 export function useCategories() {
   const orgId = useSession((s) => s.orgId);
-  return useQuery({ queryKey: ['categories', orgId], queryFn: () => get<{ items: Category[] }>('/api/categories').then((r) => r.items), staleTime: 60_000 });
+  const mine = useMyCategoryColors();
+  const select = useCallback((items: Category[]) => items.map((c) => {
+    const own = mine[c.id];
+    return isColorKey(own) && own !== c.color ? { ...c, color: own, baseColor: c.color } : c;
+  }), [mine]);
+  return useQuery({ queryKey: ['categories', orgId], queryFn: () => get<{ items: Category[] }>('/api/categories').then((r) => r.items), staleTime: 60_000, select });
 }
 export function useFolders() {
   const orgId = useSession((s) => s.orgId);

@@ -8,6 +8,49 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.17.0] - 2026-11-13
+
+### Novo
+- **Código do boleto no e-mail de alertas**: cada conta com boleto vai com a linha digitável no próprio e-mail,
+  e o link "Copiar pelo NoPaper" abre o sistema já com o código de barras na tela (para copiar ou ler com a
+  câmera do banco). Conta com PIX ganha o link para abrir o QR Code.
+- **E-mail de alertas mais completo**: cada conta mostra a categoria, a pessoa relacionada e os anexos que já
+  tem (boleto, nota fiscal), e cada bloco traz a quantidade de contas e o total. O e-mail agora lista todas
+  as contas (antes cortava em 30 por seção, sem avisar).
+- **Alertas "nos próximos dias"**: além de avisar em dias escolhidos (no dia, 3 dias antes…), dá para receber
+  todo dia tudo o que vence hoje e nos próximos 1 a 30 dias.
+- **Alertas só de algumas categorias**: em cada tipo de conta, escolha quais categorias entram no resumo
+  (o padrão continua sendo todas).
+- **Horário do alerta com minutos**: o envio pode ser marcado de 5 em 5 minutos (ex.: 07:45).
+- **Minhas cores**: o botão "Cores" na lista de contas deixa cada pessoa trocar a cor com que vê cada
+  categoria, sem mudar a cor para os outros. Vale em qualquer aparelho em que ela entrar.
+- **Leitura de documentos escaneados e fotos**: boletos, notas e comprovantes que chegam como imagem (PDF
+  escaneado, foto, print) agora são lidos por OCR, e o código de barras do boleto e o QR Code do PIX são lidos
+  direto da imagem — a conta já vem com o código, o valor e o vencimento preenchidos. Vale também para guias
+  de INSS (DARF) e FGTS, cujo texto não era legível.
+- **Senhas de PDF**: faturas que chegam em PDF protegido (a Copel usa os 4 primeiros dígitos do CPF/CNPJ) agora
+  são abertas sozinhas ao anexar. Em Configurações → Dados do espaço → **Senhas de PDF**, crie regras: os
+  primeiros ou últimos dígitos (ou todos) do CPF/CNPJ do espaço, de outro CPF/CNPJ (conta em nome de outra
+  pessoa) ou uma senha fixa. O NoPaper tenta cada regra, lê o documento e guarda a cópia sem senha — ela abre
+  no visualizador, imprime e entra no ZIP sem pedir nada. Se nenhuma regra abrir, a tela de nova conta pede a
+  senha e pode guardá-la para as próximas.
+- **Imprimir anexo em imagem**: o botão Imprimir do visualizador agora aparece também para fotos e imagens,
+  não só para PDF.
+
+### Melhorado
+- **Holerites** anexados às contas de salário são reconhecidos e vão para o lugar da nota fiscal.
+- **Faturas de serviço** sem as palavras "nota fiscal" (com "Fatura de Serviço" e duplicata) são reconhecidas.
+
+### Corrigido
+- Boletos entregues como dois arquivos colados (o segundo protegido por senha) não eram lidos.
+- Em notas e relatórios cheios de números, o sistema às vezes "achava" uma linha digitável que não existia e
+  a gravava como código de barras da conta.
+
+### Para quem instala
+- A imagem da API passou a incluir os programas de leitura de imagens (`poppler-utils`, `tesseract-ocr` com
+  português, `zbar`, `imagemagick` e `qpdf`). A atualização pela web reconstrói a imagem; a primeira demora um pouco
+  mais. Sem esses programas o sistema funciona como antes, só sem ler documentos escaneados nem abrir PDFs com senha.
+
 ## [1.16.0] - 2026-11-13
 
 ### Novo

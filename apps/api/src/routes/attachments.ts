@@ -10,6 +10,7 @@ import { audit } from '../lib/audit.js';
 import { ALLOWED_UPLOADS, saveFile, deleteFile, sniffMime, signFileToken, verifyFileToken, streamStoredFile } from '../lib/storage.js';
 import { loadBill, serialize, attachmentsFor, restrictedCategoryIds } from '../services/bills.js';
 import { classifyDocument } from '../services/classifier.js';
+import { rememberPdfPassword, unlockPdf } from '../services/pdfPasswords.js';
 
 async function readUpload(req: FastifyRequest) {
   const file = await req.file({ limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
@@ -19,21 +20,43 @@ async function readUpload(req: FastifyRequest) {
   if (!buf.length) throw badRequest('Arquivo vazio');
   const mime = sniffMime(buf);
   if (!mime || !ALLOWED_UPLOADS[mime]) throw badRequest('Formato não suportado. Envie PDF, PNG, JPG ou WEBP.');
-  return { buf, mime, filename: (file.filename || 'arquivo').slice(0, 200) };
+  // campos de texto do envio (vêm antes do arquivo): senha do PDF digitada na hora e "lembrar"
+  const field = (k: string) => { const f = (file.fields as Record<string, unknown>)[k] as { value?: unknown } | undefined; return typeof f?.value === 'string' ? f.value : ''; };
+  return { buf, mime, filename: (file.filename || 'arquivo').slice(0, 200), password: field('password').slice(0, 64), remember: field('remember') === '1' };
+}
+
+/**
+ * PDF com senha: tenta a senha digitada e as regras do espaço; se abrir, o resto (leitura e o anexo
+ * guardado) usa a cópia sem senha. "Lembrar" grava a senha digitada como regra (só quem gerencia o espaço).
+ */
+async function openPdf(req: FastifyRequest, up: Awaited<ReturnType<typeof readUpload>>) {
+  if (up.mime !== 'application/pdf') return { buf: up.buf, locked: false, unlockedBy: null as string | null };
+  const u = await unlockPdf(req.org!.id, up.buf, up.password || null);
+  if (u.state === 'unlocked' && u.by === 'senha informada' && up.remember && req.org!.can('org.settings')) {
+    if (await rememberPdfPassword(req.org!.id, `Senha de ${up.filename.replace(/\.pdf$/i, '')}`, up.password)) {
+      await audit(req, { action: 'org.pdf_passwords', entityType: 'organization', entityId: req.org!.id, description: `Guardou a senha do PDF "${up.filename}" como regra` });
+    }
+  }
+  return { buf: u.buf, locked: u.state === 'locked', unlockedBy: u.state === 'unlocked' ? u.by : null };
 }
 
 export default async function attachmentRoutes(app: FastifyInstance) {
   /** Analisa um documento sem salvar (usado no formulário de nova conta para auto-preencher). */
   app.post('/api/documents/analyze', { preHandler: requirePerm('payable.create', 'payable.edit', 'receivable.create', 'receivable.edit') }, async (req) => {
-    const { buf, mime, filename } = await readUpload(req);
-    return classifyDocument(buf, mime, filename);
+    const up = await readUpload(req);
+    const pdf = await openPdf(req, up);
+    if (pdf.locked && up.password) throw badRequest('A senha não abriu este PDF. Confira e tente de novo.');
+    return { ...(await classifyDocument(pdf.buf, up.mime, up.filename)), locked: pdf.locked, unlockedBy: pdf.unlockedBy };
   });
 
   app.post<{ Params: { id: string }; Querystring: { slot?: string } }>('/api/bills/:id/attachments', { preHandler: requireOrg }, async (req) => {
     // comprovante: quem dá baixa ou edita; boleto/nota: quem cadastra ou edita (o "auto" é conferido depois)
     const requested = req.query.slot ?? 'auto';
     const b = await loadBill(req, req.params.id, requested === 'payment_proof' ? ['pay', 'edit'] : requested === 'auto' ? ['create', 'edit', 'pay'] : ['create', 'edit']);
-    const { buf, mime, filename } = await readUpload(req);
+    const up = await readUpload(req);
+    const { mime, filename } = up;
+    // PDF com senha que alguma regra abre: guarda a cópia sem senha (abre no visualizador, imprime, entra no ZIP)
+    const { buf } = await openPdf(req, up);
     await assertStorageRoom(req.org!.id, buf.length);
     let slot: AttachmentSlot;
     let classification = null;

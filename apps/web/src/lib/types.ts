@@ -1,6 +1,6 @@
 import type { AttachmentSlot, BillType, ColorKey, RecurrenceType } from '@nopaper/shared';
 
-export interface Category { id: string; label: string; color: ColorKey; kind: 'payable' | 'receivable' | 'both'; isRestricted: boolean; isSystem: boolean; usage: number }
+export interface Category { id: string; label: string; /** Cor que esta pessoa vê (a dela, se escolheu uma; senão a do espaço). */ color: ColorKey; /** Cor do espaço, quando a pessoa trocou a dela. */ baseColor?: ColorKey; kind: 'payable' | 'receivable' | 'both'; isRestricted: boolean; isSystem: boolean; usage: number }
 export interface CardCategory { id: string; label: string; color: ColorKey; ruleKey: string | null; usage: number }
 export interface Folder { id: string; name: string; label: string; color: ColorKey; usage: number }
 export interface AttachmentSummary { id: string; name: string; mime: string; size: number }
@@ -21,6 +21,10 @@ export interface Classification {
   kind: AttachmentSlot | 'unknown'; confidence: 'high' | 'medium' | 'low'; reasons: string[];
   barcode: string | null; amount: string | null; dueDate: string | null; pixCode: string | null; pixKey: string | null;
   beneficiary: string | null; invoiceKey: string | null;
+  /** PDF protegido por senha que nenhuma regra do espaço abriu. */
+  locked?: boolean;
+  /** Nome da regra de senha que abriu o PDF (ele é guardado sem senha). */
+  unlockedBy?: string | null;
 }
 
 export interface Card {

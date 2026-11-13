@@ -7,15 +7,28 @@ const typeRule = z.object({
   daysBefore: z.array(z.number().int().min(0).max(30)).max(6).default([3, 0]),
   /** Lembrar contas vencidas e ainda abertas. */
   overdue: z.boolean().default(true),
+  /**
+   * `days` = só nos dias de antecedência marcados em `daysBefore`; `window` = tudo o que vence hoje
+   * e nos próximos `windowDays` dias, todo dia, até a conta ser baixada.
+   */
+  mode: z.enum(['days', 'window']).default('days'),
+  windowDays: z.number().int().min(1).max(30).default(7),
+  /** Só estas categorias entram no resumo (vazio = todas). */
+  categoryIds: z.array(z.string().uuid()).max(200).default([]),
 });
+export type AlertTypeRule = z.infer<typeof typeRule>;
+/** Passo dos minutos do horário de envio (o verificador roda de 5 em 5 minutos). */
+export const ALERT_MINUTE_STEP = 5;
 export const ALERT_DAY_OPTIONS = [0, 1, 2, 3, 5, 7, 10, 15] as const;
 
 export const alertConfigSchema = z.object({
   enabled: z.boolean().default(false),
   /** Hora local (fuso do espaço) do envio diário. */
   hour: z.number().int().min(0).max(23).default(8),
-  payable: typeRule.default({ enabled: true, daysBefore: [3, 0], overdue: true }),
-  receivable: typeRule.default({ enabled: false, daysBefore: [0], overdue: true }),
+  minute: z.number().int().min(0).max(59).default(0),
+  // padrões completos: `.default()` devolve o valor como está, sem passar pelos padrões de dentro
+  payable: typeRule.default({ enabled: true, daysBefore: [3, 0], overdue: true, mode: 'days', windowDays: 7, categoryIds: [] }),
+  receivable: typeRule.default({ enabled: false, daysBefore: [0], overdue: true, mode: 'days', windowDays: 7, categoryIds: [] }),
   /** Incluir contas de categorias restritas (os destinatários podem não ser administradores). */
   includeRestricted: z.boolean().default(false),
   /** Avisar na hora quando o contador enviar documentos (área do contador). */

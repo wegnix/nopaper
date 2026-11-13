@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { randomBytes } from 'node:crypto';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { alertConfigSchema } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { parse } from '../lib/validate.js';
@@ -49,15 +49,22 @@ export default async function alertRoutes(app: FastifyInstance) {
     // os chats só entram pelo fluxo de vínculo (não aceita IDs digitados)
     const next = { ...cur, ...body, telegram: { enabled: body.telegram.enabled, chats: cur.telegram.chats } };
     // quem não vê um tipo de conta (ou as restritas) não muda essa parte do resumo
+    // só categorias deste espaço entram no filtro
+    const pick = [...new Set([...body.payable.categoryIds, ...body.receivable.categoryIds])];
+    if (pick.length) {
+      const own = new Set((await db.select({ id: schema.categories.id }).from(schema.categories).where(and(eq(schema.categories.orgId, req.org!.id), inArray(schema.categories.id, pick)))).map((c) => c.id));
+      next.payable = { ...next.payable, categoryIds: next.payable.categoryIds.filter((id) => own.has(id)) };
+      next.receivable = { ...next.receivable, categoryIds: next.receivable.categoryIds.filter((id) => own.has(id)) };
+    }
     if (!req.org!.can('payable.view')) next.payable = cur.payable;
     if (!req.org!.can('receivable.view')) next.receivable = cur.receivable;
     if (!req.org!.can('bills.view_restricted')) next.includeRestricted = cur.includeRestricted;
     const newRecipients = next.email.recipients.some((r) => !cur.email.recipients.includes(r));
     if (newRecipients || (next.email.enabled && !cur.email.enabled) || (next.telegram.enabled && !cur.telegram.enabled)) assertCanReceive(req, next);
     // mudou a hora para mais tarde hoje? libera o envio de hoje de novo
-    if (body.hour !== cur.hour) next.lastSentOn = null;
+    if (body.hour !== cur.hour || body.minute !== cur.minute) next.lastSentOn = null;
     await saveAlertConfig(req.org!.id, next);
-    await audit(req, { action: 'alerts.update', entityType: 'alerts', description: `Atualizou os alertas (${body.enabled ? 'ligados' : 'desligados'})`, details: { hour: body.hour, telegram: body.telegram.enabled, email: body.email.recipients.length } });
+    await audit(req, { action: 'alerts.update', entityType: 'alerts', description: `Atualizou os alertas (${body.enabled ? 'ligados' : 'desligados'})`, details: { hour: `${String(body.hour).padStart(2, '0')}:${String(body.minute).padStart(2, '0')}`, telegram: body.telegram.enabled, email: body.email.recipients.length } });
     return { ok: true };
   });
 

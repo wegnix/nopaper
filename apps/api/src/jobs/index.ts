@@ -10,8 +10,9 @@ let boss: PgBoss | null = null;
 type Handler = () => Promise<unknown>;
 const handlers: Record<string, { cron: string; run: Handler }> = {
   'bills.extend-indefinite': { cron: '30 3 * * *', run: extendAllIndefinite },
-  // os dois verificam a cada 15 min se já chegou a hora configurada (e se já rodaram hoje)
-  'alerts.tick': { cron: '*/15 * * * *', run: runAlertsTick },
+  // verificam se já chegou a hora configurada (e se já rodaram hoje): alertas de 5 em 5 min
+  // (o horário aceita minutos), backup a cada 15
+  'alerts.tick': { cron: '*/5 * * * *', run: runAlertsTick },
   'backup.tick': { cron: '7,22,37,52 * * * *', run: runBackupTick },
 };
 

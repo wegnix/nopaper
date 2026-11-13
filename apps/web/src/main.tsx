@@ -8,6 +8,7 @@ import './index.css';
 import { useSession } from './lib/session';
 import { bootSession, ApiError } from './lib/api';
 import { useTheme } from './lib/theme';
+import { afterLoginPath } from './lib/utils';
 import { AppShell } from './components/layout/AppShell';
 import { ConfirmProvider } from './components/ui/dialog';
 import { LogoLoader } from './components/brand/Brand';
@@ -63,9 +64,14 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const mustChange = useSession((s) => !!s.user?.mustChangePassword);
   const loc = useLocation();
   if (status === 'loading') return <ConnectingScreen />;
-  if (status === 'anon') return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
+  if (status === 'anon') return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />;
   if (mustChange) return <ForcePasswordPage />;
   return <>{children}</>;
+}
+
+/** Já entrou e está em /login: segue para a página pedida pelo link do e-mail (ou o Início). */
+function AfterLogin() {
+  return <Navigate to={afterLoginPath(useLocation().state)} replace />;
 }
 
 function App() {
@@ -77,7 +83,7 @@ function App() {
   return (
     <>
       <Routes>
-        <Route path="/login" element={status === 'authed' ? <Navigate to="/" replace /> : <LoginPage />} />
+        <Route path="/login" element={status === 'authed' ? <AfterLogin /> : <LoginPage />} />
         <Route path="/cadastro" element={<Navigate to="/login" replace />} />
         <Route path="/assinar/:token" element={<SignPage />} />
         <Route element={<RequireAuth><AppShell /></RequireAuth>}>

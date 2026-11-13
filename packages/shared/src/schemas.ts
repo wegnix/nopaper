@@ -102,6 +102,12 @@ export const changePasswordSchema = z.object({
     .refine((v) => !v || v.length >= 2, 'O nome do espaço precisa ter ao menos 2 caracteres'),
 });
 export const emailSchema = z.string().trim().toLowerCase().max(255).email('E-mail inválido');
+/** Preferências de tela do usuário. `categoryColors`: cor de cada categoria só para esta pessoa. */
+export const preferencesSchema = z.object({
+  preferences: z.object({
+    categoryColors: z.record(z.string().uuid(), z.string().max(16)).refine((v) => Object.keys(v).length <= 500, 'Preferências demais').optional(),
+  }).strict(),
+});
 export const profileSchema = z.object({
   name: z.string().trim().min(2).max(120),
   username: usernameSchema.optional(),

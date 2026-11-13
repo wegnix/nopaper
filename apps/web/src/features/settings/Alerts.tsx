@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CheckCircle2, ExternalLink, Mail, Plus, Send, Trash2, X, XCircle } from 'lucide-react';
-import { ALERT_DAY_OPTIONS, type AlertConfig } from '@nopaper/shared';
-import { Button, Card, Field, IconButton, Input, Select, Switch } from '@/components/ui/base';
+import { ALERT_DAY_OPTIONS, ALERT_MINUTE_STEP, COLOR_PRESETS, type AlertConfig } from '@nopaper/shared';
+import { Button, Card, Field, IconButton, Input, Segmented, Select, Switch } from '@/components/ui/base';
+import { useCategories } from '@/lib/queries';
 import { api, errMsg, get, post, put } from '@/lib/api';
 import { useBillNames, useCan, useSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
@@ -22,6 +23,7 @@ export function AlertsPage() {
   const can = useCan();
   const names = useBillNames();
   const qc = useQueryClient();
+  const { data: categories = [] } = useCategories();
   const q = useQuery({ queryKey: ['alerts', orgId], queryFn: () => get<AlertsView>('/api/alerts') });
   const [f, setF] = useState<AlertConfig | null>(null);
   const [email, setEmail] = useState('');
@@ -85,27 +87,59 @@ export function AlertsPage() {
   const rule = (k: 'payable' | 'receivable', title: string) => {
     const r = f[k];
     const set = (patch: Partial<AlertConfig['payable']>) => setF({ ...f, [k]: { ...r, ...patch } });
+    const cats = categories.filter((c) => c.kind === 'both' || c.kind === k);
+    const picked = r.categoryIds.filter((id) => cats.some((c) => c.id === id));
     return (
       <div key={k} className={cn('rounded-xl border border-line p-4', !r.enabled && 'opacity-70')}>
         <Switch checked={r.enabled} onChange={(enabled) => set({ enabled })} label={title} />
         {r.enabled && (
-          <div className="mt-4 flex flex-col gap-3">
+          <div className="mt-4 flex flex-col gap-4">
             <div>
               <p className="mb-2 text-xs text-muted">Avisar sobre vencimentos</p>
-              <div className="flex flex-wrap gap-1.5">
-                {ALERT_DAY_OPTIONS.map((d) => {
-                  const on = r.daysBefore.includes(d);
-                  return (
-                    <button key={d} type="button" aria-pressed={on}
-                      onClick={() => set({ daysBefore: on ? r.daysBefore.filter((x) => x !== d) : [...r.daysBefore, d].sort((a, b) => a - b).slice(0, 6) })}
-                      className={cn('rounded-lg border px-2.5 py-1 text-xs transition-colors', on ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink')}>
-                      {dayLabel(d)}
-                    </button>
-                  );
-                })}
-              </div>
+              <Segmented value={r.mode} onChange={(mode) => set({ mode })} options={[{ value: 'days', label: 'Em dias escolhidos' }, { value: 'window', label: 'Nos próximos dias' }]} />
+              {r.mode === 'days' ? (
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {ALERT_DAY_OPTIONS.map((d) => {
+                    const on = r.daysBefore.includes(d);
+                    return (
+                      <button key={d} type="button" aria-pressed={on}
+                        onClick={() => set({ daysBefore: on ? r.daysBefore.filter((x) => x !== d) : [...r.daysBefore, d].sort((a, b) => a - b).slice(0, 6) })}
+                        className={cn('rounded-lg border px-2.5 py-1 text-xs transition-colors pointer-coarse:py-2', on ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink')}>
+                        {dayLabel(d)}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-sm text-muted">
+                  <span>Tudo o que vence hoje e nos próximos</span>
+                  <Select aria-label="Quantos dias" className="w-[76px]" value={r.windowDays} onChange={(e) => set({ windowDays: Number(e.target.value) })}>
+                    {Array.from({ length: 30 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+                  </Select>
+                  <span>{r.windowDays === 1 ? 'dia' : 'dias'}, todo dia.</span>
+                </div>
+              )}
             </div>
             <Switch checked={r.overdue} onChange={(overdue) => set({ overdue })} label="Lembrar das que já venceram" hint="Todo dia, enquanto não forem baixadas" />
+            {cats.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs text-muted">Categorias no resumo</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" aria-pressed={!picked.length} onClick={() => set({ categoryIds: [] })}
+                    className={cn('rounded-lg border px-2.5 py-1 text-xs transition-colors pointer-coarse:py-2', !picked.length ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted hover:text-ink')}>Todas</button>
+                  {cats.map((c) => {
+                    const on = picked.includes(c.id);
+                    return (
+                      <button key={c.id} type="button" aria-pressed={on} onClick={() => set({ categoryIds: on ? picked.filter((x) => x !== c.id) : [...picked, c.id] })}
+                        className={cn('inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors pointer-coarse:py-2', on ? 'border-accent bg-accent-soft text-ink' : 'border-line text-muted hover:text-ink')}>
+                        <span className="size-2 rounded-full" style={{ background: COLOR_PRESETS[c.color]?.base }} />{c.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {picked.length > 0 && <p className="mt-1.5 text-xs text-faint">Só {picked.length === 1 ? 'esta categoria entra' : `estas ${picked.length} categorias entram`} no resumo.</p>}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -118,15 +152,21 @@ export function AlertsPage() {
         <div className="flex flex-wrap items-start gap-4">
           <div className="mr-auto">
             <h2 className="font-display text-lg font-semibold">Resumo diário</h2>
-            <p className="mt-1 text-sm text-muted">Uma mensagem por dia com o que vence e o que está atrasado. Só é enviada quando há algo para avisar.</p>
+            <p className="mt-1 text-sm text-muted">Uma mensagem por dia com o que vence e o que está atrasado. Só é enviada quando há algo para avisar. No e-mail, cada conta vai com categoria, anexos e o código do boleto para pagar.</p>
           </div>
           <Switch checked={f.enabled} onChange={(enabled) => setF({ ...f, enabled })} label={f.enabled ? 'Ligado' : 'Desligado'} />
         </div>
-        <div className="mt-5 grid gap-4 sm:grid-cols-[180px_1fr]">
+        <div className="mt-5 grid gap-4 sm:grid-cols-[200px_1fr]">
           <Field label="Horário do envio" hint="No fuso do espaço">
-            <Select value={f.hour} onChange={(e) => setF({ ...f, hour: Number(e.target.value) })}>
-              {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
-            </Select>
+            <div className="flex items-center gap-1.5">
+              <Select aria-label="Hora" value={f.hour} onChange={(e) => setF({ ...f, hour: Number(e.target.value) })}>
+                {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}</option>)}
+              </Select>
+              <span className="font-semibold text-muted">:</span>
+              <Select aria-label="Minuto" value={f.minute - (f.minute % ALERT_MINUTE_STEP)} onChange={(e) => setF({ ...f, minute: Number(e.target.value) })}>
+                {Array.from({ length: 60 / ALERT_MINUTE_STEP }, (_, i) => i * ALERT_MINUTE_STEP).map((m) => <option key={m} value={m}>{String(m).padStart(2, '0')}</option>)}
+              </Select>
+            </div>
           </Field>
           <div className="self-end pb-2 text-xs text-faint">{v.lastSentOn ? `Último resumo processado em ${v.lastSentOn.split('-').reverse().join('/')}.` : 'Nenhum resumo enviado ainda.'}</div>
         </div>

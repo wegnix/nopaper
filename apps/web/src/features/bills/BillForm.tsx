@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useBillNames, useBillPerms } from '@/lib/session';
+import { useBillNames, useBillPerms, useCan } from '@/lib/session';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Barcode, CheckCircle2, Eye, Infinity as InfinityIcon, QrCode, Sparkles, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Barcode, CheckCircle2, Eye, Infinity as InfinityIcon, Lock, LockOpen, QrCode, Sparkles, Trash2, X } from 'lucide-react';
 import {
   ATTACHMENT_SLOTS, ATTACHMENT_SLOT_LABEL, PAYMENT_METHODS, PIX_KEY_TYPE_LABEL, formatBRL, formatDateBR, parseBoleto, parsePix,
   todayISO, type AttachmentSlot, type BillType,
@@ -47,8 +47,9 @@ function SmartHint({ tone, icon, children }: { tone: 'ok' | 'warn' | 'info'; ico
   );
 }
 
-async function uploadAttachment(billId: string, file: File, slot: AttachmentSlot | 'auto') {
+async function uploadAttachment(billId: string, file: File, slot: AttachmentSlot | 'auto', password?: string) {
   const fd = new FormData();
+  if (password) fd.append('password', password); // os campos de texto vão antes do arquivo
   fd.append('file', file);
   return api<{ bill: Bill; classification: Classification | null; slot: AttachmentSlot }>('POST', `/api/bills/${billId}/attachments?slot=${slot}`, fd);
 }
@@ -56,6 +57,7 @@ async function uploadAttachment(billId: string, file: File, slot: AttachmentSlot
 export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecurrence, onView, seed, onCreated }: Props) {
   const l = L[type];
   const names = useBillNames()(type);
+  const canOrg = useCan()('org.settings');
   const [current, setCurrent] = useState<Bill | null>(bill);
   /** Depois de criar, a janela continua aberta editando a conta criada. */
   const isEdit = !!current;
@@ -68,7 +70,9 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
   const [f, setF, form] = useFormState(() => blank());
   const [rec, setRec] = useState<RecState>(initialRec());
   const [cascade, setCascade] = useState(false);
-  const [pending, setPending] = useState<{ file: File; slot: AttachmentSlot | null; cls: Classification | null } | null>(null);
+  const [pending, setPending] = useState<{ file: File; slot: AttachmentSlot | null; cls: Classification | null; password?: string } | null>(null);
+  // PDF com senha que nenhuma regra abriu: a pessoa digita a senha aqui
+  const [pdfPw, setPdfPw] = useState({ value: '', remember: true });
   const [analyzing, setAnalyzing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -135,12 +139,15 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
     }));
   };
 
-  const analyze = async (file: File, prefer?: AttachmentSlot) => {
+  const analyze = async (file: File, prefer?: AttachmentSlot, password?: string, remember?: boolean) => {
     setAnalyzing(true);
     try {
-      const fd = new FormData(); fd.append('file', file);
+      const fd = new FormData();
+      if (password) { fd.append('password', password); if (remember) fd.append('remember', '1'); }
+      fd.append('file', file);
       const c = await api<Classification>('POST', '/api/documents/analyze', fd);
-      setPending({ file, slot: prefer && c.confidence !== 'high' ? prefer : c.kind === 'unknown' ? null : c.kind, cls: c });
+      setPending({ file, slot: prefer && c.confidence !== 'high' ? prefer : c.kind === 'unknown' ? null : c.kind, cls: c, password: password && !c.locked ? password : undefined });
+      if (password && !c.locked) setPdfPw({ value: '', remember: true });
       if (c.kind !== 'unknown') applyClassification(c);
     } catch (e) { toast.error(errMsg(e)); } finally { setAnalyzing(false); }
   };
@@ -181,7 +188,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
         const r = await post<{ headId: string; items: Bill[] }>('/api/bills', payload);
         let head = r.items.find((b) => b.id === r.headId) ?? r.items[0] ?? null;
         if (pending?.slot) {
-          try { head = (await uploadAttachment(r.headId, pending.file, pending.slot)).bill; } catch (e) { toast.error(`Conta criada, mas o anexo falhou: ${errMsg(e)}`); }
+          try { head = (await uploadAttachment(r.headId, pending.file, pending.slot, pending.password)).bill; } catch (e) { toast.error(`Conta criada, mas o anexo falhou: ${errMsg(e)}`); }
         }
         toast.success(r.items.length > 1 ? `${r.items.length} lançamentos criados — editando o primeiro` : 'Conta criada');
         setPending(null);
@@ -218,12 +225,12 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
       <div className="flex flex-col gap-5">
         {!isEdit && (
           pending ? (
-            <div className={cn('rounded-xl border p-3', pending.slot ? 'border-ok/40 bg-ok/5' : 'border-warn/40 bg-warn/5')}>
+            <div className={cn('rounded-xl border p-3', pending.slot && !pending.cls?.locked ? 'border-ok/40 bg-ok/5' : 'border-warn/40 bg-warn/5')}>
               <div className="flex items-start gap-3">
-                {pending.slot ? <Sparkles className="size-5 text-ok shrink-0" /> : <AlertTriangle className="size-5 text-warn shrink-0" />}
+                {pending.slot && !pending.cls?.locked ? <Sparkles className="size-5 text-ok shrink-0" /> : <AlertTriangle className="size-5 text-warn shrink-0" />}
                 <div className="min-w-0 flex-1 text-sm">
                   <p className="font-medium truncate">{pending.file.name}</p>
-                  {pending.slot && pending.cls ? (
+                  {pending.cls?.locked ? null : pending.slot && pending.cls ? (
                     <p className="text-xs text-muted mt-0.5">
                       Identificado como <b>{ATTACHMENT_SLOT_LABEL[pending.slot].toLowerCase()}</b> (confiança {confLabel[pending.cls.confidence]})
                       {[pending.cls.barcode && 'código de barras', pending.cls.amount && 'valor', pending.cls.dueDate && 'vencimento', (pending.cls.pixCode || pending.cls.pixKey) && 'PIX'].filter(Boolean).length > 0 &&
@@ -231,6 +238,18 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
                       {' '}Será anexado ao criar a conta.
                     </p>
                   ) : <p className="text-xs text-muted mt-0.5">Não deu para identificar o tipo. Escolha:</p>}
+                  {pending.cls?.locked && (
+                    <div className="mt-1">
+                      <p className="flex items-center gap-1.5 text-xs text-muted"><Lock className="size-3.5 shrink-0" /> Este PDF tem senha. Digite a senha para o NoPaper ler e guardar o arquivo sem senha, ou escolha o tipo abaixo e anexe como está.</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Input aria-label="Senha do PDF" autoComplete="off" className="h-9 w-40" placeholder="Senha do PDF" value={pdfPw.value} onChange={(e) => setPdfPw({ ...pdfPw, value: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && pdfPw.value) { e.preventDefault(); void analyze(pending.file, undefined, pdfPw.value, pdfPw.remember && canOrg); } }} />
+                        <Button size="sm" variant="secondary" loading={analyzing} disabled={!pdfPw.value} onClick={() => analyze(pending.file, undefined, pdfPw.value, pdfPw.remember && canOrg)}>Abrir</Button>
+                        {canOrg && <Checkbox checked={pdfPw.remember} onChange={(remember) => setPdfPw({ ...pdfPw, remember })} label={<span className="text-xs text-muted">Lembrar esta senha neste espaço</span>} />}
+                      </div>
+                    </div>
+                  )}
+                  {pending.cls?.unlockedBy && <p className="mt-1 flex items-center gap-1.5 text-xs text-ok"><LockOpen className="size-3.5 shrink-0" /> PDF com senha aberto ({pending.cls.unlockedBy}). Será guardado sem senha.</p>}
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {ATTACHMENT_SLOTS.map((s) => (
                       <button key={s} type="button" onClick={() => setPending({ ...pending, slot: s })}

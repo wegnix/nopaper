@@ -168,11 +168,15 @@ function arrecadacaoInfo(linha: string, barcode: string, valid: boolean): Boleto
  * regex formatada -> janela deslizante sobre todos os dígitos -> dedupe de glifos duplicados.
  */
 export function findBoletoInText(text: string): string | null {
+  // Linha bancária achada no meio de um texto: além de todos os DVs, o 4º dígito tem de ser 9
+  // (código da moeda, Real). Notas e relatórios cheios de números fechavam os DVs por acaso —
+  // em 1.215 documentos reais, as 12 "linhas" sem o 9 eram falsas e nenhuma verdadeira ficou de fora.
+  const plausivel = (d: string) => d[3] === '9' && validateLinhaBancaria(d) && !!parseBoleto(d)?.valid;
   const banco = /(\d{5})\.?(\d{5})\s+(\d{5})\.?(\d{6})\s+(\d{5})\.?(\d{6})\s+(\d)\s+(\d{14})/g;
   for (const m of text.matchAll(banco)) {
     const d = m.slice(1).join('');
     // além dos DVs dos campos, o DV geral tem de fechar (números de relatórios passavam nos 3 primeiros)
-    if (validateLinhaBancaria(d) && parseBoleto(d)?.valid) return formatLinhaBancaria(d);
+    if (plausivel(d)) return formatLinhaBancaria(d);
   }
   const conc = /(\d{11})[\s-]?(\d)\s+(\d{11})[\s-]?(\d)\s+(\d{11})[\s-]?(\d)\s+(\d{11})[\s-]?(\d)/g;
   for (const m of text.matchAll(conc)) {
@@ -185,7 +189,7 @@ export function findBoletoInText(text: string): string | null {
       const w = digits.slice(i, i + 47);
       // janela solta no meio dos números do texto: além dos DVs dos campos, o DV geral tem de fechar
       // (holerites e relatórios cheios de números passavam só nos 3 primeiros por coincidência)
-      if (validateLinhaBancaria(w) && w.slice(33).replace(/0/g, '') !== '' && parseBoleto(w)?.valid) return formatLinhaBancaria(w);
+      if (w.slice(33).replace(/0/g, '') !== '' && plausivel(w)) return formatLinhaBancaria(w);
     }
     for (let i = 0; i + 48 <= max; i++) {
       const w = digits.slice(i, i + 48);

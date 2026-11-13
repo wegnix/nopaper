@@ -3,7 +3,7 @@ import { useSearchParams, Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Archive, CalendarDays, ChevronLeft, ChevronRight, Filter, Folder, FolderOpen, Plus, RefreshCw, Search, Tag, Wallet, X, FileSpreadsheet } from 'lucide-react';
+import { Archive, CalendarDays, ChevronLeft, ChevronRight, Filter, Folder, FolderOpen, Palette, Plus, RefreshCw, Search, Tag, Wallet, X, FileSpreadsheet } from 'lucide-react';
 import { MONTHS_PT, formatBRL, sumMoney, todayISO, type AttachmentSlot, type BillType } from '@nopaper/shared';
 import { Button, Card, Empty, Input, PageHeader, Segmented, Select, Spinner } from '@/components/ui/base';
 import { ColorChip } from '@/components/ui/chips';
@@ -17,9 +17,10 @@ import { KpiRibbon } from './KpiRibbon';
 import { BillsTable } from './BillsTable';
 import { BillForm } from './BillForm';
 import { BulkPayDialog, DeleteDialog, ExportDialog, PayDialog, RestructureDialog } from './dialogs';
-import { CategoryManager, FolderManager } from './Catalog';
+import { CategoryManager, FolderManager, MyColorsDialog } from './Catalog';
 import { FileViewer, type FileViewerTarget } from './FileViewer';
 import { L } from './labels';
+import { BarcodeDialog, PixQrDialog } from './PayCode';
 
 type Status = '' | 'pending' | 'paid' | 'overdue' | 'due_soon';
 
@@ -110,13 +111,36 @@ export function BillsPage({ type }: { type: BillType }) {
   const [delBill, setDelBill] = useState<Bill | null>(null);
   const [restructure, setRestructure] = useState<Bill | null>(null);
   const [bulk, setBulk] = useState(false);
-  const [mgr, setMgr] = useState<'cat' | 'folder' | 'export' | null>(null);
+  const [mgr, setMgr] = useState<'cat' | 'folder' | 'export' | 'colors' | null>(null);
   const [viewer, setViewer] = useState<FileViewerTarget | null>(null);
 
   useEffect(() => {
     if (sp.get('nova') === '1' && perm.create) { setForm({ open: true, bill: null }); setParam({ nova: null }); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp]);
+
+  // link do e-mail de alertas (?codigo=<conta>&espaco=<espaço>): abre o código do boleto (ou o PIX)
+  // já na tela e tenta copiar; o navegador pode exigir um clique, por isso a janela tem o botão Copiar
+  const [payCode, setPayCode] = useState<Bill | null>(null);
+  useEffect(() => {
+    const id = sp.get('codigo');
+    if (!id) return;
+    const space = sp.get('espaco');
+    if (space && space !== orgId) {
+      const s = useSession.getState();
+      if (s.orgs.some((o) => o.id === space)) { s.setOrg(space); qc.clear(); return; } // roda de novo já no espaço certo
+      setParam({ codigo: null, espaco: null });
+      toast.error('Esta conta é de um espaço a que você não tem acesso com este usuário.');
+      return;
+    }
+    setParam({ codigo: null, espaco: null });
+    get<Bill>(`/api/bills/${id}`).then((b) => {
+      if (!b.barcode && !b.pixKey) { toast.info(`“${b.description}” não tem código de boleto nem PIX.`); return; }
+      setPayCode(b);
+      if (b.barcode) navigator.clipboard?.writeText(b.barcode.replace(/\D/g, '')).then(() => toast.success('Código do boleto copiado'), () => undefined);
+    }).catch((e) => toast.error(errMsg(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sp, orgId]);
 
   const shiftMonth = (d: number) => {
     let m = month + d, y = year;
@@ -154,6 +178,7 @@ export function BillsPage({ type }: { type: BillType }) {
         actions={<>
           {can('bills.folders') && <Button size="sm" variant="ghost" icon={<FolderOpen className="size-4" />} onClick={() => setMgr('folder')} title="Pastas" className="max-sm:size-9 max-sm:px-0"><span className="max-sm:sr-only">Pastas</span></Button>}
           {can('bills.categories') && <Button size="sm" variant="ghost" icon={<Tag className="size-4" />} onClick={() => setMgr('cat')} title="Categorias" className="max-sm:size-9 max-sm:px-0"><span className="max-sm:sr-only">Categorias</span></Button>}
+          <Button size="sm" variant="ghost" icon={<Palette className="size-4" />} onClick={() => setMgr('colors')} title="Minhas cores das categorias" className="max-sm:size-9 max-sm:px-0"><span className="max-sm:sr-only">Cores</span></Button>
           {can('bills.import') && perm.create && <Link to={type === 'receivable' ? '/importar?tipo=receber' : '/importar'} title="Importar" className="inline-flex h-8 max-sm:size-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 max-sm:px-0 text-[13px] font-medium text-muted transition-colors hover:bg-surface-2 hover:text-ink"><FileSpreadsheet className="size-4" /><span className="max-sm:sr-only">Importar</span></Link>}
           {can('bills.export') && <Button size="sm" variant="ghost" icon={<Archive className="size-4" />} onClick={() => setMgr('export')} title="Exportar" className="max-sm:size-9 max-sm:px-0"><span className="max-sm:sr-only">Exportar</span></Button>}
           {perm.create && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setForm({ open: true, bill: null })} className="max-sm:ml-auto">{names.new}</Button>}
@@ -276,6 +301,10 @@ export function BillsPage({ type }: { type: BillType }) {
       <BulkPayDialog type={type} bills={selectedBills} open={bulk} onClose={() => setBulk(false)} onDone={() => setSelected(new Set())} />
       <CategoryManager open={mgr === 'cat'} onClose={() => setMgr(null)} />
       <FolderManager open={mgr === 'folder'} onClose={() => setMgr(null)} />
+      {payCode && (payCode.barcode
+        ? <BarcodeDialog barcode={payCode.barcode} onClose={() => setPayCode(null)} />
+        : <PixQrDialog pix={payCode.pixKey!} amount={payCode.status === 'paid' ? null : payCode.amount} name={payCode.description} onClose={() => setPayCode(null)} />)}
+      <MyColorsDialog open={mgr === 'colors'} onClose={() => setMgr(null)} />
       <ExportDialog type={type} open={mgr === 'export'} onClose={() => setMgr(null)} year={year} month={month} filters={{ status, categoryId, folderId, search, days: [...days].sort((a, b) => a - b).join(','), count: bills.length }} />
       <FileViewer target={viewer} onClose={() => setViewer(null)} />
     </div>

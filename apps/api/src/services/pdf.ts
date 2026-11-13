@@ -12,6 +12,15 @@ if (typeof P.withResolvers !== 'function') {
 
 /** Extração de texto de PDF com pdfjs-dist (build legacy, roda em Node sem canvas). */
 export async function pdfToText(buf: Buffer, maxPages = 10): Promise<string> {
+  try { return await readText(buf, maxPages); } catch (e) {
+    // Alguns emissores entregam o boleto como dois PDFs colados: o 1º aberto e, depois dele, uma
+    // cópia protegida por senha. Os leitores olham o fim do arquivo e pedem a senha; a 1ª cópia abre.
+    const end = buf.indexOf('%%EOF');
+    if (end > 0 && end + 5 < buf.length - 16 && buf.indexOf('%PDF-', end) > 0) return await readText(buf.subarray(0, end + 5), maxPages);
+    throw e;
+  }
+}
+async function readText(buf: Buffer, maxPages: number): Promise<string> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const task = pdfjs.getDocument({
     data: new Uint8Array(buf), useSystemFonts: false, disableFontFace: true, verbosity: 0,
