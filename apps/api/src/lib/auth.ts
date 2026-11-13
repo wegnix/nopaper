@@ -179,7 +179,7 @@ export async function requireSuperadmin(req: FastifyRequest) {
 }
 
 export async function membershipsOf(userId: string) {
-  const rows = await db.select({ orgId: schema.organizations.id, name: schema.organizations.name, kind: schema.organizations.kind, logo: schema.organizations.logo })
+  const rows = await db.select({ orgId: schema.organizations.id, name: schema.organizations.name, kind: schema.organizations.kind, logo: schema.organizations.logo, embedVisible: schema.organizations.embedVisible })
     .from(schema.memberships)
     .innerJoin(schema.organizations, eq(schema.organizations.id, schema.memberships.orgId))
     .where(and(eq(schema.memberships.userId, userId), eq(schema.memberships.active, true)))
@@ -187,7 +187,7 @@ export async function membershipsOf(userId: string) {
   const out = [];
   for (const r of rows) {
     const ctx = await loadOrgContext(userId, r.orgId);
-    if (ctx) out.push({ id: r.orgId, name: r.name, kind: r.kind, logo: r.logo, isOwner: ctx.isOwner, isAdmin: ctx.isAdmin, permissions: [...ctx.permissions] });
+    if (ctx) out.push({ id: r.orgId, name: r.name, kind: r.kind, logo: r.logo, embedVisible: r.embedVisible, isOwner: ctx.isOwner, isAdmin: ctx.isAdmin, permissions: [...ctx.permissions] });
   }
   return out;
 }

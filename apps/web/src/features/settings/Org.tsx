@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Building2, Check, FileBadge, ImageUp, KeyRound, MapPin, MessageCircle, Phone, Plus, Trash2 } from 'lucide-react';
+import { Building2, Check, FileBadge, ImageUp, KeyRound, MapPin, MessageCircle, Phone, Plus, Trash2, AppWindow } from 'lucide-react';
 import { BR_STATES, ORG_LOGO_MAX_BYTES, PDF_RULE_SOURCES, PDF_RULE_SOURCE_LABEL, describePdfRule, documentError, formatDocument, formatPhoneBR, formatZipBR, whatsappLink, type PdfRulePart, type PdfRuleSource } from '@nopaper/shared';
-import { Button, Card, Field, IconButton, Segmented, Select, Input } from '@/components/ui/base';
+import { Button, Card, Field, IconButton, Segmented, Select, Input, Switch } from '@/components/ui/base';
 import { DocumentField } from '@/components/ui/document-input';
 import { get, put, errMsg } from '@/lib/api';
 import { OrgAvatar } from '@/components/ui/org-avatar';
@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 
 const DETAILS = ['stateRegistration', 'cityRegistration', 'phone', 'whatsapp', 'email', 'website', 'zipCode', 'street', 'streetNumber', 'complement', 'district', 'city', 'state'] as const;
 type Detail = (typeof DETAILS)[number];
-type Org = { id: string; name: string; legalName: string | null; kind: 'personal' | 'company'; document: string | null; timezone: string; logo: string | null } & Record<Detail, string | null>;
+type Org = { id: string; name: string; legalName: string | null; kind: 'personal' | 'company'; document: string | null; timezone: string; logo: string | null; embedVisible?: boolean } & Record<Detail, string | null>;
 
 /**
  * Os 4 fusos oficiais do Brasil (sem horário de verão desde 2019). Cada um é gravado com uma zona
@@ -206,6 +206,35 @@ const toForm = (o: Org): Form => ({
 });
 const BLANK: Form = toForm({ id: '', name: '', kind: 'company', timezone: 'America/Sao_Paulo', legalName: null, document: null, logo: null, ...(Object.fromEntries(DETAILS.map((k) => [k, null])) as Record<Detail, null>) });
 
+/**
+ * Só em instalações que aceitam ser exibidas dentro de outro sistema: escolhe se ESTE espaço aparece
+ * lá. Grava na hora. É um filtro do que aparece no modo embutido, não uma permissão: quem é membro
+ * continua vendo o espaço ao abrir o NoPaper direto.
+ */
+function EmbedCard({ org, canEdit, onChange }: { org: Org; canEdit: boolean; onChange: (v: boolean) => void }) {
+  const enabled = useSession((s) => s.embedEnabled);
+  const [busy, setBusy] = useState(false);
+  if (!enabled) return null;
+  const toggle = async (visible: boolean) => {
+    setBusy(true);
+    try {
+      const r = await put<{ embedVisible: boolean }>('/api/org/embed', { visible });
+      onChange(r.embedVisible);
+      toast.success(r.embedVisible ? 'Este espaço agora aparece dentro de outros sistemas' : 'Este espaço não aparece mais dentro de outros sistemas');
+    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+  };
+  return (
+    <Card className="flex flex-col p-5">
+      <h2 className="flex items-center gap-2 font-display text-lg font-semibold"><span className="grid size-7 place-items-center rounded-lg bg-accent-soft text-accent"><AppWindow className="size-4" /></span>Dentro de outros sistemas</h2>
+      <p className="mt-1 text-sm text-muted">Esta instalação pode ser exibida dentro de outro sistema da empresa. Escolha se este espaço aparece lá.</p>
+      <div className="mt-4">
+        <Switch checked={!!org.embedVisible} disabled={!canEdit || busy} onChange={toggle} label="Mostrar este espaço quando o NoPaper estiver dentro de outro sistema"
+          hint={org.embedVisible ? 'Os membros deste espaço o enxergam lá, cada um com as próprias permissões.' : 'Desligado: este espaço só aparece para quem abre o NoPaper direto.'} />
+      </div>
+    </Card>
+  );
+}
+
 /** Cartão de uma parte do cadastro: título com ícone e os campos numa grade de 12 colunas. */
 function Section({ icon, title, hint, children, top }: { icon: React.ReactNode; title: string; hint?: string; children: React.ReactNode; top?: React.ReactNode }) {
   return (
@@ -241,7 +270,7 @@ export function OrgPage() {
     <Input type="tel" inputMode="tel" autoComplete="off" maxLength={32} className={cn('tnum', className)} value={f[k]}
       onChange={(e) => set(k)(e.target.value)} onBlur={() => setF((p) => ({ ...p, [k]: p[k] ? formatPhoneBR(p[k]) : '' }))} />;
   /** Espelha no menu (nome, perfil, logo) sem esperar a sessão renovar. */
-  const patchSession = (patch: { name?: string; kind?: Org['kind']; logo?: string | null }) => {
+  const patchSession = (patch: { name?: string; kind?: Org['kind']; logo?: string | null; embedVisible?: boolean }) => {
     const s = useSession.getState();
     useSession.setState({ orgs: s.orgs.map((o) => (o.id === org.id ? { ...o, ...patch } : o)) });
   };
@@ -331,7 +360,10 @@ export function OrgPage() {
           <Button variant="primary" loading={busy} disabled={!form.dirty || !!docErr || f.name.trim().length < 2} onClick={save}>Salvar</Button>
         </Card>
       )}
-      <div className="grid gap-4 xl:grid-cols-2"><PdfPasswordsCard canEdit={canEdit} /></div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <PdfPasswordsCard canEdit={canEdit} />
+        <EmbedCard org={org} canEdit={canEdit} onChange={(embedVisible) => { setOrg({ ...org, embedVisible }); patchSession({ embedVisible }); }} />
+      </div>
     </fieldset>
   );
 }

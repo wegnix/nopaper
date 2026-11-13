@@ -61,6 +61,8 @@ export const organizations = pgTable('organizations', {
   name: varchar('name', { length: 120 }).notNull(),
   kind: varchar('kind', { length: 16 }).notNull().default('company'), // personal | company
   document: varchar('document', { length: 32 }),
+  /** Aparece quando o NoPaper é aberto dentro de outro sistema (modo embutido)? Padrão: não. */
+  embedVisible: boolean('embed_visible').notNull().default(false),
   /** Razão social: vai nos documentos legais (termo e comprovante de assinatura). `name` = nome fantasia. */
   legalName: varchar('legal_name', { length: 160 }),
   /** Dados cadastrais da empresa (perfil Empresa): inscrições, contato e endereço. */

@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { isNull, and, eq, inArray, sql } from 'drizzle-orm';
 import { ORG_DETAIL_FIELDS, ORG_LOGO_MAX_BYTES, orgCreateSchema, orgDetailsSchema, orgLogoSchema, pdfPasswordsSchema, orgUpdateSchema, memberAddSchema, memberUpdateSchema, groupSchema, usernameFromEmail, PERMISSIONS, type Permission } from '@nopaper/shared';
 import { assertUsernameFree } from './auth.js';
@@ -55,6 +56,18 @@ export default async function orgRoutes(app: FastifyInstance) {
     const [org] = await db.update(schema.organizations).set({ logo }).where(eq(schema.organizations.id, req.org!.id)).returning();
     await audit(req, { action: 'org.logo', entityType: 'organization', entityId: org.id, description: logo ? `Trocou a logo do espaço ${org.name}` : `Removeu a logo do espaço ${org.name}` });
     return { logo: org.logo };
+  });
+
+  /** Este espaço aparece quando o NoPaper é aberto dentro de outro sistema (modo embutido)? */
+  app.put('/api/org/embed', { preHandler: requirePerm('org.settings') }, async (req) => {
+    const { visible } = parse(z.object({ visible: z.boolean() }), req.body);
+    const [org] = await db.update(schema.organizations).set({ embedVisible: visible }).where(eq(schema.organizations.id, req.org!.id)).returning();
+    await audit(req, {
+      action: 'org.embed', entityType: 'organization', entityId: org.id,
+      description: visible ? `Liberou o espaço ${org.name} para aparecer dentro de outros sistemas` : `Tirou o espaço ${org.name} de dentro de outros sistemas`,
+      details: { changes: { embedVisible: { from: !visible, to: visible } } },
+    });
+    return { embedVisible: org.embedVisible };
   });
 
   // ---------------------------------------------------------- senhas de PDF

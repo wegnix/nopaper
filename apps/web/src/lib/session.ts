@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { billNames, type BillType, type Permission } from '@nopaper/shared';
+import { EMBEDDED } from './embed';
 
 export interface SessionUser {
   id: string; email: string; username: string; name: string; isSuperadmin: boolean; mustChangePassword?: boolean; canCreateOrgs?: boolean;
@@ -11,8 +12,10 @@ export interface SessionUser {
 }
 export interface SessionOrg {
   id: string; name: string; kind: 'personal' | 'company'; /** Logo do espaço (data URL) ou null: mostra a inicial do nome. */ logo?: string | null; isOwner: boolean; isAdmin: boolean; permissions: Permission[];
+  /** Liberado para aparecer quando o NoPaper está dentro de outro sistema. */
+  embedVisible?: boolean;
 }
-export interface SessionPayload { accessToken?: string; user: SessionUser; orgs: SessionOrg[]; app?: { version: string }; security?: { idleTimeoutMinutes: number } }
+export interface SessionPayload { accessToken?: string; user: SessionUser; orgs: SessionOrg[]; app?: { version: string; embed?: boolean }; security?: { idleTimeoutMinutes: number } }
 /** Por que a sessão terminou (mensagem na tela de login). */
 export type SessionEnd = 'idle' | 'expired' | null;
 
@@ -24,6 +27,10 @@ interface SessionState {
   orgId: string | null;
   /** Versão do NoPaper no servidor (pode ser mais nova que este front, em cache). */
   serverVersion: string | null;
+  /** A instalação aceita ser exibida dentro de outro sistema (mostra o controle em Dados do espaço). */
+  embedEnabled: boolean;
+  /** Modo embutido: a pessoa tem espaços, mas nenhum liberado para aparecer aqui. */
+  embedBlocked: boolean;
   /** Minutos sem interação até o logoff automático (configuração da plataforma). */
   idleTimeoutMinutes: number;
   endReason: SessionEnd;
@@ -45,14 +52,19 @@ export const useSession = create<SessionState>((set, get) => ({
   orgs: [],
   orgId: null,
   serverVersion: null,
+  embedEnabled: false,
+  embedBlocked: false,
   idleTimeoutMinutes: 60,
   endReason: null,
   connecting: false,
   setConnecting(v) { if (get().connecting !== v) set({ connecting: v }); },
   setSession(p) {
+    // dentro de outro sistema só entram os espaços liberados para isso (Dados do espaço)
+    const orgs = EMBEDDED ? p.orgs.filter((o) => o.embedVisible) : p.orgs;
     const saved = get().orgId ?? readOrg();
-    const orgId = p.orgs.find((o) => o.id === saved)?.id ?? p.orgs[0]?.id ?? null;
-    set({ status: 'authed', accessToken: p.accessToken ?? get().accessToken, user: p.user, orgs: p.orgs, orgId, serverVersion: p.app?.version ?? get().serverVersion,
+    const orgId = orgs.find((o) => o.id === saved)?.id ?? orgs[0]?.id ?? null;
+    set({ status: 'authed', accessToken: p.accessToken ?? get().accessToken, user: p.user, orgs, orgId,
+      embedEnabled: p.app?.embed ?? get().embedEnabled, embedBlocked: EMBEDDED && p.orgs.length > 0 && orgs.length === 0, serverVersion: p.app?.version ?? get().serverVersion,
       idleTimeoutMinutes: p.security?.idleTimeoutMinutes ?? get().idleTimeoutMinutes, endReason: null });
   },
   setOrg(id) {

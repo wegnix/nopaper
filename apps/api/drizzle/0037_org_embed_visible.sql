@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN "embed_visible" boolean DEFAULT false NOT NULL;

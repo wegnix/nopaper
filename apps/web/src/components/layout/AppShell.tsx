@@ -56,7 +56,8 @@ function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNaviga
 
 function OrgSwitcher({ onNew, collapsed, slim }: { onNew: () => void; collapsed?: boolean; /** Faixa do modo embutido: uma linha só. */ slim?: boolean }) {
   const { orgs, setOrg } = useSession();
-  const canCreate = useSession((s) => !!(s.user?.isSuperadmin || s.user?.canCreateOrgs));
+  // embutido: espaço novo nasce sem liberação para aparecer aqui, então não se cria por este caminho
+  const canCreate = useSession((s) => !!(s.user?.isSuperadmin || s.user?.canCreateOrgs)) && !EMBEDDED;
   const org = useOrg();
   const qc = useQueryClient();
   const nav = useNavigate();
@@ -125,6 +126,8 @@ export function AppShell() {
   const [newOrg, setNewOrg] = useState(false);
   const { collapsed, toggle: toggleSidebar } = useSidebar();
   const { user } = useSession();
+  const currentOrg = useOrg();
+  const embedBlocked = useSession((s) => s.embedBlocked);
   const { theme, toggle } = useTheme();
   const loc = useLocation();
   const nav = useNavigate();
@@ -178,12 +181,13 @@ export function AppShell() {
   // dentro de outro sistema: sem menu lateral nem cabeçalho (quem embute tem os dele); fica só uma
   // faixa fina com o que não pode sumir — trocar de espaço, buscar, tema e a conta (perfil, sair)
   if (EMBEDDED) {
+    const noSpace = !currentOrg;
     return (
       <div className="flex h-dvh flex-col overflow-hidden">
         <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line px-2 sm:px-3">
-          <OrgSwitcher onNew={() => setNewOrg(true)} slim />
+          {!noSpace && <OrgSwitcher onNew={() => setNewOrg(true)} slim />}
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
-            {!accountantOnly && <button onClick={() => setPalette(true)} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink pointer-coarse:size-10" aria-label="Buscar ou ir para (Ctrl K)"><Search className="size-4" /></button>}
+            {!accountantOnly && !noSpace && <button onClick={() => setPalette(true)} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink pointer-coarse:size-10" aria-label="Buscar ou ir para (Ctrl K)"><Search className="size-4" /></button>}
             <button onClick={toggle} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink pointer-coarse:size-10" aria-label="Alternar tema">
               {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </button>
@@ -192,7 +196,16 @@ export function AppShell() {
         </div>
         <main className="flex-1 overflow-y-auto overscroll-contain">
           <motion.div key={loc.pathname.split('/')[1]} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: 'easeOut' }} className="w-full px-3 py-4 sm:px-4 md:px-5 md:py-5">
-            <Outlet />
+            {noSpace ? (
+              <div className="mx-auto mt-10 max-w-md rounded-2xl border border-line bg-surface p-6 text-center shadow-card">
+                <p className="font-display text-lg font-semibold">Nenhum espaço disponível aqui</p>
+                <p className="mt-2 text-sm text-muted">
+                  {embedBlocked
+                    ? 'Seus espaços não estão liberados para aparecer dentro de outro sistema. Um administrador do espaço libera isso abrindo o NoPaper direto, em Configurações → Dados do espaço.'
+                    : 'Sua conta ainda não participa de nenhum espaço. Peça a um administrador para adicionar você.'}
+                </p>
+              </div>
+            ) : <Outlet />}
           </motion.div>
         </main>
         <CommandPalette open={palette} onClose={() => setPalette(false)} />

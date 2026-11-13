@@ -8,6 +8,19 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.21.0] - 2026-11-13
+
+### Novo
+- **Quais espaços aparecem dentro de outro sistema**: em Configurações → Dados do espaço há agora o cartão
+  "Dentro de outros sistemas", com a chave "Mostrar este espaço quando o NoPaper estiver dentro de outro
+  sistema". No modo embutido só aparecem os espaços com a chave ligada; os demais continuam disponíveis para
+  quem abre o NoPaper direto. O cartão só existe em instalações com `EMBED_ALLOWED_ORIGINS` preenchido.
+
+### Mudou
+- **Atenção ao atualizar, se você usa o modo embutido**: a chave vem desligada em todos os espaços. Depois de
+  atualizar, abra o NoPaper direto e ligue-a nos espaços que devem aparecer no outro sistema; até lá, o modo
+  embutido mostra "Nenhum espaço disponível aqui".
+
 ## [1.20.0] - 2026-11-13
 
 ### Novo

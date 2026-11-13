@@ -260,6 +260,13 @@
       "when": 1794590284039,
       "tag": "0036_api_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794599011239,
+      "tag": "0037_org_embed_visible",
+      "breakpoints": true
     }
   ]
 }

@@ -63,7 +63,8 @@ async function mePayload(userId: string) {
     },
     orgs: await membershipsOf(userId),
     /** O front compara com a própria versão para avisar quando há atualização (cache/PWA). */
-    app: { version: APP_VERSION },
+    // `embed`: esta instalação aceita ser exibida dentro de outro sistema (EMBED_ALLOWED_ORIGINS)
+    app: { version: APP_VERSION, embed: env.EMBED_ALLOWED_ORIGINS.length > 0 },
     security: { idleTimeoutMinutes: (await securitySettings()).idleTimeoutMinutes },
   };
 }
