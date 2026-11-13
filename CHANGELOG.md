@@ -8,6 +8,12 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.21.4] - 2026-11-13
+
+### Mudou
+- **Marcas do menu lateral**: a logo do NoPaper ficou maior (44 px) e a do espaço voltou a ser menor que ela
+  (36 px com o menu aberto, 28 px recolhido) — a marca do NoPaper é sempre a maior do menu.
+
 ## [1.21.3] - 2026-11-13
 
 ### Corrigido

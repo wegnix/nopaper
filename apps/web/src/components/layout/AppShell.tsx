@@ -67,9 +67,9 @@ function OrgSwitcher({ onNew, collapsed, slim }: { onNew: () => void; collapsed?
         <DropdownMenu.Trigger className={cn(
           'flex items-center text-left transition-colors',
           slim ? 'min-w-0 gap-2 rounded-lg px-1.5 py-1 hover:bg-surface-2' : 'w-full gap-3 rounded-xl border border-line bg-surface-2 hover:border-line-strong',
-          !slim && (collapsed ? 'p-[3px]' : 'p-2'),
+          !slim && (collapsed ? 'p-[5px]' : 'p-2'),
         )}>
-          <OrgAvatar name={org?.name} logo={org?.logo} className={slim ? 'size-6 rounded-md text-xs' : collapsed ? undefined : 'size-11 rounded-[10px] text-lg'} />
+          <OrgAvatar name={org?.name} logo={org?.logo} className={slim ? 'size-6 rounded-md text-xs' : collapsed ? 'size-7 rounded-md text-sm' : 'size-9 rounded-lg text-base'} />
           {slim && <><span className="min-w-0 truncate text-sm font-semibold">{org?.name}</span><ChevronsUpDown className="size-3.5 shrink-0 text-faint" /></>}
           {!collapsed && !slim && <>
             <span className="min-w-0 flex-1">
@@ -109,7 +109,7 @@ function OrgSwitcher({ onNew, collapsed, slim }: { onNew: () => void; collapsed?
 function SidebarContent({ onNavigate, onNewOrg, collapsed }: { onNavigate?: () => void; onNewOrg: () => void; collapsed?: boolean }) {
   return (
     <div className="flex h-full flex-col gap-5 px-3 py-4">
-      <div className={cn('overflow-hidden transition-[padding] duration-200', collapsed ? 'px-1' : 'px-[6px]')}><Logo animated scale="md" markSize={collapsed ? 32 : 36} textClassName={cn('transition-opacity duration-150', collapsed && 'opacity-0')} /></div>
+      <div className={cn('overflow-hidden transition-[padding] duration-200', collapsed ? 'px-1' : 'px-[6px]')}><Logo animated scale="md" markSize={collapsed ? 32 : 44} textClassName={cn('transition-opacity duration-150', collapsed && 'opacity-0')} /></div>
       <OrgSwitcher onNew={onNewOrg} collapsed={collapsed} />
       <nav className="flex flex-col gap-0.5"><NavItems items={NAV} onNavigate={onNavigate} collapsed={collapsed} /></nav>
       <div className="mt-auto flex flex-col gap-0.5">
@@ -230,7 +230,7 @@ export function AppShell() {
         <Tooltip content={collapsed ? 'Expandir menu (Ctrl+B)' : 'Recolher menu (Ctrl+B)'} side="right">
           <button
             type="button" onClick={toggleSidebar} aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'} aria-expanded={!collapsed}
-            className="absolute -right-3.5 top-[21px] z-30 grid size-7 place-items-center rounded-full border border-line-strong bg-surface text-muted shadow-card transition-colors hover:border-accent hover:text-accent"
+            className={cn('absolute -right-3.5 z-30 grid size-7 place-items-center rounded-full border border-line-strong bg-surface text-muted shadow-card transition-colors hover:border-accent hover:text-accent', collapsed ? 'top-[18px]' : 'top-[24px]')}
           >
             {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
           </button>
