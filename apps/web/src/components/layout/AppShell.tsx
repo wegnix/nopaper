@@ -67,9 +67,9 @@ function OrgSwitcher({ onNew, collapsed, slim }: { onNew: () => void; collapsed?
         <DropdownMenu.Trigger className={cn(
           'flex items-center text-left transition-colors',
           slim ? 'min-w-0 gap-2 rounded-lg px-1.5 py-1 hover:bg-surface-2' : 'w-full gap-3 rounded-xl border border-line bg-surface-2 hover:border-line-strong',
-          !slim && (collapsed ? 'p-[3px]' : 'px-2.5 py-2'),
+          !slim && (collapsed ? 'p-[3px]' : 'p-2'),
         )}>
-          <OrgAvatar name={org?.name} logo={org?.logo} className={slim ? 'size-6 rounded-md text-xs' : undefined} />
+          <OrgAvatar name={org?.name} logo={org?.logo} className={slim ? 'size-6 rounded-md text-xs' : collapsed ? undefined : 'size-11 rounded-[10px] text-lg'} />
           {slim && <><span className="min-w-0 truncate text-sm font-semibold">{org?.name}</span><ChevronsUpDown className="size-3.5 shrink-0 text-faint" /></>}
           {!collapsed && !slim && <>
             <span className="min-w-0 flex-1">
@@ -201,7 +201,7 @@ export function AppShell() {
                 <p className="font-display text-lg font-semibold">Nenhum espaço disponível aqui</p>
                 <p className="mt-2 text-sm text-muted">
                   {embedBlocked
-                    ? 'Nenhum dos seus espaços está habilitado para a exibição integrada. Um administrador do espaço habilita isso no acesso direto ao NoPaper, em Configurações → Dados do espaço → Exibição integrada.'
+                    ? 'Nenhum dos seus espaços está habilitado para a exibição integrada. Um administrador do espaço habilita isso no acesso direto ao NoPaper, em Configurações → Configuração do espaço → Exibição integrada.'
                     : 'Sua conta ainda não participa de nenhum espaço. Peça a um administrador para adicionar você.'}
                 </p>
                 {embedBlocked && (

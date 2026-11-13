@@ -8,6 +8,18 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.21.3] - 2026-11-13
+
+### Corrigido
+- **Folha de pagamento no celular**: nomes compridos de funcionários (nome completo, em maiúsculas) eram cortados
+  com "…" na lista do mês, na aba Funcionários e na janela de Assinaturas. Agora o nome quebra em duas linhas.
+
+### Mudou
+- **Logo do espaço maior no menu lateral**: passou de 32 para 44 px no seletor de espaço (com o menu aberto).
+- **Configuração do espaço**: o item "Dados do espaço" do menu das Configurações passou a se chamar
+  "Configuração do espaço", já que a página reúne também senhas de PDF e exibição integrada. O endereço da
+  página não mudou.
+
 ## [1.21.2] - 2026-11-13
 
 ### Mudou

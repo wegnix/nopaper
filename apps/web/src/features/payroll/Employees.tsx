@@ -47,8 +47,8 @@ export function EmployeesTab({ employees, canManage, onOpenMonth }: { employees:
               className="group flex min-w-0 items-center gap-3 rounded-xl border border-line bg-surface p-4 text-left shadow-card transition hover:-translate-y-0.5 hover:border-line-strong">
               <span className={cn('grid size-11 shrink-0 place-items-center rounded-full font-display text-sm font-semibold', e.active && !e.payslipOnly ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-faint')}>{initials(e.name)}</span>
               <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-1.5"><span className="truncate font-medium">{e.name}</span>{e.payslipOnly && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-muted"><Ghost className="size-3" />só holerite</span>}</span>
-                <span className="block truncate text-xs text-muted">{e.role || (e.active ? 'Ativo' : 'Desligado')}{e.admissionDate ? ` · desde ${formatDateBR(e.admissionDate)}` : ''}{e.sellerCode ? ` · vendedor ${e.sellerCode}` : ''}</span>
+                <span className="flex items-start gap-1.5"><span className="min-w-0 line-clamp-2 break-words font-medium leading-snug">{e.name}</span>{e.payslipOnly && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-muted"><Ghost className="size-3" />só holerite</span>}</span>
+                <span className="block line-clamp-2 break-words text-xs text-muted">{e.role || (e.active ? 'Ativo' : 'Desligado')}{e.admissionDate ? ` · desde ${formatDateBR(e.admissionDate)}` : ''}{e.sellerCode ? ` · vendedor ${e.sellerCode}` : ''}</span>
                 <span className="block truncate text-xs text-faint">{e.months ? `${plural(e.months, 'mês', 'meses')} na folha · último ${refLabelPT(e.lastRef!)}` : 'Ainda sem lançamentos'}</span>
               </span>
             </button>

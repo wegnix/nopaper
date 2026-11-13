@@ -51,7 +51,7 @@ export default async function esignRoutes(app: FastifyInstance) {
   const orgOf = async (orgId: string) => (await db.select().from(schema.organizations).where(eq(schema.organizations.id, orgId)))[0]!;
   /** Termo e comprovante levam razão social e CNPJ: sem eles o documento não identifica a empresa. */
   const assertCompanyData = (org: Org) => {
-    if (!org.legalName?.trim() || !org.document) throw badRequest('Antes, preencha a razão social e o CNPJ da empresa em Configurações → Espaço → Dados do espaço. Eles vão no termo de aceite e no comprovante de assinatura.', 'esign_company');
+    if (!org.legalName?.trim() || !org.document) throw badRequest('Antes, preencha a razão social e o CNPJ da empresa em Configurações → Espaço → Configuração do espaço. Eles vão no termo de aceite e no comprovante de assinatura.', 'esign_company');
   };
   /** Cria o termo de aceite do funcionário (se ele ainda não assinou e não há um aguardando). Devolve a linha pendente. */
   const ensureTerm = async (org: Org, emp: Employee, createdBy: string | null): Promise<Row | null> => {

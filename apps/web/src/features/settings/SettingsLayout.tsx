@@ -10,7 +10,7 @@ const SECTIONS: Array<{ title: string; superadmin?: boolean; items: Item[] }> = 
   { title: 'Conta', items: [{ to: 'perfil', label: 'Meu perfil', icon: User }] },
   {
     title: 'Espaço', items: [
-      { to: 'organizacao', label: 'Dados do espaço', icon: Building2, perm: 'org.settings' },
+      { to: 'organizacao', label: 'Configuração do espaço', icon: Building2, perm: 'org.settings' },
       { to: 'membros', label: 'Membros', icon: Users, perm: 'members.manage' },
       { to: 'grupos', label: 'Grupos e permissões', icon: Shield, perm: 'groups.manage' },
       { to: 'alertas', label: 'Alertas', icon: Bell, perm: 'alerts.manage' },

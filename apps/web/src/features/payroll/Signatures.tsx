@@ -123,7 +123,7 @@ export function SignaturesDialog({ open, onClose, periodId, refStr, payMonth }: 
             {list.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
                 <div className="min-w-0 flex-1 basis-48">
-                  <p className="truncate text-sm font-medium">{r.employeeName}</p>
+                  <p className="line-clamp-2 break-words text-sm font-medium leading-snug sm:line-clamp-1">{r.employeeName}</p>
                   <p className="text-xs text-muted">{r.kind === 'term' ? 'Termo de aceite de assinatura eletrônica' : <>Holerite de {refLabelPT(r.competence)} · líquido <span className="tnum">{formatBRL(r.net)}</span></>}</p>
                   {r.sentToAccountantAt && <p className="text-xs text-faint">Enviado ao contador em {when(r.sentToAccountantAt)}</p>}
                 </div>

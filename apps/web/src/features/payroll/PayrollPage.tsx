@@ -347,7 +347,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
                     <button type="button" onClick={() => setEntryDlg({ open: true, entry: e })} className="flex w-full min-w-0 flex-col gap-2 rounded-xl border border-line bg-surface-2/40 p-3.5 text-left">
                       <span className="flex items-start justify-between gap-2">
                         <span className="min-w-0">
-                          <span className="block truncate font-medium">{emp?.name ?? '—'}</span>
+                          <span className="block line-clamp-2 break-words font-medium leading-snug">{emp?.name ?? '—'}</span>
                           <span className="block truncate text-xs text-faint">{emp?.role ?? ''}</span>
                           {cutNote(t)}
                           {unchecked(e, t) && <span className="flex items-center gap-1 text-xs text-warn"><AlertTriangle className="size-3" /> holerite não conferido</span>}
@@ -374,7 +374,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
                     <button type="button" onClick={() => setEntryDlg({ open: true, entry: e })} className="flex w-full min-w-0 flex-col gap-2 rounded-xl border border-dashed border-line p-3.5 text-left text-muted">
                       <span className="flex items-start justify-between gap-2">
                         <span className="min-w-0">
-                          <span className="block truncate font-medium">{emp?.name ?? '—'}</span>
+                          <span className="block line-clamp-2 break-words font-medium leading-snug">{emp?.name ?? '—'}</span>
                           <span className="block truncate text-xs text-faint">{emp?.role ?? ''}</span>
                         </span>
                         {ghostChip}
