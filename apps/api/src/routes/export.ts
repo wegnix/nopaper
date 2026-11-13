@@ -8,7 +8,7 @@ import { parse } from '../lib/validate.js';
 import { forbidden } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
-import { fileExists, readStoredFile } from '../lib/storage.js';
+import { fileExists, storedFilePath } from '../lib/storage.js';
 import { listBills, orgToday, visibilityCond, viewPerm } from '../services/bills.js';
 import { billsCsv, billsWorkbook } from '../services/xlsx.js';
 
@@ -56,7 +56,9 @@ export default async function exportRoutes(app: FastifyInstance) {
         let path = `${y}/${monthDir}/${folder}/${baseName}.${ext}`;
         for (let i = 2; used.has(path.toLowerCase()); i++) path = `${y}/${monthDir}/${folder}/${baseName} (${i}).${ext}`;
         used.add(path.toLowerCase());
-        zip.append(await readStoredFile(a.storageKey), { name: path });
+        // pelo caminho, não pelo conteúdo: o archiver abre e lê um arquivo por vez, em fluxo.
+        // Carregar tudo na memória antes de enviar fazia a API crescer o tamanho inteiro da exportação.
+        zip.file(storedFilePath(a.storageKey), { name: path });
         exported++;
       }
     }

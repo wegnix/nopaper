@@ -8,6 +8,13 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.17.1] - 2026-11-13
+
+### Corrigido
+- **Exportar o ano inteiro em ZIP**: o servidor carregava todos os anexos na memória antes de enviar; numa
+  exportação grande isso podia derrubar a API. Agora os arquivos são lidos do disco um por vez. O download
+  também passou a renovar a sessão sozinho se o acesso vencer no meio do caminho.
+
 ## [1.17.0] - 2026-11-13
 
 ### Novo

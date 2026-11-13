@@ -58,6 +58,8 @@ export async function deleteFile(key: string) {
   try { await unlink(resolveKey(key)); } catch { /* já removido */ }
 }
 export const readStoredFile = (key: string) => readFile(resolveKey(key));
+/** Caminho do arquivo no disco (para quem lê em fluxo, um por vez, como o ZIP de exportação). */
+export const storedFilePath = (key: string) => resolveKey(key);
 export const streamStoredFile = (key: string) => createReadStream(resolveKey(key));
 export async function fileExists(key: string) {
   try { await stat(resolveKey(key)); return true; } catch { return false; }

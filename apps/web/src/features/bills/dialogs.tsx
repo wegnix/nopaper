@@ -284,12 +284,8 @@ function ZipExport({ type, year: y0, month: m0, open, onDone }: { type: BillType
   const submit = async () => {
     setBusy(true);
     try {
-      const { accessToken, orgId } = useSession.getState();
-      const r = await fetch('/api/export/zip', {
-        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${accessToken}`, 'x-org-id': orgId ?? '' },
-        body: JSON.stringify({ type, year, month: scope === 'month' ? month : null, includeSpreadsheet: sheet }),
-      });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'Falha ao exportar');
+      // sem limite de tempo: um ano inteiro pode levar minutos numa conexão lenta
+      const r = await api<Response>('POST', '/api/export/zip', { type, year, month: scope === 'month' ? month : null, includeSpreadsheet: sheet }, { raw: true });
       const name = `${type === 'payable' ? 'contas-pagar' : 'contas-receber'}-${year}${scope === 'month' ? '-' + mm : ''}.zip`;
       downloadBlob(await r.blob(), name);
       toast.success('ZIP gerado');
