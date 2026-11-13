@@ -201,7 +201,7 @@ export function AppShell() {
                 <p className="font-display text-lg font-semibold">Nenhum espaço disponível aqui</p>
                 <p className="mt-2 text-sm text-muted">
                   {embedBlocked
-                    ? 'Seus espaços não estão liberados para aparecer dentro de outro sistema. Um administrador do espaço libera isso abrindo o NoPaper direto, em Configurações → Dados do espaço.'
+                    ? 'Nenhum dos seus espaços está habilitado para a exibição integrada. Um administrador do espaço habilita isso no acesso direto ao NoPaper, em Configurações → Dados do espaço → Exibição integrada.'
                     : 'Sua conta ainda não participa de nenhum espaço. Peça a um administrador para adicionar você.'}
                 </p>
                 {embedBlocked && (

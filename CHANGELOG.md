@@ -8,6 +8,13 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.21.2] - 2026-11-13
+
+### Mudou
+- **Exibição integrada**: o cartão "Dentro de outros sistemas" (Configurações → Dados do espaço) passou a se
+  chamar "Exibição integrada" e ocupa a largura toda da página, como os demais. A chave agora é "Habilitar este
+  espaço na exibição integrada"; o que ela faz não mudou.
+
 ## [1.21.1] - 2026-11-13
 
 ### Corrigido

@@ -64,7 +64,7 @@ export default async function orgRoutes(app: FastifyInstance) {
     const [org] = await db.update(schema.organizations).set({ embedVisible: visible }).where(eq(schema.organizations.id, req.org!.id)).returning();
     await audit(req, {
       action: 'org.embed', entityType: 'organization', entityId: org.id,
-      description: visible ? `Liberou o espaço ${org.name} para aparecer dentro de outros sistemas` : `Tirou o espaço ${org.name} de dentro de outros sistemas`,
+      description: visible ? `Habilitou o espaço ${org.name} na exibição integrada` : `Desabilitou o espaço ${org.name} na exibição integrada`,
       details: { changes: { embedVisible: { from: !visible, to: visible } } },
     });
     return { embedVisible: org.embedVisible };

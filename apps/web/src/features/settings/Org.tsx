@@ -220,16 +220,16 @@ function EmbedCard({ org, canEdit, onChange }: { org: Org; canEdit: boolean; onC
     try {
       const r = await put<{ embedVisible: boolean }>('/api/org/embed', { visible });
       onChange(r.embedVisible);
-      toast.success(r.embedVisible ? 'Este espaço agora aparece dentro de outros sistemas' : 'Este espaço não aparece mais dentro de outros sistemas');
+      toast.success(r.embedVisible ? 'Espaço habilitado na exibição integrada' : 'Espaço desabilitado na exibição integrada');
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   return (
-    <Card className="flex flex-col p-5">
-      <h2 className="flex items-center gap-2 font-display text-lg font-semibold"><span className="grid size-7 place-items-center rounded-lg bg-accent-soft text-accent"><AppWindow className="size-4" /></span>Dentro de outros sistemas</h2>
-      <p className="mt-1 text-sm text-muted">Esta instalação pode ser exibida dentro de outro sistema da empresa. Escolha se este espaço aparece lá.</p>
-      <div className="mt-4">
-        <Switch checked={!!org.embedVisible} disabled={!canEdit || busy} onChange={toggle} label="Mostrar este espaço quando o NoPaper estiver dentro de outro sistema"
-          hint={org.embedVisible ? 'Os membros deste espaço o enxergam lá, cada um com as próprias permissões.' : 'Desligado: este espaço só aparece para quem abre o NoPaper direto.'} />
+    <Card className="p-5 xl:col-span-2">
+      <h2 className="flex items-center gap-2 font-display text-lg font-semibold"><span className="grid size-7 place-items-center rounded-lg bg-accent-soft text-accent"><AppWindow className="size-4" /></span>Exibição integrada</h2>
+      <p className="mt-1 max-w-3xl text-sm text-muted">Esta instalação pode ser incorporada a outro sistema da organização. Na exibição integrada, só os espaços habilitados ficam disponíveis.</p>
+      <div className="mt-4 rounded-xl border border-line bg-surface-2/50 px-4 py-3">
+        <Switch checked={!!org.embedVisible} disabled={!canEdit || busy} onChange={toggle} label="Habilitar este espaço na exibição integrada"
+          hint={org.embedVisible ? 'Habilitado: os membros acessam este espaço pelo outro sistema, cada um com as próprias permissões.' : 'Desabilitado: este espaço só fica disponível no acesso direto ao NoPaper.'} />
       </div>
     </Card>
   );
