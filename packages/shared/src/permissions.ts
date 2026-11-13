@@ -52,6 +52,7 @@ export const PERMISSIONS = {
   'members.manage': { group: 'Espaço', label: 'Gerenciar membros', hint: 'Adicionar, ativar/desativar e trocar grupos — só com grupos cujas permissões a própria pessoa já tem.' },
   'groups.manage': { group: 'Espaço', label: 'Gerenciar grupos e permissões', hint: 'Só concede permissões que a própria pessoa já tem.' },
   'audit.view': { group: 'Espaço', label: 'Ver auditoria' },
+  'integrations.manage': { group: 'Espaço', label: 'Gerenciar integrações (tokens da API)', hint: 'Cria tokens para outros sistemas lerem e gravarem neste espaço — só com as permissões que a própria pessoa tem.' },
 } as const satisfies Record<string, PermDef>;
 
 export type Permission = keyof typeof PERMISSIONS;

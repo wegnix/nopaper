@@ -180,6 +180,9 @@ export const bills = pgTable('bills', {
   importBatchId: uuid('import_batch_id'),
   /** Conta gerada pela folha de pagamento (valor/vencimento vêm do lançamento). */
   payrollEntryId: uuid('payroll_entry_id'),
+  /** Identificador da conta no sistema que a criou pela API (único no espaço) e o nome desse sistema. */
+  externalId: varchar('external_id', { length: 120 }),
+  source: varchar('source', { length: 40 }),
   createdBy: uuid('created_by'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
@@ -190,6 +193,7 @@ export const bills = pgTable('bills', {
   index('bills_category_idx').on(t.categoryId),
   index('bills_folder_idx').on(t.folderId),
   index('bills_payroll_entry_idx').on(t.payrollEntryId).where(sql`${t.payrollEntryId} is not null`),
+  uniqueIndex('bills_org_external_uq').on(t.orgId, t.externalId).where(sql`${t.externalId} is not null`),
   index('bills_indefinite_idx').on(t.isIndefinite).where(sql`${t.isIndefinite} = true`),
 ]);
 
@@ -222,6 +226,48 @@ export const auditLogs = pgTable('audit_logs', {
   userAgent: varchar('user_agent', { length: 255 }),
   createdAt: createdAt(),
 }, (t) => [index('audit_org_created_idx').on(t.orgId, t.createdAt), index('audit_org_id_idx').on(t.orgId, t.id)]);
+
+// ------------------------------------------------------------------ integrações (API pública)
+/** Token da API `/api/v1`: pertence a um espaço e carrega as permissões marcadas por quem criou. */
+export const apiTokens = pgTable('api_tokens', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 64 }).notNull(),
+  /** sha256 do token; o texto só é mostrado na criação. */
+  tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+  hint: varchar('hint', { length: 12 }).notNull(),
+  permissions: text('permissions').array().notNull().default(sql`'{}'::text[]`),
+  allowedIps: text('allowed_ips').array().notNull().default(sql`'{}'::text[]`),
+  expiresAt: date('expires_at'),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  lastUsedIp: varchar('last_used_ip', { length: 64 }),
+  /** Webhook do token (opcional): os eventos que o token pode ver são enviados para este endereço. */
+  webhookUrl: varchar('webhook_url', { length: 500 }),
+  webhookSecret: text('webhook_secret'),
+  webhookGroups: text('webhook_groups').array().notNull().default(sql`'{}'::text[]`),
+  /** Último evento já entregue (id da auditoria). */
+  webhookCursor: bigint('webhook_cursor', { mode: 'number' }),
+  webhookStatus: varchar('webhook_status', { length: 16 }),
+  webhookError: text('webhook_error'),
+  webhookLastAt: timestamp('webhook_last_at', { withTimezone: true }),
+  webhookFailSince: timestamp('webhook_fail_since', { withTimezone: true }),
+  webhookNextAt: timestamp('webhook_next_at', { withTimezone: true }),
+  webhookAttempts: integer('webhook_attempts').notNull().default(0),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [uniqueIndex('api_tokens_hash_uq').on(t.tokenHash), index('api_tokens_org_idx').on(t.orgId)]);
+
+/** Respostas guardadas por 24 h para repetir um POST com a mesma `Idempotency-Key` sem refazer a ação. */
+export const apiIdempotencyKeys = pgTable('api_idempotency_keys', {
+  tokenId: uuid('token_id').notNull().references(() => apiTokens.id, { onDelete: 'cascade' }),
+  key: varchar('key', { length: 120 }).notNull(),
+  requestHash: varchar('request_hash', { length: 64 }).notNull(),
+  /** null = a 1ª chamada ainda está em andamento. */
+  status: smallint('status'),
+  response: jsonb('response'),
+  createdAt: createdAt(),
+}, (t) => [primaryKey({ columns: [t.tokenId, t.key] }), index('api_idem_created_idx').on(t.createdAt)]);
 
 // ------------------------------------------------------------------ cartões de crédito
 export const cards = pgTable('cards', {

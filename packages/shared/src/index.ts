@@ -20,3 +20,4 @@ export * from './spending.js';
 export * from './esign.js';
 export * from './org.js';
 export * from './pdfPasswords.js';
+export * from './integrations.js';

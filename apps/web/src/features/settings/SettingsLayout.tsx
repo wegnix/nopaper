@@ -1,5 +1,5 @@
 import { NavLink, Outlet, Navigate, useLocation, useNavigate } from 'react-router';
-import { ArrowUpCircle, Bell, ChevronDown, Building2, DatabaseBackup, History, LockKeyhole, Mail, ScrollText, Shield, User, UserCog, Users } from 'lucide-react';
+import { ArrowUpCircle, Bell, ChevronDown, Building2, DatabaseBackup, History, KeyRound, LockKeyhole, Mail, ScrollText, Shield, User, UserCog, Users } from 'lucide-react';
 import { useCan, useSession } from '@/lib/session';
 import { PageHeader } from '@/components/ui/base';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ const SECTIONS: Array<{ title: string; superadmin?: boolean; items: Item[] }> = 
       { to: 'membros', label: 'Membros', icon: Users, perm: 'members.manage' },
       { to: 'grupos', label: 'Grupos e permissões', icon: Shield, perm: 'groups.manage' },
       { to: 'alertas', label: 'Alertas', icon: Bell, perm: 'alerts.manage' },
+      { to: 'integracoes', label: 'Integrações', icon: KeyRound, perm: 'integrations.manage' },
       { to: 'auditoria', label: 'Auditoria', icon: History, perm: 'audit.view' },
     ],
   },

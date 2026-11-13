@@ -43,6 +43,7 @@ services:
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-15}
       ACCOUNTING_MAX_UPLOAD_MB: ${ACCOUNTING_MAX_UPLOAD_MB:-200}
       STORAGE_QUOTA_MB: ${STORAGE_QUOTA_MB:-5120}
+      WEBHOOK_ALLOW_PRIVATE: ${WEBHOOK_ALLOW_PRIVATE:-}
       # atualização pela interface: de onde vêm as versões (dono/repositório no GitHub)
       UPDATE_REPO: ${UPDATE_REPO:-wegnix/nopaper}
       LOG_LEVEL: ${LOG_LEVEL:-info}

@@ -80,7 +80,7 @@ export default async function attachmentRoutes(app: FastifyInstance) {
     await db.transaction(async (tx) => {
       if (old) await tx.delete(schema.attachments).where(eq(schema.attachments.id, old.id));
       await tx.insert(schema.attachments).values({
-        orgId: b.orgId, billId: b.id, slot, originalName: filename, mime, size: buf.length, storageKey: key, sha256, createdBy: req.user!.id,
+        orgId: b.orgId, billId: b.id, slot, originalName: filename, mime, size: buf.length, storageKey: key, sha256, createdBy: req.user?.id ?? null,
       });
       if (classification?.barcode && !b.barcode && slot === 'boleto') {
         await tx.update(schema.bills).set({ barcode: classification.barcode }).where(eq(schema.bills.id, b.id));

@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Permission } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import type { DBOrTx } from '../db/client.js';
+import { kickWebhooks } from './webhookKick.js';
 
 export interface AuditEntry {
   action: string;
@@ -17,8 +18,8 @@ export async function audit(req: FastifyRequest | null, e: AuditEntry, conn: DBO
   try {
     await conn.insert(schema.auditLogs).values({
       orgId: e.orgId ?? req?.org?.id ?? null,
-      userId: req?.user?.id ?? null,
-      userName: req?.user?.name ?? null,
+      userId: req?.user?.id ?? req?.integration?.id ?? null,
+      userName: req?.user?.name ?? (req?.integration ? `Integração ${req.integration.name}`.slice(0, 120) : null),
       action: e.action,
       entityType: e.entityType ?? null,
       entityId: e.entityId != null ? String(e.entityId) : null,
@@ -27,6 +28,7 @@ export async function audit(req: FastifyRequest | null, e: AuditEntry, conn: DBO
       ip: req?.ip ?? null,
       userAgent: req?.headers['user-agent']?.slice(0, 255) ?? null,
     });
+    if (e.orgId ?? req?.org?.id) kickWebhooks();
   } catch (err) {
     req?.log.error({ err }, 'falha ao gravar auditoria');
   }
@@ -52,6 +54,7 @@ const AREA_PERMS: Record<string, Permission[]> = {
   category: ['payable.view', 'receivable.view'], folder: ['payable.view', 'receivable.view'],
   card: ['cards.view'], bank: ['bank.view'], payroll: ['payroll.view'],
   accounting: ['accounting.review', 'accounting.send'],
+  integration: ['integrations.manage'],
   member: ['members.manage'], group: ['groups.manage', 'members.manage'], org: ['org.settings'], alerts: ['alerts.manage'],
 };
 export function auditAreasFor(org: { isAdmin: boolean; can(p: Permission): boolean }): string[] | null {

@@ -34,6 +34,7 @@ import { RestoreOverlay } from './features/settings/Restore';
 import { ProfilePage } from './features/settings/Profile';
 import { MembersPage } from './features/settings/Members';
 import { GroupsPage } from './features/settings/Groups';
+import { IntegrationsPage } from './features/settings/Integrations';
 import { OrgPage } from './features/settings/Org';
 import { AuditPage, PlatformAuditPage } from './features/settings/Audit';
 
@@ -104,6 +105,7 @@ function App() {
             <Route path="membros" element={<MembersPage />} />
             <Route path="grupos" element={<GroupsPage />} />
             <Route path="alertas" element={<AlertsPage />} />
+            <Route path="integracoes" element={<IntegrationsPage />} />
             <Route path="auditoria" element={<AuditPage />} />
             <Route path="plataforma/usuarios" element={<UsersPage />} />
             <Route path="plataforma/backups" element={<BackupsPage />} />

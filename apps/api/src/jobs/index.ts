@@ -4,6 +4,8 @@ import { env } from '../env.js';
 import { extendAllIndefinite } from '../services/bills.js';
 import { runAlertsTick } from '../services/alerts.js';
 import { runBackupTick } from '../services/backup.js';
+import { deliverWebhooks } from '../services/webhooks.js';
+import { cleanIdempotencyKeys } from '../services/integrations.js';
 
 let boss: PgBoss | null = null;
 
@@ -13,6 +15,9 @@ const handlers: Record<string, { cron: string; run: Handler }> = {
   // verificam se já chegou a hora configurada (e se já rodaram hoje): alertas de 5 em 5 min
   // (o horário aceita minutos), backup a cada 15
   'alerts.tick': { cron: '*/5 * * * *', run: runAlertsTick },
+  // rede de segurança: a entrega normal dispara logo depois de cada mudança (lib/webhookKick.ts)
+  'webhooks.tick': { cron: '* * * * *', run: deliverWebhooks },
+  'api.cleanup': { cron: '50 3 * * *', run: cleanIdempotencyKeys },
   'backup.tick': { cron: '7,22,37,52 * * * *', run: runBackupTick },
 };
 

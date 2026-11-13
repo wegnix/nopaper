@@ -3,11 +3,12 @@ import argon2 from 'argon2';
 import { SignJWT, jwtVerify } from 'jose';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { ALL_PERMISSIONS, type Permission } from '@nopaper/shared';
+import { ALL_PERMISSIONS, API_TOKEN_PREFIX, type Permission } from '@nopaper/shared';
 import { env } from '../env.js';
 import { db, schema } from '../db/client.js';
 import { forbidden, unauthorized, HttpError } from './errors.js';
 import { isSessionIdle } from './security.js';
+import { INTERNAL_KEY, resolveApiToken, type Integration, type TokenFailure } from '../services/integrations.js';
 
 export interface AuthUser {
   id: string;
@@ -34,6 +35,10 @@ declare module 'fastify' {
   interface FastifyRequest {
     user?: AuthUser;
     org?: OrgContext;
+    /** Chamada da API pública feita com token de integração (sem `user`). */
+    integration?: Integration;
+    /** Token de integração apresentado e recusado (a rota da API responde o motivo). */
+    tokenFailure?: TokenFailure;
   }
 }
 
@@ -69,6 +74,20 @@ export const hashToken = (t: string) => createHash('sha256').update(t).digest('h
 export async function authenticate(req: FastifyRequest) {
   const h = req.headers.authorization;
   if (!h?.startsWith('Bearer ')) return;
+  // token de integração: só vale na API pública, e o espaço e as permissões vêm dele
+  if (h.startsWith(`Bearer ${API_TOKEN_PREFIX}`)) {
+    const internal = req.headers['x-np-internal'] === INTERNAL_KEY;
+    if (!req.url.startsWith('/api/v1/') && !internal) return;
+    const r = await resolveApiToken(req, h.slice(7).trim());
+    if (!r.ok) { req.tokenFailure = r.reason; return; }
+    const perms = new Set<Permission>(r.permissions);
+    req.integration = r.integration;
+    req.org = { ...r.org, membershipId: '', isOwner: false, isAdmin: false, permissions: perms, can: (p) => perms.has(p) };
+    // repasse da API pública para uma rota interna: lá o token age como uma "pessoa" (id = o do token),
+    // para "criado por", "enviado por" e a auditoria funcionarem sem um usuário de verdade
+    if (internal) req.user = { id: r.integration.id, email: '', name: `Integração ${r.integration.name}`.slice(0, 120), isSuperadmin: false, sessionId: '' };
+    return;
+  }
   try {
     const { payload } = await jwtVerify(h.slice(7), secret, { issuer: 'nopaper' });
     const userId = payload.sub as string;
@@ -136,6 +155,7 @@ export async function requireAuth(req: FastifyRequest) {
 
 /** Exige usuário autenticado + membro da organização do header `x-org-id`. */
 export async function requireOrg(req: FastifyRequest) {
+  if (req.integration && req.org) return;
   if (!req.user) throw unauthorized();
   assertPasswordOk(req);
   const orgId = req.headers['x-org-id'];

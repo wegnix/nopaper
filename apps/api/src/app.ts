@@ -25,6 +25,8 @@ import payrollRoutes from './routes/payroll.js';
 import bankRoutes from './routes/bank.js';
 import accountingRoutes from './routes/accounting.js';
 import esignRoutes from './routes/esign.js';
+import integrationRoutes from './routes/integrations.js';
+import v1Routes from './routes/v1.js';
 
 /** Tira dos logs o que dá acesso: token do link de assinatura e chaves assinadas de arquivo. */
 export const maskUrl = (url: string) => url.replace(/(\/api\/sign\/)[^/?]+/, '$1***').replace(/([?&](?:k|t)=)[^&]+/g, '$1***');
@@ -94,5 +96,7 @@ export async function buildApp() {
   await app.register(bankRoutes);
   await app.register(accountingRoutes);
   await app.register(esignRoutes);
+  await app.register(integrationRoutes);
+  await app.register(v1Routes);
   return app;
 }

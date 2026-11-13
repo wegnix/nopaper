@@ -8,6 +8,38 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.19.0] - 2026-11-13
+
+### Novo
+- **Integrações (API pública)**: em Configurações → Espaço → Integrações dá para criar tokens para outros
+  sistemas acessarem o espaço pela API `/api/v1`. Cada token tem nome, as permissões que você marcar (as mesmas
+  dos grupos; modelos "Só leitura" e "Leitura e escrita"), validade opcional e lista opcional de endereços IP
+  aceitos. O token aparece uma única vez, na criação; a tela mostra o último uso e permite revogar na hora.
+  Membros, grupos, dados do espaço, alertas e os próprios tokens ficam fora do alcance de qualquer token.
+- **API v1 — leitura de contas**: espaço e permissões do token (`/space`), contas a pagar e a receber com filtros
+  e paginação (`/bills`), totais do mês (`/bills/summary`), anexos por link assinado, categorias e pastas.
+  Categorias restritas só aparecem para tokens com essa permissão. Limite de 300 chamadas por minuto por token.
+  A descrição completa fica em `/api/v1/openapi.json`.
+- **API v1 — gravação de contas**: criar conta ou série inteira (mensal, parcelada, sem fim…), alterar, dar baixa e
+  reverter, apagar (só a conta, as seguintes ou a série), anexar e remover boleto, nota e comprovante, ler um
+  documento sem guardar, e criar, alterar e apagar categorias e pastas. As regras são as mesmas da tela, e tudo
+  fica na auditoria como "Integração <nome do token>". Cada conta pode levar o identificador do sistema de origem
+  (`externalId`): repetir a criação devolve a conta que já existe em vez de duplicar. Os POST aceitam
+  `Idempotency-Key`.
+- **API v1 — demais áreas**: cartões (cartões, compras, faturas, categorias de gasto, fatura em OFX), contas
+  bancárias (contas, extrato OFX, conciliação), folha de pagamento (funcionários, rubricas, meses, lançamentos,
+  holerites em PDF, comissões), assinatura de holerites (enviar, acompanhar, baixar o assinado, termos), área do
+  contador (recebidos, enviados, conferir), relatório anual, planilha de contas e auditoria. Usam as mesmas regras
+  e os mesmos formatos da tela.
+- **Fila de eventos** (`/api/v1/events`): outro sistema consulta o que mudou no espaço desde a última leitura
+  (conta criada, paga, apagada, compra no cartão, holerite assinado, documento do contador…), sem precisar reler
+  tudo. Serve para sistemas em rede interna, que não recebem chamadas de fora.
+- **Webhooks**: cada token pode ter um endereço que o NoPaper avisa a cada mudança, com assinatura para conferir
+  a origem, escolha dos tipos de evento, envio de teste, novas tentativas quando o destino falha e pausa depois
+  de 24 h de falhas. Por segurança o endereço precisa ser https e da internet; para um destino na sua rede
+  interna, ligue `WEBHOOK_ALLOW_PRIVATE=1` no `.env` do servidor.
+- Permissão nova **Gerenciar integrações** (administradores do espaço já têm).
+
 ## [1.18.0] - 2026-11-13
 
 ### Novo

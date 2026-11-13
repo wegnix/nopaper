@@ -30,7 +30,7 @@ export default async function catalogRoutes(app: FastifyInstance) {
     const [dup] = await db.select().from(schema.categories)
       .where(and(eq(schema.categories.orgId, req.org!.id), sql`lower(${schema.categories.label}) = lower(${body.label})`));
     if (dup) throw badRequest(dup.isRestricted && !req.org!.can('bills.view_restricted') ? 'Este nome já está em uso neste espaço. Escolha outro.' : `Já existe a categoria "${dup.label}"`);
-    const [c] = await db.insert(schema.categories).values({ ...body, orgId: req.org!.id, createdBy: req.user!.id }).returning();
+    const [c] = await db.insert(schema.categories).values({ ...body, orgId: req.org!.id, createdBy: req.user?.id ?? null }).returning();
     await audit(req, { action: 'category.create', entityType: 'category', entityId: c.id, description: `Criou categoria ${c.label}`, details: { ...body, restricted: c.isRestricted } });
     return c;
   });
@@ -81,7 +81,7 @@ export default async function catalogRoutes(app: FastifyInstance) {
     const body = parse(folderCreateSchema, req.body);
     const [dup] = await db.select().from(schema.folders).where(and(eq(schema.folders.orgId, req.org!.id), sql`lower(${schema.folders.name}) = lower(${body.name})`));
     if (dup) throw badRequest(`Já existe pasta com nome "${body.name}"`);
-    const [f] = await db.insert(schema.folders).values({ ...body, orgId: req.org!.id, createdBy: req.user!.id }).returning();
+    const [f] = await db.insert(schema.folders).values({ ...body, orgId: req.org!.id, createdBy: req.user?.id ?? null }).returning();
     await audit(req, { action: 'folder.create', entityType: 'folder', entityId: f.id, description: `Criou pasta ${f.label}`, details: body });
     return f;
   });

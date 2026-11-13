@@ -73,7 +73,7 @@ export default async function billRoutes(app: FastifyInstance) {
       const [card] = await db.select({ id: schema.cards.id }).from(schema.cards).where(and(eq(schema.cards.id, body.cardId), eq(schema.cards.orgId, req.org!.id)));
       if (!card) throw badRequest('Cartão inválido');
     }
-    const rows = await db.transaction((tx) => createBills(tx, req.org!.id, req.user!.id, body));
+    const rows = await db.transaction((tx) => createBills(tx, req.org!.id, (req.user?.id ?? null), body));
     await audit(req, {
       action: `${body.type}.create`, entityType: 'bill', entityId: rows[0].id,
       description: `Criou ${typeLabel(body.type)} "${body.description}" (${body.recurrenceType}, ${rows.length} lançamento(s))`,
@@ -211,7 +211,7 @@ export default async function billRoutes(app: FastifyInstance) {
       const created = plan.length > 1 ? await tx.insert(schema.bills).values(plan.slice(1).map((r) => ({
         orgId: b.orgId, type: b.type, parentId: b.id, description: b.description, categoryId: b.categoryId,
         folderId: b.folderId, recurrenceType: body.recurrenceType, relatedPerson: b.relatedPerson, notes: b.notes,
-        pixKey: b.pixKey, paymentMethod: b.paymentMethod, createdBy: req.user!.id, recurrenceDay: head.recurrenceDay, ...r,
+        pixKey: b.pixKey, paymentMethod: b.paymentMethod, createdBy: (req.user?.id ?? null), recurrenceDay: head.recurrenceDay, ...r,
       }))).returning() : [];
       return { head, created: created.length, paidPreserved };
     });
