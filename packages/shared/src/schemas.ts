@@ -130,6 +130,15 @@ export const orgCreateSchema = z.object({
 export const orgUpdateSchema = orgCreateSchema.partial().extend({
   timezone: z.string().max(64).refine(isValidTimeZone, 'Fuso horário inválido').optional(),
 });
+/**
+ * Logo do espaço: imagem pequena (o navegador reduz para até 256 px antes de enviar) guardada como
+ * data URL no próprio cadastro — vai junto no backup e aparece no menu sem pedir arquivo.
+ */
+export const ORG_LOGO_MAX_BYTES = 150 * 1024;
+export const orgLogoSchema = z.object({
+  logo: z.string().max(Math.ceil(ORG_LOGO_MAX_BYTES / 3) * 4 + 64, 'Imagem grande demais')
+    .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/, 'Envie uma imagem PNG, JPG ou WebP').nullable(),
+});
 export const memberAddSchema = z.object({
   email: z.string().trim().toLowerCase().email('E-mail inválido'),
   name: z.string().trim().max(120).optional(),

@@ -10,7 +10,7 @@ export interface SessionUser {
   telegramChatId: string | null; preferences: Record<string, unknown>;
 }
 export interface SessionOrg {
-  id: string; name: string; kind: 'personal' | 'company'; isOwner: boolean; isAdmin: boolean; permissions: Permission[];
+  id: string; name: string; kind: 'personal' | 'company'; /** Logo do espaço (data URL) ou null: mostra a inicial do nome. */ logo?: string | null; isOwner: boolean; isAdmin: boolean; permissions: Permission[];
 }
 export interface SessionPayload { accessToken?: string; user: SessionUser; orgs: SessionOrg[]; app?: { version: string }; security?: { idleTimeoutMinutes: number } }
 /** Por que a sessão terminou (mensagem na tela de login). */

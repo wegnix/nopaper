@@ -27,6 +27,8 @@ const FIELD: Record<string, string> = {
   description: 'Descrição', amount: 'Valor', dueDate: 'Vencimento', categoryId: 'Categoria', folderId: 'Pasta', status: 'Situação',
   paidAt: 'Data da baixa', paidAmount: 'Valor pago', notes: 'Observações', relatedPerson: 'Pessoa', paymentMethod: 'Forma de pagamento',
   barcode: 'Código de barras', pixKey: 'PIX', name: 'Nome', kind: 'Tipo', document: 'CPF/CNPJ', timezone: 'Fuso horário', active: 'Ativo',
+  legalName: 'Razão social', stateRegistration: 'Inscrição estadual', cityRegistration: 'Inscrição municipal', phone: 'Telefone', whatsapp: 'WhatsApp', website: 'Site',
+  zipCode: 'CEP', street: 'Endereço', streetNumber: 'Número', complement: 'Complemento', district: 'Bairro', city: 'Cidade', state: 'UF',
   bankCode: 'Banco', bankBranch: 'Agência', bankAccount: 'Conta', bankAccountKind: 'Tipo de conta', bankInfo: 'Banco (anotação antiga)',
   groups: 'Grupos', isAdmin: 'Administrador', email: 'E-mail', username: 'Usuário', isSuperadmin: 'Admin da plataforma', canCreateOrgs: 'Pode criar espaços',
 };

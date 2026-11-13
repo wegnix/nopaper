@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { DropdownMenu } from 'radix-ui';
-import { Building2, Check, ChevronsUpDown, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Sun, User, X } from 'lucide-react';
+import { Check, ChevronsUpDown, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Sun, User, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useSession, useOrg, useCan } from '@/lib/session';
@@ -12,6 +12,7 @@ import { Tooltip } from '@/components/ui/base';
 import { useSidebar } from '@/lib/sidebar';
 import { endSession, useIdleLogout } from '@/lib/idle';
 import { Logo } from './Logo';
+import { OrgAvatar } from '@/components/ui/org-avatar';
 import { NAV, NAV_ACCOUNTANT_INBOX, NAV_BOTTOM, navLabel, navVisible, type NavItem } from './nav';
 import { useAccountantOnly, useAccountingInbox, useAccountingPending } from '@/features/accounting/data';
 import { CommandPalette } from './CommandPalette';
@@ -65,9 +66,7 @@ function OrgSwitcher({ onNew, collapsed }: { onNew: () => void; collapsed?: bool
           'w-full flex items-center gap-3 rounded-xl border border-line bg-surface-2 text-left hover:border-line-strong transition-colors',
           collapsed ? 'p-[3px]' : 'px-2.5 py-2',
         )}>
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent font-display font-semibold">
-            {org?.name.slice(0, 1).toUpperCase()}
-          </span>
+          <OrgAvatar name={org?.name} logo={org?.logo} />
           {!collapsed && <>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold">{org?.name}</span>
@@ -86,7 +85,7 @@ function OrgSwitcher({ onNew, collapsed }: { onNew: () => void; collapsed?: bool
               onSelect={() => { setOrg(o.id); qc.clear(); nav('/'); }}
               className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm outline-none data-[highlighted]:bg-surface-2 cursor-pointer"
             >
-              <Building2 className="size-4 text-faint" />
+              <OrgAvatar name={o.name} logo={o.logo} className="size-6 rounded-md text-xs" />
               <span className="flex-1 truncate">{o.name}</span>
               {o.id === org?.id && <Check className="size-4 text-accent" />}
             </DropdownMenu.Item>

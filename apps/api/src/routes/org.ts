@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { isNull, and, eq, inArray, sql } from 'drizzle-orm';
-import { orgCreateSchema, orgUpdateSchema, memberAddSchema, memberUpdateSchema, groupSchema, usernameFromEmail, PERMISSIONS, type Permission } from '@nopaper/shared';
+import { ORG_DETAIL_FIELDS, ORG_LOGO_MAX_BYTES, orgCreateSchema, orgDetailsSchema, orgLogoSchema, orgUpdateSchema, memberAddSchema, memberUpdateSchema, groupSchema, usernameFromEmail, PERMISSIONS, type Permission } from '@nopaper/shared';
 import { assertUsernameFree } from './auth.js';
 import { db, schema } from '../db/client.js';
+import { sniffMime } from '../lib/storage.js';
 import { parse } from '../lib/validate.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { requireAuth, requirePerm, requireOrg, hashPassword, membershipsOf } from '../lib/auth.js';
@@ -34,11 +35,25 @@ export default async function orgRoutes(app: FastifyInstance) {
   });
 
   app.put('/api/org', { preHandler: requirePerm('org.settings') }, async (req) => {
-    const body = parse(orgUpdateSchema, req.body);
+    const body = parse(orgUpdateSchema.merge(orgDetailsSchema), req.body);
     const [before] = await db.select().from(schema.organizations).where(eq(schema.organizations.id, req.org!.id));
     const [org] = await db.update(schema.organizations).set(body).where(eq(schema.organizations.id, req.org!.id)).returning();
-    await audit(req, { action: 'org.update', entityType: 'organization', entityId: org.id, description: `Editou os dados do espaço ${org.name}`, details: { changes: diff(before, org, ['name', 'legalName', 'kind', 'document', 'timezone']) } });
+    await audit(req, { action: 'org.update', entityType: 'organization', entityId: org.id, description: `Editou os dados do espaço ${org.name}`, details: { changes: diff(before, org, ['name', 'legalName', 'kind', 'document', 'timezone', ...ORG_DETAIL_FIELDS]) } });
     return { org };
+  });
+
+  /** Logo do espaço (ou null para tirar). O conteúdo é conferido pelos bytes, não pelo tipo declarado. */
+  app.put('/api/org/logo', { preHandler: requirePerm('org.settings') }, async (req) => {
+    const { logo } = parse(orgLogoSchema, req.body);
+    if (logo) {
+      const [head, b64] = logo.split(',') as [string, string];
+      const buf = Buffer.from(b64, 'base64');
+      if (!buf.length || buf.length > ORG_LOGO_MAX_BYTES) throw badRequest('A imagem ficou grande demais. Use uma logo menor ou mais simples.');
+      if (sniffMime(buf) !== head.slice(5, head.indexOf(';'))) throw badRequest('O arquivo não é uma imagem PNG, JPG ou WebP válida.');
+    }
+    const [org] = await db.update(schema.organizations).set({ logo }).where(eq(schema.organizations.id, req.org!.id)).returning();
+    await audit(req, { action: 'org.logo', entityType: 'organization', entityId: org.id, description: logo ? `Trocou a logo do espaço ${org.name}` : `Removeu a logo do espaço ${org.name}` });
+    return { logo: org.logo };
   });
 
   // ---------------------------------------------------------- membros

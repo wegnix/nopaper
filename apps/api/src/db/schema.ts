@@ -63,6 +63,22 @@ export const organizations = pgTable('organizations', {
   document: varchar('document', { length: 32 }),
   /** Razão social: vai nos documentos legais (termo e comprovante de assinatura). `name` = nome fantasia. */
   legalName: varchar('legal_name', { length: 160 }),
+  /** Dados cadastrais da empresa (perfil Empresa): inscrições, contato e endereço. */
+  stateRegistration: varchar('state_registration', { length: 32 }),
+  cityRegistration: varchar('city_registration', { length: 32 }),
+  phone: varchar('phone', { length: 32 }),
+  whatsapp: varchar('whatsapp', { length: 32 }),
+  email: varchar('email', { length: 160 }),
+  website: varchar('website', { length: 160 }),
+  zipCode: varchar('zip_code', { length: 12 }),
+  street: varchar('street', { length: 160 }),
+  streetNumber: varchar('street_number', { length: 20 }),
+  complement: varchar('complement', { length: 80 }),
+  district: varchar('district', { length: 80 }),
+  city: varchar('city', { length: 80 }),
+  state: varchar('state', { length: 2 }),
+  /** Logo do espaço (data URL de uma imagem pequena, já reduzida no navegador); aparece no menu. */
+  logo: text('logo'),
   /** Cota de armazenamento deste espaço em MB (null = a padrão da instalação). */
   storageQuotaMb: integer('storage_quota_mb'),
   timezone: varchar('timezone', { length: 64 }).notNull().default('America/Sao_Paulo'),

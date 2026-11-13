@@ -202,7 +202,7 @@ export function whatsappLink(v: string | null | undefined): string | null {
   const d = phoneDigitsBR(v ?? '');
   return d.length === 10 || d.length === 11 ? `https://wa.me/55${d}` : null;
 }
-const phoneSchema = z.string().max(32).nullish().transform((v, ctx) => {
+export const phoneSchema = z.string().max(32).nullish().transform((v, ctx) => {
   if (!v || !v.trim()) return null;
   const d = phoneDigitsBR(v);
   if (d.length !== 10 && d.length !== 11) {

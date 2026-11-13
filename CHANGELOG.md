@@ -8,6 +8,24 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.16.0] - 2026-11-13
+
+### Novo
+- **Logo do espaço**: em Configurações → Dados do espaço dá para enviar a logo (PNG, JPG, WebP ou SVG — clicando
+  ou arrastando a imagem). Ela aparece no menu lateral e na lista de espaços, no lugar da inicial do nome; sem
+  logo, a inicial continua. A imagem é reduzida automaticamente e pode ser trocada ou removida a qualquer hora.
+
+- **Dados cadastrais da empresa**: espaços do perfil Empresa ganharam inscrição estadual e municipal, telefone,
+  WhatsApp, e-mail, site e endereço completo (CEP, rua, número, complemento, bairro, cidade e UF). Espaços do
+  perfil Pessoal continuam só com o essencial.
+
+### Melhorado
+- **Dados do espaço reorganizado em cartões**: a tela agora é dividida em blocos lado a lado (dados do espaço,
+  documentos, contato e endereço), com cada campo no tamanho do que vai nele, aviso de alterações não salvas e
+  botão para desfazer.
+- **Fuso horário mais simples e correto**: no lugar da lista longa de cidades, os 4 fusos oficiais do Brasil
+  (Brasília, Amazonas, Acre e Fernando de Noronha), com a hora atual do fuso escolhido para conferir.
+
 ## [1.15.1] - 2026-11-13
 
 ### Melhorado
