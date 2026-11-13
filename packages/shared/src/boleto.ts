@@ -73,7 +73,25 @@ export function validateLinhaArrecadacao(d48: string): boolean {
   const f = id === '6' || id === '7' ? mod10 : id === '8' || id === '9' ? mod11Arrecadacao : null;
   if (!f) return false;
   for (let i = 0; i < 48; i += 12) if (!dvMatches(f, d48.slice(i, i + 11), Number(d48[i + 11]))) return false;
-  return true;
+  // além do DV de cada bloco, o DV geral do código de barras (4º dígito, sobre os outros 43)
+  return dvGeralArrecadacaoOk([0, 12, 24, 36].map((i) => d48.slice(i, i + 11)).join(''));
+}
+
+/**
+ * DV geral do código de barras de arrecadação (posição 4). Sem ele, uma sequência de números de uma
+ * nota fiscal fechava os DVs dos 4 blocos por acaso e virava "boleto". Módulo 11: resto 0, 1 ou 10
+ * têm convenções diferentes entre convênios (0 ou 1), então os dois são aceitos nesses casos.
+ */
+export function dvGeralArrecadacaoOk(b44: string): boolean {
+  if (!/^8\d{43}$/.test(b44)) return false;
+  const id = b44[2], dv = Number(b44[3]), body = b44.slice(0, 3) + b44.slice(4);
+  if (id === '6' || id === '7') return mod10(body) === dv;
+  if (id !== '8' && id !== '9') return false;
+  const w = [2, 3, 4, 5, 6, 7, 8, 9];
+  let total = 0;
+  for (let i = 0; i < body.length; i++) total += Number(body[body.length - 1 - i]) * w[i % 8];
+  const r = total % 11;
+  return r === 0 || r === 1 || r === 10 ? dv === 0 || dv === 1 : dv === 11 - r;
 }
 
 export function linhaToBarcodeBancario(l: string): string {

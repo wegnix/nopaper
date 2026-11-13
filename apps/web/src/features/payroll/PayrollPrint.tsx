@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { MONTHS_PT, PAYROLL_PRINT_FIXED, formatBRL, formatDateBR, fromCents, printColumnOrder, sumMoney, toCents, type PayrollPrintSettings, type PayrollTotals } from '@nopaper/shared';
 import { useOrg, useSession } from '@/lib/session';
+import { PrintCompany } from '@/components/PrintCompany';
 import type { Employee, Entry, Period, Rubric } from './data';
 
 export type PrintRow = { e: Entry; emp: Employee | undefined; t: PayrollTotals };
@@ -62,6 +63,7 @@ export function PayrollPrint({ period, rows, rubrics, print }: { period: Period;
     <div className="print-doc pd-payroll" aria-hidden>
       {/* só esta impressão é em paisagem (a regra vem depois da do index.css e a substitui) */}
       <style>{'@media print { @page { size: A4 landscape; margin: 10mm 10mm 12mm; } }'}</style>
+      <PrintCompany />
       <header className="pd-head">
         <div>
           <p className="pd-kicker">NoPaper · {org?.name}</p>

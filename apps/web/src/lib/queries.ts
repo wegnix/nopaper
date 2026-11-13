@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { isColorKey } from '@nopaper/shared';
+import { isColorKey, type OrgIdentity } from '@nopaper/shared';
 import { get } from './api';
 import { useSession } from './session';
 import type { CardCategory, Category, Folder } from './types';
@@ -20,6 +20,12 @@ export function useCategories() {
     return isColorKey(own) && own !== c.color ? { ...c, color: own, baseColor: c.color } : c;
   }), [mine]);
   return useQuery({ queryKey: ['categories', orgId], queryFn: () => get<{ items: Category[] }>('/api/categories').then((r) => r.items), staleTime: 60_000, select });
+}
+/** Dados cadastrais do espaço (razão social, CNPJ, inscrições, endereço, contato) — usados nas impressões. */
+export interface OrgDetails extends OrgIdentity { id: string; name: string; legalName: string | null; kind: 'personal' | 'company'; document: string | null; logo: string | null }
+export function useOrgDetails() {
+  const orgId = useSession((s) => s.orgId);
+  return useQuery({ queryKey: ['org', orgId], queryFn: () => get<{ org: OrgDetails }>('/api/org').then((r) => r.org), staleTime: 60_000 });
 }
 export function useFolders() {
   const orgId = useSession((s) => s.orgId);

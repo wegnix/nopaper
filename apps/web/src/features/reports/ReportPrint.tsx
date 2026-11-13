@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { COLOR_PRESETS, isColorKey, MONTHS_PT, MONTHS_PT_SHORT, formatBRL, toCents, billNames } from '@nopaper/shared';
 import { useOrg, useSession } from '@/lib/session';
+import { PrintCompany } from '@/components/PrintCompany';
 import type { Category, Folder } from '@/lib/types';
 import { compact, niceMax, pct } from './format';
 import type { MonthRow, Report } from './ReportsPage';
@@ -25,6 +26,7 @@ export function ReportPrint({ report: r, catMap, folderMap }: { report: Report; 
 
   return createPortal(
     <div className="print-doc" aria-hidden>
+      <PrintCompany />
       <header className="pd-head">
         <div>
           <p className="pd-kicker">NoPaper · {org?.name}</p>

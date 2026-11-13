@@ -32,3 +32,15 @@ test('findBoletoInText: números que fecham os DVs por acaso não viram boleto (
   assert.equal(findBoletoInText(`123 ${fake.line.replace(/\D/g, '')} 456`), null);
   assert.equal(findBoletoInText('CNPJ 12.345.678/0001-90 fone (43) 3242-0000 CEP 86130-000'), null);
 });
+
+test('arrecadação: o DV geral do código de barras também tem de fechar', () => {
+  const ok = arrec('2', '6', 18768);
+  assert.equal(ok.valid, true);
+  // troca o DV geral e refaz só o DV do 1º bloco: os blocos fecham, o código não
+  const b = ok.barcode, wrong = b.slice(0, 3) + ((Number(b[3]) + 1) % 10) + b.slice(4);
+  const fake = parseBoleto(barcodeToLinhaArrecadacao(wrong))!;
+  assert.equal(fake.valid, false);
+  assert.equal(findBoletoInText(`números de uma nota ${fake.line} fim`), null);
+  // os dois tipos de DV (módulo 10 e módulo 11), em códigos fictícios
+  for (const p of [arrec('3', '6', 9455), arrec('5', '8', 233078), arrec('5', '9', 186191)]) assert.equal(parseBoleto(p.barcode)?.valid, true);
+});

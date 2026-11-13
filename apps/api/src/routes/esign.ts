@@ -3,8 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   ESIGN_LOCK_MINUTES, ESIGN_MAX_ATTEMPTS, ESIGN_TERM_COMPETENCE, ESIGN_TERM_VERSION, esignOpenSchema, esignSendAccountantSchema, esignSubmitSchema, esignTermText,
-  formatDocument, isValidCPF, refLabelPT, type EsignKind, type EsignOpened, type EsignPublicInfo, type EsignTermParties, type Payslip, type PayslipSignatureRow,
-} from '@nopaper/shared';
+  formatDocument, isValidCPF, refLabelPT, type EsignKind, type EsignOpened, type EsignPublicInfo, type EsignTermParties, type Payslip, type PayslipSignatureRow, orgAddressLine, orgContactLine, orgRegistrationsLine } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { env } from '../env.js';
 import { parse } from '../lib/validate.js';
@@ -28,6 +27,8 @@ const fileName = (r: Row, signed: boolean) => (r.kind === 'term'
   : `Holerite ${signed ? 'assinado ' : ''}- ${r.employeeName} - ${r.competence}.pdf`).replace(/[\\/:*?"<>|]/g, '');
 /** Nome para documentos: a razão social (o nome do espaço é o nome fantasia). */
 const legalName = (org: Org) => org.legalName?.trim() || org.name;
+/** Inscrições, endereço e contato da empresa (Dados do espaço) para os documentos. */
+const companyExtras = (org: Org) => ({ companyRegistrations: orgRegistrationsLine(org), companyAddress: orgAddressLine(org), companyContact: orgContactLine(org), companyLogo: org.logo });
 const what = (r: Row) => (r.kind === 'term' ? 'o termo de aceite' : `o holerite de ${refLabelPT(r.competence)}`);
 const termAccepted = (e: Employee | undefined) => !!e?.esignAcceptedAt && e.esignTermVersion === ESIGN_TERM_VERSION;
 const cpfOf = (e: Employee) => { const d = digits(e.document); return d.length === 11 && isValidCPF(d) ? d : null; };
@@ -59,7 +60,7 @@ export default async function esignRoutes(app: FastifyInstance) {
     if (!cpf) return null;
     const [old] = await db.select().from(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.orgId, org.id), eq(schema.payslipSignatures.employeeId, emp.id), eq(schema.payslipSignatures.kind, 'term')));
     if (old) return old.status === 'pending' ? old : null;
-    const parties: EsignTermParties = { company: legalName(org), companyDocument: org.document, employeeName: emp.name, employeeDocument: formatDocument(cpf) };
+    const parties: EsignTermParties = { company: legalName(org), companyDocument: org.document, ...companyExtras(org), employeeName: emp.name, employeeDocument: formatDocument(cpf) };
     const pdf = await buildTermPdf(parties);
     const saved = await saveFile(org.id, pdf, 'pdf');
     const token = randomBytes(32).toString('base64url');
@@ -324,7 +325,7 @@ export default async function esignRoutes(app: FastifyInstance) {
     try {
       pdf = await buildSignedPdf({
         kind: r.kind as EsignKind, original: await readStoredFile(r.storageKey), originalSha256: r.sha256, id: r.id,
-        company: term ? ((r.slip as { company?: string }).company ?? legalName(org)) : legalName(org), companyDocument: org.document,
+        company: term ? ((r.slip as { company?: string }).company ?? legalName(org)) : legalName(org), companyDocument: org.document, ...companyExtras(org),
         employeeName: r.employeeName, employeeDocument: r.employeeDocument, competence: r.competence, net: r.net, signaturePng: png,
         signedAt: now, timezone: org.timezone, ip, userAgent: ua, termAcceptedAt: term ? null : emp?.esignAcceptedAt ?? null, termVersion: ESIGN_TERM_VERSION,
       });

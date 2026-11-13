@@ -11,6 +11,12 @@ export interface EsignTermParties {
   /** Razão social da empresa (ou o nome do espaço, se não houver). */
   company: string;
   companyDocument: string | null;
+  /** Inscrições, endereço e contato da empresa (Dados do espaço), para identificar a empresa no documento. */
+  companyRegistrations?: string | null;
+  companyAddress?: string | null;
+  companyContact?: string | null;
+  /** Logo da empresa (data URL de Dados do espaço), para o cabeçalho do documento. */
+  companyLogo?: string | null;
   employeeName: string;
   employeeDocument: string;
 }

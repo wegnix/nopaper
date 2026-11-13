@@ -8,6 +8,22 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.18.0] - 2026-11-13
+
+### Novo
+- **Dados da empresa nos documentos**: o termo de aceite e o comprovante de assinatura dos holerites agora têm
+  um cabeçalho com a logo, a razão social, CNPJ e inscrições, endereço e contato da empresa. As impressões da
+  folha de pagamento e dos relatórios ganharam a mesma identificação no alto da página. Sai o que estiver
+  preenchido em Configurações → Dados do espaço (perfil Empresa). Documentos já assinados não mudam.
+
+### Melhorado
+- **Fatura de luz e de água vai direto como boleto**: a fatura que é nota fiscal e boleto no mesmo papel
+  (Copel, Sanepar) passa a ser reconhecida como boleto, já com o código de barras, o valor e o vencimento.
+
+### Corrigido
+- Em algumas notas fiscais o sistema "achava" um código de barras de concessionária que não existia; agora o
+  dígito verificador geral do código também é conferido.
+
 ## [1.17.1] - 2026-11-13
 
 ### Corrigido

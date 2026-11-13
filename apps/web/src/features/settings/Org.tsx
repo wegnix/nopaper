@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Building2, Check, FileBadge, ImageUp, KeyRound, MapPin, MessageCircle, Phone, Plus, Trash2 } from 'lucide-react';
 import { BR_STATES, ORG_LOGO_MAX_BYTES, PDF_RULE_SOURCES, PDF_RULE_SOURCE_LABEL, describePdfRule, documentError, formatDocument, formatPhoneBR, formatZipBR, whatsappLink, type PdfRulePart, type PdfRuleSource } from '@nopaper/shared';
@@ -219,6 +219,7 @@ function Section({ icon, title, hint, children, top }: { icon: React.ReactNode; 
 }
 
 export function OrgPage() {
+  const qc = useQueryClient();
   const orgId = useSession((s) => s.orgId);
   const canEdit = useCan()('org.settings');
   const q = useQuery({ queryKey: ['org', orgId], queryFn: () => get<{ org: Org }>('/api/org').then((r) => r.org) });
@@ -251,6 +252,7 @@ export function OrgPage() {
       const details = company ? Object.fromEntries(DETAILS.map((k) => [k, f[k]])) : {};
       const r = await put<{ org: Org }>('/api/org', { name: f.name, legalName: company ? f.legalName : null, kind: f.kind, document: f.document, timezone: f.timezone, ...details });
       setOrg(r.org); form.load(toForm(r.org));
+      qc.setQueryData(['org', orgId], r.org); // as impressões usam estes dados
       patchSession({ name: r.org.name, kind: r.org.kind });
       toast.success('Espaço atualizado');
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }

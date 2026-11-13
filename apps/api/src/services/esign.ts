@@ -173,6 +173,42 @@ function stampFields(doc: PDFDocument, fields: SignField[], img: PDFImage, font:
   }
 }
 
+/** "Razão Social LTDA - CNPJ 00.000.000/0001-00 - IE 123". */
+const companyLine = (c: { company: string; companyDocument: string | null }) => [c.company, c.companyDocument && `CNPJ ${c.companyDocument}`].filter(Boolean).join(' - ');
+
+interface Company { company: string; companyDocument: string | null; companyRegistrations?: string | null; companyAddress?: string | null; companyContact?: string | null; companyLogo?: string | null }
+
+/**
+ * Cabeçalho da página com a empresa: logo (se houver), razão social, CNPJ e inscrições, endereço e
+ * contato — o que estiver em Dados do espaço. Devolve a altura (y) onde o conteúdo pode começar.
+ */
+async function letterhead(doc: PDFDocument, page: PDFPage, font: PDFFont, bold: PDFFont, c: Company): Promise<number> {
+  const top = A4[1] - 40;
+  let x = M, logoBottom = top;
+  const m = /^data:image\/(png|jpeg);base64,(.+)$/.exec(c.companyLogo ?? '');
+  if (m) {
+    try {
+      const bytes = Buffer.from(m[2]!, 'base64');
+      const img = m[1] === 'png' ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+      const box = 46, k = Math.min(box / img.width, box / img.height);
+      const w = img.width * k, h = img.height * k;
+      page.drawImage(img, { x: M + (box - w) / 2, y: top - box + (box - h) / 2, width: w, height: h });
+      x = M + box + 12; logoBottom = top - box;
+    } catch { /* imagem que o PDF não aceita: segue sem a logo */ }
+  }
+  const width = M + W - x;
+  let y = top - 12;
+  for (const l of wrap(c.company, bold, 12, width)) { page.drawText(l, { x, y, size: 12, font: bold, color: INK }); y -= 14.5; }
+  const ids = [c.companyDocument && `CNPJ ${c.companyDocument}`, c.companyRegistrations].filter(Boolean).join(' · ');
+  for (const line of [ids, c.companyAddress, c.companyContact]) {
+    if (!line) continue;
+    for (const l of wrap(line, font, 8.5, width)) { page.drawText(l, { x, y, size: 8.5, font, color: MUTED }); y -= 11; }
+  }
+  const bottom = Math.min(y + 4, logoBottom) - 9;
+  page.drawLine({ start: { x: M, y: bottom }, end: { x: M + W, y: bottom }, thickness: 0.7, color: LINE });
+  return bottom - 26;
+}
+
 // ------------------------------------------------------------------ termo de aceite (PDF a assinar)
 /** Posição da assinatura e da data na página do termo (o layout é nosso). */
 const TERM_SIGN = { x: M, y: 250, w: 260, h: 60 };
@@ -182,7 +218,7 @@ export async function buildTermPdf(p: EsignTermParties): Promise<Buffer> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica), bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const page = doc.addPage(A4);
-  let y = A4[1] - 64;
+  let y = await letterhead(doc, page, font, bold, p);
   page.drawRectangle({ x: M, y: y - 4, width: 28, height: 4, color: ACCENT });
   y -= 30;
   for (const l of wrap(ESIGN_TERM_TITLE, bold, 17, W)) { page.drawText(l, { x: M, y, size: 17, font: bold, color: INK }); y -= 23; }
@@ -192,7 +228,7 @@ export async function buildTermPdf(p: EsignTermParties): Promise<Buffer> {
     for (const l of wrap(value, font, 10.5, W - 110)) { page.drawText(l, { x: M + 110, y, size: 10.5, font, color: INK }); y -= 14; }
     y -= 3;
   };
-  row('Empresa', p.companyDocument ? `${p.company} - CNPJ ${p.companyDocument}` : p.company);
+  row('Empresa', companyLine(p));
   row('Funcionário', `${p.employeeName} - CPF ${p.employeeDocument}`);
   y -= 8;
   page.drawLine({ start: { x: M, y }, end: { x: M + W, y }, thickness: 0.7, color: LINE });
@@ -220,6 +256,10 @@ export interface SignedPdfInput {
   id: string;
   company: string;
   companyDocument: string | null;
+  companyRegistrations?: string | null;
+  companyAddress?: string | null;
+  companyContact?: string | null;
+  companyLogo?: string | null;
   employeeName: string;
   employeeDocument: string;
   competence: string;
@@ -266,7 +306,7 @@ export async function buildSignedPdf(i: SignedPdfInput): Promise<Buffer> {
   }
 
   const page: PDFPage = doc.addPage(A4);
-  let y = A4[1] - 64;
+  let y = await letterhead(doc, page, font, bold, i);
   const text = (s: string, o: { size?: number; f?: PDFFont; color?: ReturnType<typeof rgb>; gap?: number } = {}) => {
     const size = o.size ?? 10.5;
     for (const l of wrap(s, o.f ?? font, size, W)) { page.drawText(l, { x: M, y, size, font: o.f ?? font, color: o.color ?? INK }); y -= size * 1.45; }
@@ -285,7 +325,7 @@ export async function buildSignedPdf(i: SignedPdfInput): Promise<Buffer> {
   text('Comprovante de assinatura eletrônica', { size: 19, f: bold, gap: 2 });
   text(term ? ESIGN_TERM_TITLE : `Recibo de pagamento de salário - ${refLabelPT(i.competence)}`, { size: 11, color: MUTED, gap: 14 });
   rule();
-  row('Empresa', i.companyDocument ? `${i.company} - CNPJ ${i.companyDocument}` : i.company);
+  row('Empresa', companyLine(i));
   row('Funcionário', i.employeeName);
   row('CPF', i.employeeDocument);
   if (!term) { row('Competência', refLabelPT(i.competence)); row('Valor líquido', formatBRL(i.net)); }
@@ -293,19 +333,19 @@ export async function buildSignedPdf(i: SignedPdfInput): Promise<Buffer> {
   text(term ? ESIGN_TERM_DECLARATION : esignDeclaration(refLabelPT(i.competence), formatBRL(i.net)), { size: 11, gap: 14 });
 
   // assinatura desenhada
-  const boxW = 280, boxH = 110;
+  const boxW = 260, boxH = 88; // com o cabeçalho da empresa no alto, a página do comprovante ficou mais justa
   const k = Math.min((boxW - 24) / img.width, (boxH - 24) / img.height);
   page.drawRectangle({ x: M, y: y - boxH, width: boxW, height: boxH, borderColor: LINE, borderWidth: 0.8, color: rgb(1, 1, 1) });
   page.drawImage(img, { x: M + (boxW - img.width * k) / 2, y: y - boxH + (boxH - img.height * k) / 2, width: img.width * k, height: img.height * k });
   y -= boxH + 14;
   text(i.employeeName, { size: 10.5, f: bold });
-  text(`Assinado em ${when(i.signedAt)} (${i.timezone})`, { size: 9.5, color: MUTED, gap: 14 });
+  text(`Assinado em ${when(i.signedAt)} (${i.timezone})`, { size: 9.5, color: MUTED, gap: 10 });
   rule();
   text('Evidências da assinatura', { size: 11, f: bold, gap: 4 });
   row('Identificação', 'Link pessoal + CPF conferido com o cadastro');
   row('Data e hora', `${when(i.signedAt)} (${i.timezone})`);
   row('Endereço IP', i.ip ?? 'não registrado');
-  row('Aparelho', (i.userAgent ?? 'não registrado').slice(0, 200));
+  row('Aparelho', (i.userAgent ?? 'não registrado').slice(0, 130)); // até 2 linhas: a página tem de caber inteira
   if (!term && i.termAcceptedAt) row('Termo de aceite', `versão ${i.termVersion}, assinado em ${when(i.termAcceptedAt)}`);
   if (term) row('Versão do termo', i.termVersion);
   row('Documento (SHA-256)', i.originalSha256);

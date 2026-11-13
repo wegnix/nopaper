@@ -42,6 +42,8 @@ const STRONG_BOLETO = [
   'guia da previdência social', 'guia da previdencia social', 'guia do fgts digital',
 ];
 const WEAK_BOLETO = ['linha digitável', 'linha digitavel', 'pagável em qualquer banco', 'pagavel em qualquer banco', 'ficha de compensação', 'ficha de compensacao', 'nosso número', 'nosso numero', 'boleto'];
+/** Fatura de concessionária de energia ou de água/esgoto. */
+const UTILITY = ['nota fiscal eletrônica de energia elétrica', 'nota fiscal eletronica de energia eletrica', 'fatura de energia', 'kwh', 'água e esgoto', 'agua e esgoto', 'saneamento', 'hidrômetro', 'hidrometro'];
 /** Holerite do contador (vai no lugar da nota fiscal nas contas de salário). */
 const PAYSLIP = ['recibo de pagamento de salário', 'recibo de pagamento de salario', 'demonstrativo de pagamento de salário', 'demonstrativo de pagamento de salario', 'recibo de pagamento de pro-labore', 'recibo de pagamento de pró-labore', 'holerite'];
 const WEAK_INVOICE = ['fatura de serviço', 'fatura de servico', 'dados da duplicata', 'danfe', 'nota fiscal eletrônica', 'nota fiscal eletronica', 'nfcom', 'danfse', 'nfs-e', 'nfse', 'nota fiscal de serviços', 'nota fiscal de servicos', 'chave de acesso', 'modelo 55', 'modelo 62', 'modelo 65'];
@@ -108,6 +110,13 @@ export function classifyText(raw: string): Classification {
     // nota que já traz o boleto (fatura de luz, telefone): o código, o valor e o vencimento dele são aproveitados
     const line = findBoletoInText(raw);
     const info = line ? parseBoleto(line) : null;
+    // Fatura de luz ou de água: a nota e o boleto são o mesmo papel, e ele é guardado como boleto
+    // (pedido do usuário; nas faturas reais dele, Copel e Sanepar estavam todas na vaga do boleto).
+    // Vale só com código de barras válido na fatura — a Copel cobra por boleto bancário comum.
+    const utility = hits(text, UTILITY);
+    if (info?.valid && utility.length) {
+      return { ...base, kind: 'boleto', confidence: 'high', reasons: ['fatura de consumo (luz/água) com código de barras', ...utility], barcode: line, amount: info.amount ?? extras.amount, dueDate: info.dueDate ?? extras.dueDate, pixCode: extras.pixCode, pixKey: extras.pixKey, beneficiary: extras.beneficiary, invoiceKey: extras.invoiceKey };
+    }
     return { ...base, kind: 'invoice', confidence: h.some((x) => x === 'danfe' || x === 'nfcom') ? 'high' : 'medium', reasons: h, amount: extras.amount ?? info?.amount ?? null, invoiceKey: extras.invoiceKey, beneficiary: extras.beneficiary, dueDate: extras.dueDate ?? info?.dueDate ?? null, barcode: line };
   }
   // holerite: nas contas de salário ele é o documento da despesa (fica no lugar da nota fiscal);
