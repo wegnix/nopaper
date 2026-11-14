@@ -8,6 +8,8 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.23.0] - 2026-11-13
+
 ### Novo
 - **Limite de chamadas por token** (Configurações → Integrações → janela do token → Chamadas por minuto): cada
   token de integração pode ter o próprio limite, de 60 a 3.000 chamadas por minuto. Em branco vale o padrão de
