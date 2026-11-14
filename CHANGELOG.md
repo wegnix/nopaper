@@ -8,6 +8,19 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.23.3] - 2026-11-14
+
+### Melhorado
+- **Preparado para meses com centenas de contas** (teste de carga com 450 contas por mês durante dois anos e um
+  mês com 3.000):
+  - **Listas de contas**: a tela mostra as primeiras 60 e vai completando sozinha conforme você rola. Abrir um
+    mês com 450 contas ficou quase 3 vezes mais rápido, e um mês com 3.000 abre no mesmo tempo. Totais, seleção
+    de pendentes, ordenação e busca continuam valendo para a lista inteira.
+  - **Contas bancárias (conciliação)**: abrir um mês com centenas de lançamentos travava a tela por alguns
+    segundos, e cada clique repetia a espera. A comparação entre lançamentos e contas ficou cerca de 7 vezes mais
+    rápida e a lista também é completada conforme você rola.
+  - **Início**: busca só as primeiras contas em atraso e a vencer, em vez de baixar a lista inteira.
+
 ## [1.23.2] - 2026-11-13
 
 ### Melhorado

@@ -278,6 +278,8 @@ export const billListQuerySchema = z.object({
   folderId: z.union([z.string().uuid(), z.literal('none')]).optional(),
   status: z.enum(['pending', 'paid', 'overdue', 'due_soon']).optional(),
   search: z.string().trim().max(120).optional(),
+  /** Só as primeiras N (ex.: o Início mostra 8 vencidas; a contagem vem do resumo). */
+  limit: z.coerce.number().int().min(1).max(5000).optional(),
   /** Dias do vencimento, ex.: "5,15" (filtro "Dia" da lista). */
   days: z.string().regex(/^\d{1,2}(,\d{1,2})*$/).optional()
     .transform((v) => (v ? [...new Set(v.split(',').map(Number).filter((d) => d >= 1 && d <= 31))] : undefined)),

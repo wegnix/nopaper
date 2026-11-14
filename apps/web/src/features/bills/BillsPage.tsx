@@ -254,6 +254,7 @@ export function BillsPage({ type }: { type: BillType }) {
             <>
               <BillsTable
                 type={type} bills={bills} today={today} categories={catMap} folders={folderMap} perm={perm}
+                listKey={[orgId, type, year, month, status, categoryId, folderId, search, [...days].join()].join('|')}
                 selected={selected} setSelected={setSelected}
                 actions={{
                   onEdit: (b) => setForm({ open: true, bill: b }), onPay: (b) => setPay({ bill: b, proofOnly: false }),

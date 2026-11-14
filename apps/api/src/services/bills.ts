@@ -206,6 +206,7 @@ export interface ListFilters {
   year?: number; month?: number; from?: string; to?: string;
   categoryId?: string; folderId?: string; status?: 'pending' | 'paid' | 'overdue' | 'due_soon'; search?: string;
   days?: number[];
+  limit?: number;
 }
 
 export async function listBills(req: FastifyRequest, f: ListFilters) {
@@ -236,7 +237,7 @@ export async function listBills(req: FastifyRequest, f: ListFilters) {
   }
   // mesmo dia: ordem alfabética da descrição (a tela e a exportação seguem a mesma ordem)
   const rows = await db.select().from(schema.bills).where(and(...conds))
-    .orderBy(asc(schema.bills.dueDate), sql`lower(${schema.bills.description})`, asc(schema.bills.createdAt)).limit(5000);
+    .orderBy(asc(schema.bills.dueDate), sql`lower(${schema.bills.description})`, asc(schema.bills.createdAt)).limit(f.limit ?? 5000);
   return serializeMany(rows);
 }
 

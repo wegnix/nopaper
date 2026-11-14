@@ -22,13 +22,13 @@ function useSummary(type: BillType, enabled: boolean) {
   const y = Number(t.slice(0, 4)), m = Number(t.slice(5, 7));
   return useQuery({ enabled, queryKey: ['bills', orgId, 'summary', type, y, m], queryFn: () => get<Summary>(`/api/bills/summary?${qs({ type, year: y, month: m })}`) });
 }
-function useUpcoming(type: BillType, enabled: boolean) {
+function useUpcoming(type: BillType, enabled: boolean, limit: number) {
   const orgId = useSession((s) => s.orgId);
-  return useQuery({ enabled, queryKey: ['bills', orgId, 'upcoming', type], queryFn: () => get<{ items: Bill[] }>(`/api/bills?${qs({ type, status: 'due_soon' })}`).then((r) => r.items) });
+  return useQuery({ enabled, queryKey: ['bills', orgId, 'upcoming', type, limit], queryFn: () => get<{ items: Bill[] }>(`/api/bills?${qs({ type, status: 'due_soon', limit })}`).then((r) => r.items) });
 }
 function useOverdue(type: BillType, enabled: boolean) {
   const orgId = useSession((s) => s.orgId);
-  return useQuery({ enabled, queryKey: ['bills', orgId, 'overdue-list', type], queryFn: () => get<{ items: Bill[] }>(`/api/bills?${qs({ type, status: 'overdue' })}`).then((r) => r.items) });
+  return useQuery({ enabled, queryKey: ['bills', orgId, 'overdue-list', type], queryFn: () => get<{ items: Bill[] }>(`/api/bills?${qs({ type, status: 'overdue', limit: 8 })}`).then((r) => r.items) });
 }
 
 export function DashboardPage() {
@@ -37,8 +37,9 @@ export function DashboardPage() {
   const user = useSession((s) => s.user);
   const canP = can('payable.view'), canR = can('receivable.view');
   const p = useSummary('payable', canP), r = useSummary('receivable', canR);
-  const upP = useUpcoming('payable', canP), ovP = useOverdue('payable', canP);
-  const upR = useUpcoming('receivable', canR);
+  // o Início mostra só as primeiras: baixar a lista inteira de vencidas pesava em espaços com muitas contas
+  const upP = useUpcoming('payable', canP, 8), ovP = useOverdue('payable', canP);
+  const upR = useUpcoming('receivable', canR, 30);
   const { data: cats = [] } = useCategories();
   const catMap = new Map(cats.map((c) => [c.id, c]));
   const today = p.data?.today ?? todayISO();
@@ -151,7 +152,7 @@ export function DashboardPage() {
           <Card>
             <div className="flex items-center justify-between gap-3 border-b border-line px-4 sm:px-5 py-4">
               <h2 className="font-display text-lg font-semibold">Precisa de atenção</h2>
-              {!!ovP.data?.length && <Link to="/pagar?situacao=overdue" className="inline-flex items-center gap-1 text-xs text-danger hover:underline"><AlertTriangle className="size-3.5" /> {ovP.data.length} em atraso</Link>}
+              {!!ovP.data?.length && <Link to="/pagar?situacao=overdue" className="inline-flex items-center gap-1 text-xs text-danger hover:underline"><AlertTriangle className="size-3.5" /> {p.data?.overdue.count ?? ovP.data.length} em atraso</Link>}
             </div>
             {attention.length === 0 ? <p className="px-5 py-10 text-center text-sm text-muted">Nada vencido nem vencendo nos próximos 7 dias.</p> : (
               <ul className="divide-y divide-line">

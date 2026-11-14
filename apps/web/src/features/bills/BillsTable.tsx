@@ -6,6 +6,7 @@ import { Button, Checkbox, IconButton, Select } from '@/components/ui/base';
 import { CategoryChip, FolderChip, StatusChip } from '@/components/ui/chips';
 import { cn } from '@/lib/utils';
 import { useMedia } from '@/lib/useMedia';
+import { useProgressive } from '@/lib/useProgressive';
 import type { BillPerms } from '@/lib/session';
 import type { Bill, Category, Folder } from '@/lib/types';
 import { AttachmentChips, CopyButton, attachmentCount } from './attachments';
@@ -144,9 +145,11 @@ const CardRow = memo(function CardRow({ b, type, today, category, folder, perm, 
   );
 });
 
-export function BillsTable({ type, bills, today, categories, folders, perm, selected, setSelected, actions }: {
+export function BillsTable({ type, bills, today, categories, folders, perm, selected, setSelected, actions, listKey }: {
   type: BillType; bills: Bill[]; today: string; categories: Map<string, Category>; folders: Map<string, Folder>;
   perm: BillPerms; selected: Set<string>; setSelected: Dispatch<SetStateAction<Set<string>>>; actions: RowActions;
+  /** Identifica a lista (mês + filtros): quando muda, a lista volta a ser desenhada do começo. */
+  listKey: string;
 }) {
   const l = L[type];
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'dueDate', dir: 1 });
@@ -191,6 +194,8 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
   }), []);
   // só o layout que está na tela é montado (antes a tabela e os cartões existiam os dois, um escondido)
   const wide = useMedia('(min-width: 1280px)');
+  // mês com centenas de contas: desenha as primeiras e vai completando conforme a pessoa rola
+  const { visible, sentinel, hidden } = useProgressive(sorted, `${listKey}|${sort.key}|${sort.dir}`);
 
   const Th = ({ k, children, className }: { k: SortKey; children: React.ReactNode; className?: string }) => {
     const active = sort.key === k;
@@ -209,7 +214,7 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
   return (
     <>
       {/* desktop (telas largas): tabela */}
-      {wide && <div className="overflow-x-auto">
+      {wide && <div className="relative overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-muted border-b border-line">
             <tr>
@@ -226,16 +231,17 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
             </tr>
           </thead>
           <tbody>
-            {sorted.map((b) => (
+            {visible.map((b) => (
               <TableRow key={b.id} b={b} type={type} today={today} category={categories.get(b.categoryId)} folder={b.folderId ? folders.get(b.folderId) : undefined}
                 perm={perm} canSelect={canSelect} sel={selected.has(b.id)} onToggle={toggle} actions={stable} />
             ))}
           </tbody>
         </table>
+        {sentinel}
       </div>}
 
       {/* celular e tablet: cartões (1 coluna no celular, 2 no tablet) */}
-      {!wide && <div>
+      {!wide && <div className="relative">
         <div className="flex items-center gap-3 border-b border-line px-4 py-2 text-xs text-muted">
           {canSelect && <Checkbox checked={allSel} indeterminate={!allSel && someSel} disabled={!pendingIds.length} onChange={(v) => setSelected(v ? new Set(pendingIds) : new Set())} label={<span className="text-xs text-muted">Pendentes</span>} className="items-center" />}
           <label className="ml-auto flex items-center gap-1.5">
@@ -256,12 +262,14 @@ export function BillsTable({ type, bills, today, categories, folders, perm, sele
           </label>
         </div>
         <ul className="grid md:grid-cols-2 [&>li]:border-line [&>li]:border-b md:[&>li:nth-child(odd)]:border-r">
-          {sorted.map((b) => (
+          {visible.map((b) => (
             <CardRow key={b.id} b={b} type={type} today={today} category={categories.get(b.categoryId)} folder={b.folderId ? folders.get(b.folderId) : undefined}
               perm={perm} canSelect={canSelect} sel={selected.has(b.id)} onToggle={toggle} actions={stable} />
           ))}
         </ul>
+        {sentinel}
       </div>}
+      {hidden > 0 && <p className="border-t border-line px-4 py-2 text-center text-xs text-faint" aria-live="polite">Carregando mais {hidden.toLocaleString('pt-BR')}…</p>}
     </>
   );
 }

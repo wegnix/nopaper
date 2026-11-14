@@ -6,7 +6,7 @@ import {
   ArrowDownLeft, ArrowUpRight, Check, CheckCheck, ChevronLeft, ChevronRight, CircleDashed, EyeOff, FileClock, Landmark, Link2, Pencil, Plus, RotateCcw, Sparkles, Upload,
 } from 'lucide-react';
 import {
-  MONTHS_PT, accountLabel, addMonthsRef, candidatesFor, daysInMonth, formatBRL, formatDateBR, suggestMatches, sumMoney, todayISO, txDescription,
+  MONTHS_PT, accountLabel, addMonthsRef, billsByAmount, candidatesFor, sameAmountBills, daysInMonth, formatBRL, formatDateBR, suggestMatches, sumMoney, todayISO, txDescription,
   type MatchBill, type ReconcileAction,
 } from '@nopaper/shared';
 import { Button, Card, Empty, PageHeader, Segmented, Select, Input, Spinner } from '@/components/ui/base';
@@ -16,6 +16,7 @@ import { useCategories } from '@/lib/queries';
 import { useCan } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
 import type { Bill } from '@/lib/types';
+import { useProgressive } from '@/lib/useProgressive';
 import { CountUp } from '@/features/bills/KpiRibbon';
 import { useBankAccounts, useReconcile, type BankAccount, type BankTx } from './data';
 import { AccountDialog, ImportOfxDialog, ImportsDialog } from './BankDialogs';
@@ -121,12 +122,16 @@ function Reconcile({ account, refStr, onRef }: { account: BankAccount; refStr: s
   const txs = q.data?.transactions ?? [];
   const bills = q.data?.candidates ?? [];
   const billMap = useMemo(() => new Map(bills.map((b) => [b.id, b])), [bills]);
-  const pending = txs.filter((t) => t.status === 'pending');
+  // tudo memorizado pelos dados: antes `pending` era uma lista nova a cada desenho e as sugestões
+  // (cada lançamento × cada conta) eram refeitas a cada clique na tela
+  const pending = useMemo(() => txs.filter((t) => t.status === 'pending'), [txs]);
+  const matchBills = useMemo(() => bills.map(toMatch), [bills]);
+  const byAmount = useMemo(() => billsByAmount(matchBills), [matchBills]);
   const suggestions = useMemo(() => {
     const m = new Map<string, { billId: string; reason: string }>();
-    for (const s of suggestMatches(pending.map((t) => ({ id: t.id, date: t.postedAt, amount: t.amount, memo: t.memo, name: t.name })), bills.map(toMatch))) m.set(s.txId, s);
+    for (const s of suggestMatches(pending.map((t) => ({ id: t.id, date: t.postedAt, amount: t.amount, memo: t.memo, name: t.name })), matchBills)) m.set(s.txId, s);
     return m;
-  }, [pending, bills]);
+  }, [pending, matchBills]);
   const decisionOf = (t: BankTx): Decision => over[t.id] ?? (suggestions.has(t.id) ? { kind: 'link', billId: suggestions.get(t.id)!.billId } : { kind: 'none' });
   const chosen = new Map<string, string>(); // billId → txId
   for (const t of pending) { const d = decisionOf(t); if (d.kind === 'link') chosen.set(d.billId, t.id); }
@@ -177,6 +182,8 @@ function Reconcile({ account, refStr, onRef }: { account: BankAccount; refStr: s
   // pendentes com sugestão primeiro (cada grupo do mais recente para o mais antigo)
   const shown = txs.filter((t) => filter === 'all' || t.status === filter)
     .sort((a, b) => (filter === 'pending' ? Number(suggestions.has(b.id)) - Number(suggestions.has(a.id)) : 0) || b.postedAt.localeCompare(a.postedAt));
+  // mês com centenas de lançamentos: desenha os primeiros e completa conforme a pessoa rola
+  const list = useProgressive(shown, `${account.id}|${ref}|${filter}|${mode}`);
   const filters: Array<{ value: typeof filter; label: string }> = [
     { value: 'pending', label: `Pendentes (${pending.length})` }, { value: 'linked', label: `Conciliados (${k.linked})` },
     { value: 'ignored', label: `Ignorados (${k.ignored})` }, { value: 'all', label: 'Todos' },
@@ -221,13 +228,17 @@ function Reconcile({ account, refStr, onRef }: { account: BankAccount; refStr: s
             {mode === 'create' && filter === 'pending' && editable && <BulkCreate cats={categories} onApply={bulkCreate} />}
           </div>
           {!shown.length ? <p className="px-5 py-12 text-center text-sm text-muted">{filter === 'pending' ? 'Nada pendente neste mês. 🎉' : 'Nada neste filtro.'}</p> : (
+            <div className="relative">
             <ul className="divide-y divide-line">
-              {shown.map((t) => (
+              {list.visible.map((t) => (
                 <TxRow key={t.id} t={t} mode={mode} editable={editable} decision={decisionOf(t)} suggestion={suggestions.get(t.id) ?? null}
-                  options={t.status === 'pending' ? candidatesFor({ id: t.id, date: t.postedAt, amount: t.amount, memo: t.memo, name: t.name }, bills.map(toMatch), new Set([...chosen].filter(([, tx]) => tx !== t.id).map(([b]) => b))) : []}
+                  options={t.status === 'pending' ? candidatesFor({ id: t.id, date: t.postedAt, amount: t.amount, memo: t.memo, name: t.name }, sameAmountBills(t, byAmount).filter((b) => (chosen.get(b.id) ?? t.id) === t.id)) : []}
                   billMap={billMap} cats={catsFor(t.amount)} onDecide={(d) => setD(t, d)} onUndo={() => undo(t)} canUndo={can('bank.import')} />
               ))}
             </ul>
+            {list.sentinel}
+            {list.hidden > 0 && <p className="border-t border-line px-4 py-2 text-center text-xs text-faint" aria-live="polite">Carregando mais {list.hidden.toLocaleString('pt-BR')}…</p>}
+            </div>
           )}
           {planned.length > 0 && (
             <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-b-2xl border-t border-line bg-surface/95 px-4 py-3 backdrop-blur safe-bottom md:px-5">

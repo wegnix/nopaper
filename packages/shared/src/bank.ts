@@ -258,10 +258,27 @@ export function matchScore(t: MatchTx, b: MatchBill): { score: number; reason: s
   return { score, reason: `mesmo valor, ${when}${hits ? ', descrição parecida' : ''}` };
 }
 
+/** Valor (em centavos, sem sinal) que um lançamento precisa ter para combinar com a conta. */
+const billCents = (b: MatchBill) => Math.abs(toCents(b.status === 'paid' ? b.paidAmount ?? b.amount : b.amount));
+
+/**
+ * Contas agrupadas pelo valor: só as de mesmo valor podem combinar com um lançamento, então quem
+ * compara muitos lançamentos com muitas contas olha um grupo pequeno em vez da lista inteira
+ * (um mês movimentado tem centenas dos dois lados).
+ */
+export function billsByAmount(bills: MatchBill[]): Map<number, MatchBill[]> {
+  const m = new Map<number, MatchBill[]>();
+  for (const b of bills) { const k = billCents(b); const g = m.get(k); if (g) g.push(b); else m.set(k, [b]); }
+  return m;
+}
+/** As contas de mesmo valor do lançamento (as únicas que podem combinar com ele). */
+export const sameAmountBills = (t: Pick<MatchTx, 'amount'>, byAmount: Map<number, MatchBill[]>): MatchBill[] => byAmount.get(Math.abs(toCents(t.amount))) ?? [];
+
 /** Pares sugeridos: o melhor de cada vez, sem repetir lançamento nem conta. */
 export function suggestMatches(txs: MatchTx[], bills: MatchBill[], taken: Set<string> = new Set()): MatchSuggestion[] {
   const pairs: MatchSuggestion[] = [];
-  for (const t of txs) for (const b of bills) {
+  const byAmount = billsByAmount(bills);
+  for (const t of txs) for (const b of sameAmountBills(t, byAmount)) {
     if (taken.has(b.id)) continue;
     const s = matchScore(t, b);
     if (s) pairs.push({ txId: t.id, billId: b.id, ...s });
