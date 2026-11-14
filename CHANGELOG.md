@@ -8,6 +8,15 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.23.1] - 2026-11-13
+
+### Corrigido
+- **Senhas de PDF valem também para os anexos já guardados**: as regras só eram tentadas na hora de anexar, então
+  um PDF protegido que entrou antes de a regra existir (por exemplo, o histórico trazido de outro sistema)
+  continuava pedindo senha ao abrir. Agora, ao criar uma regra, o NoPaper passa por todos os anexos de contas do
+  espaço e tira a senha dos que ela abre; o botão **Aplicar aos anexos já guardados** (Configuração do espaço →
+  Senhas de PDF) refaz essa passada quando quiser e diz quantos abriram e quantos continuam protegidos.
+
 ## [1.23.0] - 2026-11-13
 
 ### Novo

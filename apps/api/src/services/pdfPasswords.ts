@@ -4,15 +4,16 @@
  * Usa o `qpdf` instalado na imagem da API; sem ele, tudo segue como antes (o arquivo fica como veio).
  */
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { PDF_RULES_MAX, pdfRulePassword, type PdfPasswordRuleInput, type PdfRulePart, type PdfRuleSource } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { decryptSecret, encryptSecret } from '../lib/secrets.js';
 import { getOrgSetting, setOrgSetting } from '../lib/settings.js';
+import { storedFilePath } from '../lib/storage.js';
 
 interface StoredRule { id: string; name: string; source: PdfRuleSource; part: PdfRulePart; length: number; /** Outro documento ou senha fixa, cifrado. */ valueEnc: string | null }
 const KEY = 'pdfPasswords';
@@ -116,4 +117,40 @@ export async function unlockPdf(orgId: string, buf: Buffer, typed?: string | nul
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+const applying = new Set<string>();
+
+/**
+ * Passa as regras nos anexos de contas JÁ guardados: o PDF que ainda pede senha e abre com alguma
+ * regra é trocado pela cópia sem senha (mesmo lugar; tamanho e sha256 atualizados). Serve para regra
+ * criada depois do anexo — ex.: histórico migrado de outro sistema antes de as regras existirem.
+ * `null` = já há uma passada em andamento neste espaço.
+ */
+export async function unlockStoredPdfs(orgId: string): Promise<{ checked: number; unlocked: number; stillLocked: number } | null> {
+  if (applying.has(orgId)) return null;
+  applying.add(orgId);
+  try {
+    const t = schema.attachments;
+    const rows = await db.select({ id: t.id, key: t.storageKey }).from(t).where(and(eq(t.orgId, orgId), eq(t.mime, 'application/pdf')));
+    let unlocked = 0, stillLocked = 0;
+    for (const r of rows) {
+      const file = storedFilePath(r.key);
+      // pergunta ao qpdf direto no arquivo guardado (0 = pede senha); só esses são lidos e tentados
+      if ((await qpdf(['--requires-password', file])) !== 0) continue;
+      const buf = await readFile(file).catch(() => null);
+      if (!buf) continue;
+      const u = await unlockPdf(orgId, buf);
+      if (u.state === 'locked') stillLocked++;
+      if (u.state !== 'unlocked') continue;
+      const tmp = `${file}.unlock-${randomUUID()}`;
+      try {
+        await writeFile(tmp, u.buf, { mode: 0o600 });
+        await rename(tmp, file);
+        await db.update(t).set({ size: u.buf.length, sha256: createHash('sha256').update(u.buf).digest('hex') }).where(eq(t.id, r.id));
+        unlocked++;
+      } catch { await rm(tmp, { force: true }).catch(() => undefined); stillLocked++; }
+    }
+    return { checked: rows.length, unlocked, stillLocked };
+  } finally { applying.delete(orgId); }
 }

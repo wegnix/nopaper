@@ -5,7 +5,7 @@ import { Building2, Check, FileBadge, ImageUp, KeyRound, Lock, MapPin, MessageCi
 import { BR_STATES, ORG_LOGO_MAX_BYTES, PDF_RULE_SOURCES, PDF_RULE_SOURCE_LABEL, describePdfRule, documentError, formatDocument, formatPhoneBR, formatZipBR, whatsappLink, type PdfRulePart, type PdfRuleSource } from '@nopaper/shared';
 import { Button, Card, Field, IconButton, Segmented, Select, Input, Switch } from '@/components/ui/base';
 import { DocumentField } from '@/components/ui/document-input';
-import { get, put, errMsg } from '@/lib/api';
+import { get, post, put, errMsg } from '@/lib/api';
 import { OrgAvatar } from '@/components/ui/org-avatar';
 import { useConfirm, useFormState } from '@/components/ui/dialog';
 import { useCan, useOrg, useSession } from '@/lib/session';
@@ -127,6 +127,16 @@ function PdfPasswordsCard({ canEdit }: { canEdit: boolean }) {
       return true;
     } catch (e) { toast.error(errMsg(e)); return false; } finally { setBusy(false); }
   };
+  /** Regra nova também vale para o que já está anexado: tira a senha dos PDFs guardados que ela abre. */
+  const apply = async (quiet: boolean) => {
+    setBusy(true);
+    try {
+      const r = await post<{ checked: number; unlocked: number; stillLocked: number }>('/api/org/pdf-passwords/apply', {});
+      const rest = r.stillLocked ? ` ${r.stillLocked} ainda ${r.stillLocked === 1 ? 'pede' : 'pedem'} senha: nenhuma regra abre.` : '';
+      if (r.unlocked) toast.success(`${r.unlocked} ${r.unlocked === 1 ? 'anexo já guardado ficou' : 'anexos já guardados ficaram'} sem senha.${rest}`);
+      else if (!quiet) toast.message(r.stillLocked ? `Nenhuma regra abriu os anexos guardados.${rest}` : 'Nenhum anexo guardado pede senha.');
+    } catch (e) { if (!quiet) toast.error(errMsg(e)); } finally { setBusy(false); }
+  };
   const d = draft;
   const draftOk = !!d && d.name.trim().length > 0 && (d.source === 'org_document' || d.value.trim().length > 0);
   return (
@@ -134,8 +144,9 @@ function PdfPasswordsCard({ canEdit }: { canEdit: boolean }) {
       <div className="flex flex-wrap items-start gap-3">
         <div className="mr-auto min-w-0">
           <h2 className="flex items-center gap-2 font-display text-lg font-semibold"><span className="grid size-7 place-items-center rounded-lg bg-accent-soft text-accent"><KeyRound className="size-4" /></span>Senhas de PDF</h2>
-          <p className="mt-1 max-w-3xl text-sm text-muted">Faturas que chegam em PDF protegido (a Copel usa os 4 primeiros dígitos do CPF/CNPJ) são abertas sozinhas ao anexar: o NoPaper tenta cada regra, lê o documento e guarda a cópia sem senha.</p>
+          <p className="mt-1 max-w-3xl text-sm text-muted">Faturas que chegam em PDF protegido (a Copel usa os 4 primeiros dígitos do CPF/CNPJ) são abertas sozinhas ao anexar: o NoPaper tenta cada regra, lê o documento e guarda a cópia sem senha. Uma regra nova também vale para os anexos já guardados.</p>
         </div>
+        {!d && rules.length > 0 && <Button size="sm" variant="ghost" loading={busy} onClick={() => apply(false)}>Aplicar aos anexos já guardados</Button>}
         {!d && <Button size="sm" icon={<Plus className="size-4" />} disabled={rules.length >= 30} onClick={() => setDraft({ ...NEW_RULE })}>Nova regra</Button>}
       </div>
       {q.data && !q.data.orgHasDocument && rules.some((r) => r.source === 'org_document') && (
@@ -184,7 +195,7 @@ function PdfPasswordsCard({ canEdit }: { canEdit: boolean }) {
             </>}
             <div className="flex w-full justify-end gap-2 sm:ml-auto sm:w-auto">
               <Button variant="ghost" disabled={busy} onClick={() => setDraft(null)}>Cancelar</Button>
-              <Button variant="primary" loading={busy} disabled={!draftOk} onClick={() => save([...rules, d], 'Regra criada')}>Criar regra</Button>
+              <Button variant="primary" loading={busy} disabled={!draftOk} onClick={async () => { if (await save([...rules, d], 'Regra criada')) await apply(true); }}>Criar regra</Button>
             </div>
           </div>
           <p className="mt-3 text-xs text-muted">

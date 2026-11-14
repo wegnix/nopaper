@@ -5,7 +5,7 @@ import { ORG_DETAIL_FIELDS, ORG_LOGO_MAX_BYTES, orgCreateSchema, orgDetailsSchem
 import { assertUsernameFree } from './auth.js';
 import { db, schema } from '../db/client.js';
 import { sniffMime } from '../lib/storage.js';
-import { listPdfRules, savePdfRules } from '../services/pdfPasswords.js';
+import { listPdfRules, savePdfRules, unlockStoredPdfs } from '../services/pdfPasswords.js';
 import { parse } from '../lib/validate.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { requireAuth, requirePerm, requireOrg, hashPassword, membershipsOf } from '../lib/auth.js';
@@ -68,6 +68,14 @@ export default async function orgRoutes(app: FastifyInstance) {
       details: { changes: { embedVisible: { from: !visible, to: visible } } },
     });
     return { embedVisible: org.embedVisible };
+  });
+
+  /** Passa as regras nos anexos já guardados que ainda pedem senha (regra criada depois do anexo). */
+  app.post('/api/org/pdf-passwords/apply', { preHandler: requirePerm('org.settings') }, async (req) => {
+    const r = await unlockStoredPdfs(req.org!.id);
+    if (!r) throw badRequest('Os anexos deste espaço já estão sendo conferidos. Aguarde um instante.');
+    if (r.unlocked) await audit(req, { action: 'org.pdf_passwords', entityType: 'organization', entityId: req.org!.id, description: `Tirou a senha de ${r.unlocked} anexo(s) já guardado(s), pelas regras de senha de PDF`, details: r });
+    return r;
   });
 
   /**
