@@ -11,6 +11,9 @@ export const API_TOKENS_MAX = 20;
 export const API_TOKEN_IPS_MAX = 20;
 /** Chamadas por minuto de cada token. */
 export const API_RATE_LIMIT_PER_MINUTE = 300;
+/** O limite pode ser trocado por token (ex.: uma migração), dentro desta faixa. */
+export const API_RATE_LIMIT_MIN = 60;
+export const API_RATE_LIMIT_MAX = 3000;
 
 /** O que nenhum token pode fazer: gestão do espaço continua só pela tela, com uma pessoa logada. */
 export const INTEGRATION_FORBIDDEN_PERMISSIONS: Permission[] = ['members.manage', 'groups.manage', 'org.settings', 'alerts.manage', 'integrations.manage'];
@@ -33,6 +36,8 @@ export const apiTokenSchema = z.object({
   allowedIps: z.array(z.string().trim().refine(isIpOrCidr, 'IP ou faixa inválida (ex.: 203.0.113.10 ou 203.0.113.0/24)')).max(API_TOKEN_IPS_MAX).default([]),
   /** Último dia em que o token vale (no fuso do espaço); null = sem validade. */
   expiresAt: isoDate.nullable().default(null),
+  /** Chamadas por minuto deste token; null = o padrão (`API_RATE_LIMIT_PER_MINUTE`). Ausente = não muda. */
+  rateLimit: z.number().int('Use um número inteiro').min(API_RATE_LIMIT_MIN, `Mínimo de ${API_RATE_LIMIT_MIN} chamadas por minuto`).max(API_RATE_LIMIT_MAX, `Máximo de ${API_RATE_LIMIT_MAX} chamadas por minuto`).nullable().optional(),
 });
 export type ApiTokenInput = z.output<typeof apiTokenSchema>;
 
@@ -73,6 +78,8 @@ export interface ApiTokenInfo {
   permissions: Permission[];
   allowedIps: string[];
   expiresAt: string | null;
+  /** Chamadas por minuto; null = o padrão. */
+  rateLimit: number | null;
   expired: boolean;
   lastUsedAt: string | null;
   lastUsedIp: string | null;

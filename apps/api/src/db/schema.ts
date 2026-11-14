@@ -243,6 +243,8 @@ export const apiTokens = pgTable('api_tokens', {
   permissions: text('permissions').array().notNull().default(sql`'{}'::text[]`),
   allowedIps: text('allowed_ips').array().notNull().default(sql`'{}'::text[]`),
   expiresAt: date('expires_at'),
+  /** Chamadas por minuto na API pública; null = o padrão (300). */
+  rateLimit: integer('rate_limit'),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
   lastUsedIp: varchar('last_used_ip', { length: 64 }),
   /** Webhook do token (opcional): os eventos que o token pode ver são enviados para este endereço. */

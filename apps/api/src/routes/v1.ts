@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, asc, eq, gte, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
-import { API_RATE_LIMIT_PER_MINUTE, BILL_TYPES, isoDate, type AttachmentSlot, type BillType, type Permission } from '@nopaper/shared';
+import { BILL_TYPES, isoDate, type AttachmentSlot, type BillType, type Permission } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { env } from '../env.js';
 import { APP_VERSION } from '../lib/version.js';
@@ -14,6 +14,7 @@ import { openApiDocument } from '../lib/openapi.js';
 import { registerV1Writes } from './v1write.js';
 import { registerV1Areas } from './v1areas.js';
 import { latestEventCursor, listEvents } from '../services/events.js';
+import { rateLimitFor } from '../services/integrations.js';
 
 /**
  * API pública (`/api/v1`): superfície estável para outros sistemas, separada da API interna que o
@@ -27,7 +28,8 @@ const STATUS_CODES: Record<number, string> = { 400: 'invalid_request', 401: 'una
 const limited = {
   config: {
     rateLimit: {
-      max: API_RATE_LIMIT_PER_MINUTE, timeWindow: '1 minute',
+      // o padrão, ou o limite próprio do token (Configurações → Integrações)
+      max: (req: FastifyRequest) => rateLimitFor(req.headers.authorization), timeWindow: '1 minute',
       keyGenerator: (req: FastifyRequest) => (req.headers.authorization ? `v1:${createHash('sha256').update(req.headers.authorization).digest('hex')}` : `v1ip:${req.ip}`),
     },
   },

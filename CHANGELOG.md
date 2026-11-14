@@ -8,6 +8,17 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+### Novo
+- **Limite de chamadas por token** (Configurações → Integrações → janela do token → Chamadas por minuto): cada
+  token de integração pode ter o próprio limite, de 60 a 3.000 chamadas por minuto. Em branco vale o padrão de
+  300. Serve para uma carga grande, como uma migração: aumente no token usado, rode a carga e volte ao padrão
+  (ou apague o token). A mudança vale em até meio minuto e fica registrada na auditoria; os cabeçalhos
+  `x-ratelimit-limit` e `x-ratelimit-remaining` de cada resposta mostram o limite em vigor.
+
+### Corrigido
+- API pública: as gravações (criar, editar, dar baixa, anexar) contavam também no limite geral de 600 chamadas
+  por minuto por endereço IP, além do limite do token. Agora contam só no limite do token.
+
 ## [1.22.0] - 2026-11-13
 
 ### Novo

@@ -2,7 +2,7 @@ import { BlockList, isIP } from 'node:net';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
-import { API_TOKEN_PREFIX, INTEGRATION_PERMISSIONS, isPermission, todayISO, type ApiTokenInfo, type Permission, type WebhookGroup, type WebhookInfo } from '@nopaper/shared';
+import { API_RATE_LIMIT_MAX, API_RATE_LIMIT_MIN, API_RATE_LIMIT_PER_MINUTE, API_TOKEN_PREFIX, INTEGRATION_PERMISSIONS, isPermission, todayISO, type ApiTokenInfo, type Permission, type WebhookGroup, type WebhookInfo } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 
 /** Quem está chamando a API pública: um token de integração de um espaço. */
@@ -21,6 +21,29 @@ const sha256 = (t: string) => createHash('sha256').update(t).digest('hex');
 export function newApiToken() {
   const token = API_TOKEN_PREFIX + randomBytes(30).toString('base64url');
   return { token, tokenHash: sha256(token), hint: token.slice(0, 7) };
+}
+
+/**
+ * Chamadas por minuto de quem chama a API pública. O limite roda antes da autenticação, então a
+ * consulta é pelo cabeçalho; fica 30 s em memória (e é esquecida quando um token é salvo ou apagado).
+ * Token desconhecido ou sem limite próprio = o padrão.
+ */
+const rateCache = new Map<string, { max: number; at: number }>();
+export const forgetRateLimits = () => rateCache.clear();
+export async function rateLimitFor(authorization: string | undefined): Promise<number> {
+  const m = /^Bearer\s+(\S+)$/i.exec(authorization ?? '');
+  if (!m || !m[1]!.startsWith(API_TOKEN_PREFIX)) return API_RATE_LIMIT_PER_MINUTE;
+  const hash = sha256(m[1]!);
+  const hit = rateCache.get(hash);
+  if (hit && Date.now() - hit.at < 30_000) return hit.max;
+  let max = API_RATE_LIMIT_PER_MINUTE;
+  try {
+    const [t] = await db.select({ rateLimit: schema.apiTokens.rateLimit }).from(schema.apiTokens).where(eq(schema.apiTokens.tokenHash, hash)).limit(1);
+    if (t?.rateLimit) max = Math.min(API_RATE_LIMIT_MAX, Math.max(API_RATE_LIMIT_MIN, t.rateLimit));
+  } catch { /* banco fora (manutenção): vale o padrão */ }
+  if (rateCache.size > 5000) rateCache.clear();
+  rateCache.set(hash, { max, at: Date.now() });
+  return max;
 }
 
 /** O IP de quem chama está na lista do token? (lista vazia = qualquer IP) */
@@ -72,7 +95,7 @@ export async function resolveApiToken(req: FastifyRequest, token: string): Promi
 export async function listApiTokens(orgId: string, timezone: string): Promise<ApiTokenInfo[]> {
   const rows = await db.select({
     id: schema.apiTokens.id, name: schema.apiTokens.name, hint: schema.apiTokens.hint, permissions: schema.apiTokens.permissions,
-    allowedIps: schema.apiTokens.allowedIps, expiresAt: schema.apiTokens.expiresAt, lastUsedAt: schema.apiTokens.lastUsedAt,
+    allowedIps: schema.apiTokens.allowedIps, expiresAt: schema.apiTokens.expiresAt, rateLimit: schema.apiTokens.rateLimit, lastUsedAt: schema.apiTokens.lastUsedAt,
     lastUsedIp: schema.apiTokens.lastUsedIp, createdAt: schema.apiTokens.createdAt, createdByName: schema.users.name,
     webhookUrl: schema.apiTokens.webhookUrl, webhookGroups: schema.apiTokens.webhookGroups, webhookStatus: schema.apiTokens.webhookStatus,
     webhookError: schema.apiTokens.webhookError, webhookLastAt: schema.apiTokens.webhookLastAt,

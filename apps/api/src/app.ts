@@ -6,6 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import { env, isProd } from './env.js';
 import { HttpError } from './lib/errors.js';
 import { authenticate } from './lib/auth.js';
+import { INTERNAL_KEY } from './services/integrations.js';
 import { isMaintenance, registerMaintenance } from './lib/maintenance.js';
 import { pool } from './db/client.js';
 import authRoutes from './routes/auth.js';
@@ -60,7 +61,8 @@ export async function buildApp() {
     app.addHook('onSend', async (_req, reply) => { if (!reply.hasHeader('content-security-policy')) reply.header('content-security-policy', ancestors); });
   }
   await app.register(cookie);
-  await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute' });
+  // chamada da API pública repassada a uma rota interna já foi contada no limite do token: não conta de novo por IP
+  await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute', allowList: (req) => req.headers['x-np-internal'] === INTERNAL_KEY });
   await app.register(multipart);
 
   // manutenção antes da autenticação: durante a troca de banco nada pode consultar o banco

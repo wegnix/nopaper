@@ -281,6 +281,13 @@
       "when": 1794612722487,
       "tag": "0039_org_private",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794617870624,
+      "tag": "0040_api_token_rate_limit",
+      "breakpoints": true
     }
   ]
 }

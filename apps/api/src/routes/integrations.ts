@@ -6,7 +6,7 @@ import { parse } from '../lib/validate.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
-import { listApiTokens, newApiToken } from '../services/integrations.js';
+import { forgetRateLimits, listApiTokens, newApiToken } from '../services/integrations.js';
 import { clearWebhook, rotateWebhookSecret, setWebhook, testWebhook, webhookUrlError } from '../services/webhooks.js';
 
 const labels = (perms: string[]) => perms.map((p) => PERMISSIONS[p as Permission]?.label ?? p).join('; ');
@@ -43,11 +43,11 @@ export default async function integrationRoutes(app: FastifyInstance) {
     const t = newApiToken();
     const [row] = await db.insert(schema.apiTokens).values({
       orgId: req.org!.id, name: body.name, tokenHash: t.tokenHash, hint: t.hint, permissions: body.permissions,
-      allowedIps: body.allowedIps, expiresAt: body.expiresAt, createdBy: req.user!.id,
+      allowedIps: body.allowedIps, expiresAt: body.expiresAt, rateLimit: body.rateLimit ?? null, createdBy: req.user!.id,
     }).returning({ id: schema.apiTokens.id });
     await audit(req, {
       action: 'integration.token_create', entityType: 'api_token', entityId: row.id, description: `Criou o token de integração ${body.name}`,
-      details: { permissions: body.permissions, allowedIps: body.allowedIps, expiresAt: body.expiresAt },
+      details: { permissions: body.permissions, allowedIps: body.allowedIps, expiresAt: body.expiresAt, rateLimit: body.rateLimit ?? null },
     });
     reply.code(201);
     const item = (await listApiTokens(req.org!.id, req.org!.timezone)).find((x) => x.id === row.id)!;
@@ -61,11 +61,15 @@ export default async function integrationRoutes(app: FastifyInstance) {
     if (!before) throw notFound('Token não encontrado');
     assertCanGrant(req, body.permissions, before.permissions);
     await assertName(req.org!.id, body, before.id);
-    await db.update(schema.apiTokens).set({ name: body.name, permissions: body.permissions, allowedIps: body.allowedIps, expiresAt: body.expiresAt })
+    // limite ausente no pedido = fica como está
+    const rateLimit = body.rateLimit === undefined ? before.rateLimit : body.rateLimit;
+    await db.update(schema.apiTokens).set({ name: body.name, permissions: body.permissions, allowedIps: body.allowedIps, expiresAt: body.expiresAt, rateLimit })
       .where(eq(schema.apiTokens.id, before.id));
+    forgetRateLimits();
     const changes: Record<string, { from: unknown; to: unknown }> = {};
     if (before.name !== body.name) changes.name = { from: before.name, to: body.name };
     if (before.expiresAt !== body.expiresAt) changes.expiresAt = { from: before.expiresAt, to: body.expiresAt };
+    if (before.rateLimit !== rateLimit) changes.rateLimit = { from: before.rateLimit, to: rateLimit };
     if (before.allowedIps.join() !== body.allowedIps.join()) changes.allowedIps = { from: before.allowedIps.join(', ') || null, to: body.allowedIps.join(', ') || null };
     await audit(req, {
       action: 'integration.token_update', entityType: 'api_token', entityId: before.id, description: `Editou o token de integração ${body.name}`,
@@ -124,6 +128,7 @@ export default async function integrationRoutes(app: FastifyInstance) {
     if (!before) throw notFound('Token não encontrado');
     assertCanGrant(req, [], before.permissions);
     await db.delete(schema.apiTokens).where(eq(schema.apiTokens.id, before.id));
+    forgetRateLimits();
     await audit(req, { action: 'integration.token_revoke', entityType: 'api_token', entityId: before.id, description: `Revogou o token de integração ${before.name}` });
     return { ok: true };
   });

@@ -67,7 +67,7 @@ export function openApiDocument(baseUrl: string) {
         '',
         '**Erros:** status HTTP + `{ "error": { "code", "message" } }`.',
         '',
-        `**Limite:** ${API_RATE_LIMIT_PER_MINUTE} chamadas por minuto por token; ao passar, 429 com \`Retry-After\`.`,
+        `**Limite:** ${API_RATE_LIMIT_PER_MINUTE} chamadas por minuto por token (o administrador do espaço pode definir outro valor para um token); os cabeçalhos \`x-ratelimit-limit\` e \`x-ratelimit-remaining\` dizem o limite em vigor; ao passar, 429 com \`Retry-After\`.`,
         '',
         '**Listas:** `limit` (até 200) e `cursor`; a resposta traz `items` e `nextCursor` (null na última página).',
         '',

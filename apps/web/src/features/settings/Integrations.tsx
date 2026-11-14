@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { BookOpen, KeyRound, Pencil, Plus, Send, ShieldAlert, Trash2, Webhook } from 'lucide-react';
 import {
-  ALL_PERMISSIONS, API_RATE_LIMIT_PER_MINUTE, INTEGRATION_PERMISSIONS, INTEGRATION_READ_PERMISSIONS, INTEGRATION_WRITE_PERMISSIONS, PERMISSIONS,
+  ALL_PERMISSIONS, API_RATE_LIMIT_MAX, API_RATE_LIMIT_MIN, API_RATE_LIMIT_PER_MINUTE, INTEGRATION_PERMISSIONS, INTEGRATION_READ_PERMISSIONS, INTEGRATION_WRITE_PERMISSIONS, PERMISSIONS,
   WEBHOOK_GROUPS, WEBHOOK_GROUP_KEYS, WEBHOOK_GIVE_UP_HOURS,
   billTerms, isIpOrCidr, permissionRequires, withRequired, type ApiTokenInfo, type Permission, type WebhookGroup,
 } from '@nopaper/shared';
@@ -149,6 +149,7 @@ function TokenForm({ token, onClose, onSaved }: { token: Partial<ApiTokenInfo>; 
   const iAmAdmin = !!org?.isAdmin;
   const [f, setF, form] = useFormState({
     name: token.name ?? '', expiresAt: token.expiresAt ?? '', ips: (token.allowedIps ?? []).join('\n'), permissions: new Set(token.permissions ?? []),
+    rate: token.rateLimit ? String(token.rateLimit) : '',
   });
   const [busy, setBusy] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
@@ -167,9 +168,11 @@ function TokenForm({ token, onClose, onSaved }: { token: Partial<ApiTokenInfo>; 
   };
   const ips = splitIps(f.ips);
   const badIp = ips.find((ip) => !isIpOrCidr(ip));
+  const rate = f.rate.trim() ? Number(f.rate) : null;
+  const badRate = rate !== null && (!Number.isInteger(rate) || rate < API_RATE_LIMIT_MIN || rate > API_RATE_LIMIT_MAX);
   const save = async () => {
     setBusy(true);
-    const body = { name: f.name, permissions: [...f.permissions], allowedIps: ips, expiresAt: f.expiresAt || null };
+    const body = { name: f.name, permissions: [...f.permissions], allowedIps: ips, expiresAt: f.expiresAt || null, rateLimit: rate };
     try {
       const saved = token.id
         ? await put<ApiTokenInfo>(`/api/integrations/tokens/${token.id}`, body)
@@ -184,16 +187,20 @@ function TokenForm({ token, onClose, onSaved }: { token: Partial<ApiTokenInfo>; 
   return (
     <Dialog open onClose={onClose} dirty={form.dirty} size="xl" title={token.id ? `Integração ${token.name}` : 'Novo token de integração'}
       description="O token dá a outro sistema acesso a este espaço pela API, só com o que você marcar aqui."
-      footer={<SaveFooter dirty={form.dirty} isNew={!token.id} saving={busy} canSave={!!f.name.trim() && !badIp} saveLabel={token.id ? 'Salvar' : 'Criar token'} onSave={save} onClose={onClose}
+      footer={<SaveFooter dirty={form.dirty} isNew={!token.id} saving={busy} canSave={!!f.name.trim() && !badIp && !badRate} saveLabel={token.id ? 'Salvar' : 'Criar token'} onSave={save} onClose={onClose}
         left={<span className="mr-auto text-xs text-muted">{count === 0 ? 'Nenhuma permissão: o token só testa a conexão' : `${count} de ${INTEGRATION_PERMISSIONS.length} permissões`}</span>} />}>
       <div className="flex flex-col gap-5">
         {secret && <Secret token={secret} />}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Nome" hint="Qual sistema vai usar. Aparece na auditoria como “Integração <nome>”.">
             <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Ex.: ERP, BI, sistema interno" maxLength={64} autoFocus={!token.id} />
           </Field>
           <Field label="Validade" hint="Último dia em que o token funciona. Em branco = sem validade.">
             <DatePicker value={f.expiresAt} onChange={(expiresAt) => setF({ ...f, expiresAt })} clearable placeholder="Sem validade" />
+          </Field>
+          <Field label="Chamadas por minuto" error={badRate ? `Use um número inteiro de ${API_RATE_LIMIT_MIN} a ${API_RATE_LIMIT_MAX.toLocaleString('pt-BR')}` : null}
+            hint={`Em branco = ${API_RATE_LIMIT_PER_MINUTE} (o padrão). Aumente para uma carga grande, como uma migração, e volte depois.`}>
+            <Input inputMode="numeric" className="tnum" value={f.rate} onChange={(e) => setF({ ...f, rate: e.target.value.replace(/\D/g, '').slice(0, 5) })} placeholder={String(API_RATE_LIMIT_PER_MINUTE)} />
           </Field>
         </div>
         <Field label="Endereços IP aceitos" error={badIp ? `“${badIp}” não é um IP nem uma faixa válida` : null}
@@ -276,7 +283,7 @@ export function IntegrationsPage() {
         <a href="/api/v1/openapi.json" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-medium text-accent hover:underline">
           <BookOpen className="size-4" />Descrição da API (OpenAPI)
         </a>
-        <span className="text-xs text-faint">Até {API_RATE_LIMIT_PER_MINUTE} chamadas por minuto por token</span>
+        <span className="text-xs text-faint">{API_RATE_LIMIT_PER_MINUTE} chamadas por minuto por token, ajustável em cada um</span>
       </div>
       {!isLoading && data.length === 0 ? (
         <Empty icon={<KeyRound className="size-6" />} title="Nenhum token ainda">
@@ -297,6 +304,7 @@ export function IntegrationsPage() {
                 <p className="mt-0.5 text-xs text-faint">
                   {t.lastUsedAt ? `Último uso em ${when(t.lastUsedAt)}${t.lastUsedIp ? ` · ${t.lastUsedIp}` : ''}` : 'Nunca usado'}
                   {' · '}{t.expiresAt ? `${t.expired ? 'venceu' : 'vale até'} ${dateBR(t.expiresAt)}` : 'sem validade'}
+                  {t.rateLimit && t.rateLimit !== API_RATE_LIMIT_PER_MINUTE && ` · até ${t.rateLimit.toLocaleString('pt-BR')} chamadas/min`}
                   {t.allowedIps.length > 0 && ` · ${t.allowedIps.length === 1 ? `só de ${t.allowedIps[0]}` : `${t.allowedIps.length} endereços aceitos`}`}
                   {' · '}criado em {dateBR(t.createdAt)}{t.createdByName && ` por ${t.createdByName}`}
                 </p>
