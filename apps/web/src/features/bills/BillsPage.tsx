@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
@@ -50,13 +50,6 @@ export function BillsPage({ type }: { type: BillType }) {
     for (const [k, v] of Object.entries(patch)) { if (v === null) n.delete(k); else n.set(k, String(v)); }
     setSp(n, { replace: true });
   };
-  const [searchText, setSearchText] = useState(search);
-  useEffect(() => setSearchText(search), [search]);
-  useEffect(() => {
-    const t = setTimeout(() => { if (searchText !== search) setParam({ busca: searchText || null }); }, 350);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchText]);
 
   const { data: categories = [] } = useCategories();
   const { data: folders = [] } = useFolders();
@@ -201,10 +194,7 @@ export function BillsPage({ type }: { type: BillType }) {
             <Segmented<Status> className="max-sm:w-full" value={status} onChange={(s) => setParam({ situacao: s })} options={[
               { value: '', label: 'Todas' }, { value: 'pending', label: 'Pendentes' }, { value: 'overdue', label: l.overduePl }, { value: 'paid', label: l.paidPl },
             ]} />
-            <div className="relative flex-1 min-w-[200px] max-sm:min-w-0">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-              <Input type="search" enterKeyHint="search" className="pl-9" placeholder={narrow ? 'Buscar…' : 'Buscar por descrição, pessoa, observação…'} value={searchText} onChange={(e) => setSearchText(e.target.value)} />
-            </div>
+            <SearchBox value={search} placeholder={narrow ? 'Buscar…' : 'Buscar por descrição, pessoa, observação…'} onCommit={(v) => setParam({ busca: v || null })} />
             <Button variant="secondary" size="sm" className={cn('relative h-10 md:hidden', (showFilters || chipFilters > 0) && 'border-accent text-accent')} icon={<Filter className="size-4" />} aria-expanded={showFilters} onClick={() => setShowFilters((v) => !v)}>
               Filtros{chipFilters > 0 && <span className="grid min-w-5 h-5 place-items-center rounded-full bg-accent px-1 text-[11px] text-accent-ink">{chipFilters}</span>}
             </Button>
@@ -307,6 +297,29 @@ export function BillsPage({ type }: { type: BillType }) {
       <MyColorsDialog open={mgr === 'colors'} onClose={() => setMgr(null)} />
       <ExportDialog type={type} open={mgr === 'export'} onClose={() => setMgr(null)} year={year} month={month} filters={{ status, categoryId, folderId, search, days: [...days].sort((a, b) => a - b).join(','), count: bills.length }} />
       <FileViewer target={viewer} onClose={() => setViewer(null)} />
+    </div>
+  );
+}
+
+/**
+ * Campo de busca com o texto guardado aqui dentro: digitar redesenha só este campo, não a página
+ * (a lista inteira era redesenhada a cada tecla). O filtro só é aplicado quando a pessoa para de digitar.
+ */
+function SearchBox({ value, placeholder, onCommit }: { value: string; placeholder: string; onCommit: (v: string) => void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const commit = useRef(onCommit);
+  commit.current = onCommit;
+  useEffect(() => {
+    if (text === value) return;
+    const t = setTimeout(() => commit.current(text), 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+  return (
+    <div className="relative flex-1 min-w-[200px] max-sm:min-w-0">
+      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
+      <Input type="search" enterKeyHint="search" className="pl-9" placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} />
     </div>
   );
 }

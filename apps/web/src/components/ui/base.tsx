@@ -1,6 +1,7 @@
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
+import { cloneElement, forwardRef, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent, type InputHTMLAttributes, type PointerEvent, type ReactElement, type ReactNode, type TextareaHTMLAttributes } from 'react';
+import { createPortal } from 'react-dom';
 import { PixelSpinner } from '@/components/brand/Brand';
-import { Checkbox as RCheckbox, Switch as RSwitch, Tooltip as RTooltip } from 'radix-ui';
+import { Checkbox as RCheckbox, Switch as RSwitch } from 'radix-ui';
 import { Check, Minus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -107,17 +108,58 @@ export function Switch({ checked, onChange, label, hint, disabled }: { checked: 
   );
 }
 
+/**
+ * Dica ao passar o mouse (ou ao chegar pelo teclado). Feita à mão, sem o componente do Radix: numa
+ * lista grande cada linha tem várias dicas, e só montá-las custava metade do tempo de desenhar a
+ * lista. Aqui o filho ganha 5 ouvintes e a bolha só existe enquanto está aberta. Com toque não abre.
+ */
 export function Tooltip({ content, children, side = 'top' }: { content: ReactNode; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
-  if (!content) return <>{children}</>;
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  if (!content || !isValidElement(children)) return <>{children}</>;
+  type H = Record<string, ((e: never) => void) | undefined>;
+  const own = children.props as H;
+  const show = (el: Element, delay: number) => { clearTimeout(timer.current); timer.current = setTimeout(() => setAnchor(el.getBoundingClientRect()), delay); };
+  const hide = () => { clearTimeout(timer.current); setAnchor(null); };
+  const child = cloneElement(children as ReactElement<H>, {
+    onPointerEnter: (e: PointerEvent<Element>) => { own.onPointerEnter?.(e as never); if (e.pointerType !== 'touch') show(e.currentTarget, 250); },
+    onPointerLeave: (e: PointerEvent<Element>) => { own.onPointerLeave?.(e as never); hide(); },
+    onPointerDown: (e: PointerEvent<Element>) => { own.onPointerDown?.(e as never); hide(); },
+    onFocus: (e: FocusEvent<Element>) => { own.onFocus?.(e as never); if (e.currentTarget.matches(':focus-visible')) show(e.currentTarget, 0); },
+    onBlur: (e: FocusEvent<Element>) => { own.onBlur?.(e as never); hide(); },
+  } as H);
+  return <>{child}{anchor && createPortal(<TooltipBubble anchor={anchor} side={side} onClose={hide}>{content}</TooltipBubble>, document.body)}</>;
+}
+
+function TooltipBubble({ anchor, side, onClose, children }: { anchor: DOMRect; side: 'top' | 'bottom' | 'left' | 'right'; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const w = el.offsetWidth, h = el.offsetHeight, gap = 6, vw = window.innerWidth, vh = window.innerHeight;
+    let s = side;
+    // sem espaço do lado pedido: vira para o lado oposto
+    if (s === 'top' && anchor.top - h - gap < 4) s = 'bottom';
+    else if (s === 'bottom' && anchor.bottom + h + gap > vh - 4) s = 'top';
+    else if (s === 'left' && anchor.left - w - gap < 4) s = 'right';
+    else if (s === 'right' && anchor.right + w + gap > vw - 4) s = 'left';
+    const cx = anchor.left + anchor.width / 2 - w / 2, cy = anchor.top + anchor.height / 2 - h / 2;
+    const left = s === 'left' ? anchor.left - w - gap : s === 'right' ? anchor.right + gap : cx;
+    const top = s === 'top' ? anchor.top - h - gap : s === 'bottom' ? anchor.bottom + gap : cy;
+    setPos({ left: Math.max(4, Math.min(left, vw - w - 4)), top: Math.max(4, Math.min(top, vh - h - 4)) });
+  }, [anchor, side]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('scroll', onClose, true); window.addEventListener('keydown', key);
+    return () => { window.removeEventListener('scroll', onClose, true); window.removeEventListener('keydown', key); };
+  }, [onClose]);
   return (
-    <RTooltip.Root delayDuration={250}>
-      <RTooltip.Trigger asChild>{children}</RTooltip.Trigger>
-      <RTooltip.Portal>
-        <RTooltip.Content side={side} sideOffset={6} className="z-[9000] max-w-xs rounded-md bg-ink px-2.5 py-1.5 text-xs text-bg shadow-lg data-[state=delayed-open]:animate-in">
-          {content}
-        </RTooltip.Content>
-      </RTooltip.Portal>
-    </RTooltip.Root>
+    <div ref={ref} role="tooltip" style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
+      className="pointer-events-none fixed z-[9000] max-w-xs rounded-md bg-ink px-2.5 py-1.5 text-xs text-bg shadow-lg">
+      {children}
+    </div>
   );
 }
 

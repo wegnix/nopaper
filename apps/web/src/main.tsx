@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
-import { Tooltip } from 'radix-ui';
 import './index.css';
 import { useSession } from './lib/session';
 import { bootSession, ApiError } from './lib/api';
@@ -127,13 +126,11 @@ function App() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={qc}>
-      <Tooltip.Provider>
-        <ConfirmProvider>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
-        </ConfirmProvider>
-      </Tooltip.Provider>
+      <ConfirmProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </ConfirmProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

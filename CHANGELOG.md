@@ -8,6 +8,18 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.23.2] - 2026-11-13
+
+### Melhorado
+- **Listas de contas mais rápidas** (Contas a pagar e a receber, Despesas e Receitas): em meses com muitas contas a
+  tela ficava pesada. Agora:
+  - digitar na busca não redesenha mais a página a cada tecla (a resposta por tecla ficou mais de 10 vezes mais
+    rápida);
+  - só o formato que está na tela é montado — tabela no computador, cartões no celular e tablet — em vez dos dois;
+  - marcar uma conta, pagar ou trocar um filtro redesenha só as linhas que mudaram;
+  - as dicas que aparecem ao passar o mouse nos botões ficaram bem mais leves, em todo o sistema.
+  Abrir um mês cheio ficou cerca de duas vezes mais rápido.
+
 ## [1.23.1] - 2026-11-13
 
 ### Corrigido
