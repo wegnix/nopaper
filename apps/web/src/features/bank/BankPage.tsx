@@ -13,7 +13,7 @@ import { Button, Card, Empty, PageHeader, Segmented, Select, Input, Spinner } fr
 import { useConfirm } from '@/components/ui/dialog';
 import { post, errMsg } from '@/lib/api';
 import { useCategories } from '@/lib/queries';
-import { useCan } from '@/lib/session';
+import { useCan, useBillText } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
 import type { Bill } from '@/lib/types';
 import { useProgressive } from '@/lib/useProgressive';
@@ -32,6 +32,7 @@ const txSub = (t: Pick<BankTx, 'memo' | 'name'>) => { const a = txTitle(t); retu
 const toMatch = (b: Bill): MatchBill => ({ id: b.id, type: b.type, description: b.description, relatedPerson: b.relatedPerson, amount: b.amount, dueDate: b.dueDate, status: b.status, paidAt: b.paidAt, paidAmount: b.paidAmount });
 
 export function BankPage() {
+  const bt = useBillText();
   const can = useCan();
   const [sp, setSp] = useSearchParams();
   const set = (patch: Record<string, string | null>) => { const n = new URLSearchParams(sp); for (const [k, v] of Object.entries(patch)) v === null ? n.delete(k) : n.set(k, v); setSp(n, { replace: true }); };
@@ -47,7 +48,7 @@ export function BankPage() {
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
       <PageHeader title="Contas bancárias"
-        description="Importe o extrato do banco (OFX) e confira com as contas a pagar e a receber: o NoPaper sugere os pares e dá baixa na data do banco."
+        description={bt('Importe o extrato do banco (OFX) e confira com as contas a pagar e a receber: o NoPaper sugere os pares e dá baixa na data do banco.')}
         actions={<>
           {can('bank.import') && <Button variant={accounts.length ? 'secondary' : 'primary'} icon={<Upload className="size-4" />} onClick={() => setImportOpen(true)}>Importar extrato</Button>}
           {can('bank.manage') && <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => setAccDlg({ open: true, account: null })}>Nova conta</Button>}

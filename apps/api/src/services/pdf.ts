@@ -10,6 +10,8 @@ if (typeof P.withResolvers !== 'function') {
   };
 }
 
+const TEXT_MAX_ITEMS = 8000, TEXT_MAX_CHARS = 400_000, TEXT_MAX_MS = 15_000;
+
 /** Extração de texto de PDF com pdfjs-dist (build legacy, roda em Node sem canvas). */
 export async function pdfToText(buf: Buffer, maxPages = 10): Promise<string> {
   try { return await readText(buf, maxPages); } catch (e) {
@@ -27,15 +29,19 @@ async function readText(buf: Buffer, maxPages: number): Promise<string> {
   });
   const doc = await task.promise;
   const parts: string[] = [];
+  // tetos (como em `pdfToPageCells`): um PDF montado para isso não pode prender o servidor
+  const started = Date.now();
+  let chars = 0;
   try {
-    for (let p = 1; p <= Math.min(doc.numPages, maxPages); p++) {
+    for (let p = 1; p <= Math.min(doc.numPages, maxPages) && chars < TEXT_MAX_CHARS && Date.now() - started < TEXT_MAX_MS; p++) {
       const page = await doc.getPage(p);
       const content = await page.getTextContent();
       let line = '';
-      for (const item of content.items as Array<{ str?: string; hasEOL?: boolean }>) {
+      for (const item of (content.items as Array<{ str?: string; hasEOL?: boolean }>).slice(0, TEXT_MAX_ITEMS)) {
         if (typeof item.str !== 'string') continue;
-        line += item.str;
+        line += item.str; chars += item.str.length + 1;
         if (item.hasEOL) { parts.push(line); line = ''; } else line += ' ';
+        if (chars >= TEXT_MAX_CHARS) break;
       }
       if (line) parts.push(line);
     }

@@ -10,6 +10,7 @@ import { del, post, put, errMsg } from '@/lib/api';
 import { useCardCategories } from '@/lib/queries';
 import { plural } from '@/lib/utils';
 import type { CardCategory } from '@/lib/types';
+import { useBillText } from '@/lib/session';
 import { ColorPicker } from '@/features/bills/Catalog';
 
 function CardCategoryForm({ initial, onClose, onSaved }: { initial: Partial<CardCategory> | null; onClose: () => void; onSaved: (c: CardCategory) => void }) {
@@ -68,6 +69,7 @@ function DeleteCardCategory({ cat, all, onClose }: { cat: CardCategory; all: Car
 
 /** Categorias do cartão: detalham as compras das faturas (a fatura em si fica em Contas a pagar com a categoria do cartão). */
 export function CardCategoryManager({ open, onClose, canManage }: { open: boolean; onClose: () => void; canManage: boolean }) {
+  const bt = useBillText();
   const q = useCardCategories(open);
   const [editing, setEditing] = useState<Partial<CardCategory> | null | false>(false);
   const [deleting, setDeleting] = useState<CardCategory | null>(null);
@@ -76,7 +78,7 @@ export function CardCategoryManager({ open, onClose, canManage }: { open: boolea
   return (
     <>
       <Dialog open={open} onClose={onClose} size="md" title="Categorias do cartão"
-        description="Detalham o que foi comprado em cada fatura. São só do cartão: em Contas a pagar a fatura inteira continua com a categoria escolhida no cadastro do cartão."
+        description={bt('Detalham o que foi comprado em cada fatura. São só do cartão: em Contas a pagar a fatura inteira continua com a categoria escolhida no cadastro do cartão.')}
         footer={<>{<Button variant="ghost" className="mr-auto" onClick={onClose}>Fechar</Button>}{canManage && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing({})}>Nova categoria</Button>}</>}>
         {q.isLoading ? <div className="grid place-items-center py-10"><Spinner /></div> : (
           <ul className="-mx-1 divide-y divide-line">

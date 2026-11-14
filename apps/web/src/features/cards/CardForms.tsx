@@ -13,6 +13,7 @@ import { del, get, post, put, errMsg } from '@/lib/api';
 import { useCardCategories, useCategories, useFolders } from '@/lib/queries';
 import type { Card, CardTx } from '@/lib/types';
 import { ColorPicker } from '@/features/bills/Catalog';
+import { useBillText } from '@/lib/session';
 import { MoneyInput } from '@/features/bills/MoneyInput';
 
 export const refLabel = (ref: string) => `${MONTHS_PT_SHORT[Number(ref.slice(5, 7)) - 1]}/${ref.slice(0, 4)}`;
@@ -87,6 +88,7 @@ interface DeleteImpact { transactions: number; purchases: number; paidStatements
 
 /** Confirmação de exclusão: mostra o que sai junto e, com lançamentos, pede o nome do cartão. */
 function DeleteCardDialog({ card, open, onClose, onDeleted }: { card: Card; open: boolean; onClose: () => void; onDeleted: () => void }) {
+  const bt = useBillText();
   const qc = useQueryClient();
   const [impact, setImpact] = useState<DeleteImpact | null>(null);
   const [typed, setTyped] = useState('');
@@ -117,7 +119,7 @@ function DeleteCardDialog({ card, open, onClose, onDeleted }: { card: Card; open
           <p className="flex items-start gap-2 rounded-lg border border-warn/40 bg-warn/10 p-3 text-ink"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />
             {impact.paidStatements > 0
               ? <span>Este cartão tem <b>{impact.paidStatements} fatura(s) já paga(s)</b>. Elas fazem parte do histórico financeiro e não podem ser apagadas junto com o cartão.</span>
-              : <span>Apagar o cartão remove as contas a pagar das faturas dele, e o seu grupo não tem permissão para apagar contas a pagar.</span>}
+              : <span>{bt('Apagar o cartão remove as contas a pagar das faturas dele, e o seu grupo não tem permissão para apagar contas a pagar.')}</span>}
           </p>
           <p className="text-muted">Para tirá-lo de uso, desligue <b>Cartão ativo</b> na edição: ele some da lista de lançamentos e o histórico fica guardado.{impact.paidStatements > 0 && ' Se as faturas foram pagas por engano, reverta os pagamentos em Contas a pagar e tente de novo.'}</p>
         </div>

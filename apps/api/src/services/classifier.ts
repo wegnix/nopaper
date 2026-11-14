@@ -60,7 +60,7 @@ function byFilename(name: string): { kind: Kind; reasons: string[] } {
 }
 
 function extractExtras(text: string) {
-  const pixMatch = text.replace(/\s+/g, '').match(/000201[0-9A-Za-z.@:/\-_*+ ]{20,}?6304[0-9A-F]{4}/);
+  const pixMatch = text.replace(/\s+/g, '').match(/000201[0-9A-Za-z.@:/\-_*+ ]{20,800}?6304[0-9A-F]{4}/); // teto: sem ele a busca é quadrática num texto que repete "000201"
   let pixCode: string | null = null, pixKey: string | null = null, pixAmount: string | null = null;
   if (pixMatch) {
     const p = parsePix(pixMatch[0]);
@@ -74,7 +74,7 @@ function extractExtras(text: string) {
   let dueDate: string | null = null;
   const dm = text.match(/vencimento[^\d\n]{0,30}(\d{2})\/(\d{2})\/(\d{4})/i);
   if (dm) dueDate = `${dm[3]}-${dm[2]}-${dm[1]}`;
-  const bm = text.match(/(?:benefici[aá]rio|cedente|raz[aã]o social)\s*[:\-]?\s*\n?\s*([A-ZÀ-Ü0-9][^\n]{3,80})/i);
+  const bm = text.match(/(?:benefici[aá]rio|cedente|raz[aã]o social)[\s:\-]{0,60}([A-ZÀ-Ü0-9][^\n]{3,80})/i);
   return { pixCode, pixKey, pixAmount, invoiceKey: nfKey?.[1] ?? null, amount, dueDate, beneficiary: bm?.[1]?.trim() ?? null };
 }
 
@@ -87,7 +87,11 @@ const BASE: Classification = {
  * Classifica pelo texto do documento (extraído do PDF ou lido por OCR). Sem texto útil ou sem
  * nenhum sinal conhecido → `unknown` (quem chama decide o próximo passo: OCR, nome do arquivo).
  */
-export function classifyText(raw: string): Classification {
+/** Teto do texto analisado: um documento de cobrança cabe com folga, e as buscas ficam com tempo previsível. */
+const MAX_TEXT = 200_000;
+
+export function classifyText(input: string): Classification {
+  const raw = input.length > MAX_TEXT ? input.slice(0, MAX_TEXT) : input;
   const base: Classification = { ...BASE, textLength: raw.length };
   if (raw.trim().length < 20) return base;
   const text = raw.toLowerCase();

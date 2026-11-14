@@ -188,7 +188,7 @@ export function BillsPage({ type }: { type: BillType }) {
               <Select aria-label="Mês" className="h-10 w-[130px] max-sm:flex-1 max-sm:w-auto border-0 bg-transparent hover:border-0 focus:ring-0 font-medium" value={month} onChange={(e) => setParam({ mes: e.target.value })}>
                 {MONTHS_PT.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
               </Select>
-              <Input aria-label="Ano" type="number" inputMode="numeric" className="h-10 w-[76px] border-0 bg-transparent px-1 focus:ring-0 font-medium tnum" value={year} onChange={(e) => setParam({ ano: Number(e.target.value) || year })} />
+              <Input aria-label="Ano" type="number" inputMode="numeric" className="h-10 w-[76px] border-0 bg-transparent px-1 focus:ring-0 font-medium tnum" value={year} onChange={(e) => { const y = Number(e.target.value); if (y >= 1900 && y <= 2200) setParam({ ano: y }); }} />
               <button className="grid size-10 shrink-0 place-items-center text-muted hover:text-ink" onClick={() => shiftMonth(1)} aria-label="Próximo mês"><ChevronRight className="size-4" /></button>
             </div>
             <Segmented<Status> className="max-sm:w-full" value={status} onChange={(s) => setParam({ situacao: s })} options={[
@@ -308,12 +308,15 @@ export function BillsPage({ type }: { type: BillType }) {
  */
 function SearchBox({ value, placeholder, onCommit }: { value: string; placeholder: string; onCommit: (v: string) => void }) {
   const [text, setText] = useState(value);
-  useEffect(() => setText(value), [value]);
+  // o campo só é reescrito quando o filtro muda POR FORA (limpar filtros, voltar no navegador); o eco do
+  // que este campo mesmo enviou não pode apagar o que a pessoa continuou digitando
+  const sent = useRef(value);
+  useEffect(() => { if (value !== sent.current) { sent.current = value; setText(value); } }, [value]);
   const commit = useRef(onCommit);
   commit.current = onCommit;
   useEffect(() => {
     if (text === value) return;
-    const t = setTimeout(() => commit.current(text), 300);
+    const t = setTimeout(() => { sent.current = text; commit.current(text); }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);

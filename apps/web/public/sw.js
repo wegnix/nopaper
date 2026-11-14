@@ -23,8 +23,11 @@ self.addEventListener('fetch', (e) => {
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put('/', copy));
+        // só uma página boa vira a casca offline (um 502 durante a atualização ficava guardado no lugar do app)
+        if (res.ok && (res.headers.get('content-type') || '').includes('text/html')) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put('/', copy));
+        }
         return res;
       }).catch(() => caches.match('/')),
     );

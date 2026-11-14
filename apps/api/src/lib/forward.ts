@@ -9,8 +9,21 @@ import { INTERNAL_KEY } from '../services/integrations.js';
  */
 export type ForwardMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
+/**
+ * O endereço interno é montado com pedaços que vêm de quem chama (ids). Um id com "/", "..", "?"
+ * ou "#" (ou a forma codificada deles) levaria o repasse a OUTRA rota interna, fora da lista da
+ * API pública. Só passa caminho feito de letras, números, "-", "_", "." e "/", sem "..".
+ */
+export function assertInternalUrl(url: string) {
+  const q = url.indexOf('?');
+  const path = q < 0 ? url : url.slice(0, q);
+  const ok = path.startsWith('/api/') && /^[A-Za-z0-9/_.-]+$/.test(path) && !path.includes('..') && !path.includes('//') && !url.includes('#') && !url.includes('\\');
+  if (!ok) throw new HttpError(404, 'Não encontrado', 'not_found');
+}
+
 export function createForward(app: FastifyInstance) {
   async function send(req: FastifyRequest, method: ForwardMethod, url: string, payload?: object, raw = false) {
+    assertInternalUrl(url);
     const headers: Record<string, string> = { authorization: req.headers.authorization!, 'x-np-internal': INTERNAL_KEY };
     if (raw) {
       // envio de arquivo: o corpo segue como veio

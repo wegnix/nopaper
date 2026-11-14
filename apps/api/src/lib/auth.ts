@@ -8,7 +8,7 @@ import { env } from '../env.js';
 import { db, schema } from '../db/client.js';
 import { forbidden, unauthorized, HttpError } from './errors.js';
 import { isSessionIdle } from './security.js';
-import { INTERNAL_KEY, resolveApiToken, type Integration, type TokenFailure } from '../services/integrations.js';
+import { INTERNAL_KEY, bearerApiToken, resolveApiToken, type Integration, type TokenFailure } from '../services/integrations.js';
 
 export interface AuthUser {
   id: string;
@@ -78,7 +78,9 @@ export async function authenticate(req: FastifyRequest) {
   if (h.startsWith(`Bearer ${API_TOKEN_PREFIX}`)) {
     const internal = req.headers['x-np-internal'] === INTERNAL_KEY;
     if (!req.url.startsWith('/api/v1/') && !internal) return;
-    const r = await resolveApiToken(req, h.slice(7).trim());
+    const token = bearerApiToken(h);
+    if (!token) { req.tokenFailure = 'invalid'; return; }
+    const r = await resolveApiToken(req, token);
     if (!r.ok) { req.tokenFailure = r.reason; return; }
     const perms = new Set<Permission>(r.permissions);
     req.integration = r.integration;

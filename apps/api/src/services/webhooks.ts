@@ -54,9 +54,14 @@ export const newWebhookSecret = () => `whsec_${randomBytes(24).toString('base64u
 
 /** POST assinado: `X-NoPaper-Signature: t=<unix>,v1=<HMAC-SHA256 de "t.corpo">`. */
 export function postWebhook(url: string, secret: string, event: ApiEvent | Record<string, unknown>): Promise<{ ok: boolean; status: number | null; error: string | null }> {
-  return new Promise((resolve) => {
+  return new Promise((done) => {
     const problem = webhookUrlError(url);
-    if (problem) return resolve({ ok: false, status: null, error: problem });
+    if (problem) return done({ ok: false, status: null, error: problem });
+    // prazo TOTAL do envio: o `timeout` do pedido é só de inatividade, e um destino que solta um byte
+    // de cada vez seguraria a fila de todos os espaços para sempre
+    let settled = false;
+    const resolve = (r: { ok: boolean; status: number | null; error: string | null }) => { if (settled) return; settled = true; clearTimeout(deadline); done(r); };
+    const deadline = setTimeout(() => { req.destroy(); resolve({ ok: false, status: null, error: `sem resposta em ${TIMEOUT_MS / 1000} s` }); }, TIMEOUT_MS + 1000);
     const u = new URL(url);
     const body = JSON.stringify(event);
     const t = Math.floor(Date.now() / 1000);
@@ -68,8 +73,8 @@ export function postWebhook(url: string, secret: string, event: ApiEvent | Recor
         'x-nopaper-signature': `t=${t},v1=${sig}`, 'x-nopaper-event': String((event as { type?: string }).type ?? ''), 'x-nopaper-delivery': String((event as { id?: string }).id ?? ''),
       },
     }, (res) => {
-      res.resume();
       const status = res.statusCode ?? 0;
+      res.destroy(); // só o código interessa: o corpo da resposta não é lido
       resolve(status >= 200 && status < 300 ? { ok: true, status, error: null } : { ok: false, status, error: `O destino respondeu ${status}` });
     });
     req.on('timeout', () => req.destroy(new Error(`sem resposta em ${TIMEOUT_MS / 1000} s`)));
@@ -113,6 +118,9 @@ export async function testWebhook(tokenId: string) {
   return postWebhook(t.webhookUrl, secret, { id: '0', type: 'ping', occurredAt: new Date().toISOString(), resource: { type: null, id: null }, actor: { type: 'system', name: 'NoPaper' } });
 }
 
+/** Tempo máximo gasto com um webhook por rodada. */
+const HOOK_BUDGET_MS = 20_000;
+
 let running = false;
 /** Entrega os eventos pendentes de todos os webhooks ativos. */
 export async function deliverWebhooks() {
@@ -132,21 +140,25 @@ export async function deliverWebhooks() {
       let cursor = String(h.webhookCursor ?? 0);
       let delivered = 0;
       let failure: string | null = null;
-      for (let more = true; more && !failure && delivered < MAX_PER_RUN;) {
+      let partial = false; // parou no meio da página pelo teto de tempo: o cursor fica no último entregue
+      // teto de tempo por webhook em cada rodada: um destino lento não atrasa os dos outros espaços (continua na próxima)
+      const started = Date.now();
+      for (let more = true; more && !failure && delivered < MAX_PER_RUN && Date.now() - started < HOOK_BUDGET_MS;) {
         const page = await listEvents(reader, cursor, 50, webhookPrefixes(h.webhookGroups));
         for (const ev of page.items) {
           const r = await postWebhook(h.webhookUrl!, secret, ev);
           if (!r.ok) { failure = r.error ?? 'falha no envio'; break; }
           cursor = ev.id; delivered++;
+          if (Date.now() - started >= HOOK_BUDGET_MS) { partial = true; break; }
         }
-        if (!failure) cursor = page.nextCursor;
+        if (!failure && !partial) cursor = page.nextCursor;
         more = page.hasMore;
       }
       sent += delivered;
       const progress = { webhookCursor: Number(cursor), ...(delivered ? { webhookLastAt: new Date() } : {}), updatedAt: h.updatedAt };
       if (!failure) {
         if (delivered || h.webhookAttempts || Number(cursor) !== (h.webhookCursor ?? 0)) {
-          await db.update(t).set({ ...progress, ...(delivered || h.webhookAttempts ? { webhookStatus: 'ok' } : {}), webhookError: null, webhookFailSince: null, webhookNextAt: null, webhookAttempts: 0 }).where(eq(t.id, h.id));
+          await db.update(t).set({ ...progress, ...(delivered || h.webhookAttempts ? { webhookStatus: 'ok' } : {}), webhookError: null, webhookFailSince: null, webhookNextAt: null, webhookAttempts: 0 }).where(and(eq(t.id, h.id), eq(t.webhookUrl, h.webhookUrl!)));
         }
         continue;
       }
@@ -157,7 +169,7 @@ export async function deliverWebhooks() {
       await db.update(t).set({
         ...progress, webhookStatus: giveUp ? 'stopped' : 'failing', webhookError: failure, webhookFailSince: since, webhookAttempts: attempts,
         webhookNextAt: giveUp ? null : new Date(Date.now() + Math.min(2 ** attempts, 60) * 60_000),
-      }).where(eq(t.id, h.id));
+      }).where(and(eq(t.id, h.id), eq(t.webhookUrl, h.webhookUrl!)));
     }
   } finally { running = false; }
   return { sent, failed };

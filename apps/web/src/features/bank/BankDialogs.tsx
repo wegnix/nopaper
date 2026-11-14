@@ -7,13 +7,14 @@ import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/di
 import { Button, Field, Input, Select, Spinner, Switch, Textarea } from '@/components/ui/base';
 import { BankPicker } from '@/components/ui/bank-picker';
 import { api, del, post, put, errMsg } from '@/lib/api';
-import { useCan } from '@/lib/session';
+import { useCan, useBillText } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
 import { WrongSpaceAlert, WrongSpaceNote, useSpaceGuard } from '@/components/WrongSpace';
 import { useBankImports, type BankAccount, type ReadStatement } from './data';
 
 // ------------------------------------------------------------------ cadastro da conta bancária
 export function AccountDialog({ open, account, onClose, onSaved }: { open: boolean; account: BankAccount | null; onClose: () => void; onSaved: (a: BankAccount) => void }) {
+  const bt = useBillText();
   const qc = useQueryClient();
   const confirm = useConfirm();
   const blank: BankAccountInput = { name: '', bankCode: null, branch: null, accountNumber: null, kind: 'checking', color: 'sky', active: true, notes: null };
@@ -36,7 +37,7 @@ export function AccountDialog({ open, account, onClose, onSaved }: { open: boole
   };
   const remove = async () => {
     if (!account) return;
-    if (!(await confirm({ title: `Apagar ${account.name}?`, tone: 'danger', confirmLabel: 'Apagar', body: 'Apaga a conta e os extratos importados dela. As contas a pagar e a receber não são apagadas. Conta com lançamentos conciliados não pode ser apagada: desative.' }))) return;
+    if (!(await confirm({ title: `Apagar ${account.name}?`, tone: 'danger', confirmLabel: 'Apagar', body: bt('Apaga a conta e os extratos importados dela. As contas a pagar e a receber não são apagadas. Conta com lançamentos conciliados não pode ser apagada: desative.') }))) return;
     try { await del(`/api/bank/accounts/${account.id}`); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Conta bancária apagada'); onClose(); } catch (e) { toast.error(errMsg(e)); }
   };
   const text = (k: 'branch' | 'accountNumber' | 'notes') => (v: string) => setF((p) => ({ ...p, [k]: v || null }));

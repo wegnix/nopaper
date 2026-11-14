@@ -8,7 +8,7 @@ import {
 import { db, schema } from '../db/client.js';
 import { parse } from '../lib/validate.js';
 import { HttpError } from '../lib/errors.js';
-import { attachmentsFor, deleteBillsWithFiles, loadBill, orgToday, seriesRows, visibilityCond, type AttachmentSummary, type BillRow } from '../services/bills.js';
+import { attachmentsFor, deleteBillsWithFiles, loadBill, orgToday, restrictedCategoryIds, seriesRows, visibilityCond, type AttachmentSummary, type BillRow } from '../services/bills.js';
 import { createForward } from '../lib/forward.js';
 import { claimIdempotencyKey, finishIdempotencyKey, releaseIdempotencyKey } from '../services/integrations.js';
 
@@ -19,7 +19,8 @@ import { claimIdempotencyKey, finishIdempotencyKey, releaseIdempotencyKey } from
  * auditoria se comportam igual nos dois caminhos.
  */
 export interface V1Helpers {
-  limited: { config: { rateLimit: object } };
+  /** `never` no tipo: o mesmo gancho serve a rotas com parâmetros diferentes (o tipo do Fastify amarra o gancho à rota). */
+  limited: { config: { rateLimit: false }; onRequest: never };
   need(req: FastifyRequest, ...anyOf: Permission[]): void;
   billV1(b: BillRow, today: string, att?: Partial<Record<AttachmentSlot, AttachmentSummary>>): unknown;
 }
@@ -126,9 +127,15 @@ export function registerV1Writes(app: FastifyInstance, api: FastifyInstance, h: 
     if (wanted.length !== [headExternalId, ...occurrenceIds.slice(1)].filter(Boolean).length) throw new HttpError(400, 'Há externalId repetido nas ocorrências.', 'validation');
 
     // já existe conta com este externalId: devolve a que existe (e a série dela), sem criar outra
-    const seriesOf = async (b: BillRow) => (await seriesRows(db, b)).map((r) => r.id);
+    // a série devolvida passa pelo mesmo filtro de quem lê: sem irmãs de categoria restrita que o token não vê
+    const seriesOf = async (b: BillRow) => {
+      const hidden = req.org!.can('bills.view_restricted') ? [] : await restrictedCategoryIds(req.org!.id);
+      return (await seriesRows(db, b)).filter((r) => !hidden.includes(r.categoryId)).map((r) => r.id);
+    };
     const found = await findByExternalId(req, wanted);
     const head = headExternalId ? found.find((b) => b.externalId === headExternalId) : undefined;
+    // externalId já usado por conta de OUTRO tipo (ex.: uma receita) que este token não pode ver: não devolve a conta
+    if (head && (head.type !== body.type || !req.org!.can(`${head.type}.view` as Permission))) throw externalConflict();
     if (head) return { status: 200, body: { created: false, seriesId: head.parentId ?? (head.recurrenceType !== 'once' ? head.id : null), items: await billsOut(req, await seriesOf(head)) } };
     if (found.length) throw externalConflict();
 
@@ -156,7 +163,7 @@ export function registerV1Writes(app: FastifyInstance, api: FastifyInstance, h: 
         await deleteBillsWithFiles(db, ids);
         if (!isUniqueViolation(e)) throw e;
         const [other] = headExternalId ? await findByExternalId(req, [headExternalId]) : [];
-        if (!other) throw externalConflict();
+        if (!other || other.type !== body.type) throw externalConflict();
         return { status: 200, body: { created: false, seriesId: other.parentId ?? (other.recurrenceType !== 'once' ? other.id : null), items: await billsOut(req, await seriesOf(other)) } };
       }
     }

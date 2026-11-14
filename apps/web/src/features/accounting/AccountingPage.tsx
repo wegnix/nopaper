@@ -22,6 +22,7 @@ import { BillForm } from '@/features/bills/BillForm';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
 import { useAccountantOnly, useAccountingDocs, type AccountingDoc } from './data';
 import { KIND_ICON, docTitle, norm, sentMonth, sizeText, when } from './common';
+import { useProgressive } from '@/lib/useProgressive';
 import { ClientOutbox } from './Exchange';
 
 /**
@@ -63,6 +64,8 @@ export function AccountingPage() {
       && (!kindFilter || d.kind === kindFilter) && (!monthFilter || sentMonth(d.createdAt) === monthFilter)
       && (!t || norm(`${docTitle(d)} ${d.originalName} ${d.note ?? ''} ${d.uploadedByName ?? ''} ${d.detected?.amount ?? ''}`).includes(t)));
   }, [all, q, kindFilter, monthFilter, filter, canReview]);
+  // lista longa (anos de documentos): desenha os primeiros e completa conforme a pessoa rola
+  const prog = useProgressive(list, `${filter}|${q}|${kindFilter}|${monthFilter}`);
   const filtered = !!q.trim() || !!kindFilter || !!monthFilter;
 
   const handle = async (d: AccountingDoc, status: AccountingStatus, billId?: string) => {
@@ -175,8 +178,9 @@ export function AccountingPage() {
             {filtered ? null : canReview ? (all.length ? 'Os documentos já conferidos ficam nos outros filtros.' : 'Quando o contador enviar algo, aparece aqui e você é avisado.') : 'Escolha o tipo acima e envie os PDFs. Tudo o que você enviar fica guardado aqui.'}
           </Empty>
         ) : (
+          <div className="relative">
           <ul className="divide-y divide-line">
-            {list.map((d, idx) => {
+            {prog.visible.map((d, idx) => {
               const Icon = KIND_ICON[d.kind];
               const det = d.detected;
               // histórico de quem envia: separado pelo mês em que foi enviado
@@ -225,6 +229,9 @@ export function AccountingPage() {
               );
             })}
           </ul>
+          {prog.sentinel}
+          {prog.hidden > 0 && <p className="border-t border-line px-4 py-2 text-center text-xs text-faint" aria-live="polite">Carregando mais {prog.hidden.toLocaleString('pt-BR')}…</p>}
+          </div>
         )}
       </Card>}
 

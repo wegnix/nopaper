@@ -105,6 +105,7 @@ export function SignaturesDialog({ open, onClose, periodId, refStr, payMonth }: 
   const whats = async (r: PayslipSignatureRow) => {
     // abre a aba antes de buscar o link: depois de um await o navegador bloqueia a janela nova
     const w = window.open('', '_blank');
+    if (w) w.opener = null; // a aba do WhatsApp não fica com acesso a esta
     try { const url = await linkOf(r); const href = `${whatsappLink(r.phone)}?text=${encodeURIComponent(message(r, url))}`; if (w) w.location.href = href; else window.location.href = href; }
     catch (e) { w?.close(); toast.error(errMsg(e)); }
   };

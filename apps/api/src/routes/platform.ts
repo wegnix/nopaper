@@ -134,10 +134,12 @@ export default async function platformRoutes(app: FastifyInstance) {
   });
   app.put<{ Params: { orgId: string } }>('/api/system/orgs/:orgId/storage', guard, async (req) => {
     const body = parse(z.object({ quotaMb: z.number().int().min(100, 'Mínimo de 100 MB').max(10_000_000).nullable() }), req.body);
-    const [o] = await db.update(schema.organizations).set({ storageQuotaMb: body.quotaMb }).where(eq(schema.organizations.id, req.params.orgId)).returning({ id: schema.organizations.id, name: schema.organizations.name });
+    // cota de espaço privado: só quem o administra (um limite baixo travaria os envios de um espaço que a plataforma não alcança)
+    assertOrgOpenToPlatform(await privacyFor(req.user!.id), req.params.orgId);
+    const [o] = await db.update(schema.organizations).set({ storageQuotaMb: body.quotaMb }).where(eq(schema.organizations.id, req.params.orgId)).returning({ id: schema.organizations.id, name: schema.organizations.name, isPrivate: schema.organizations.isPrivate });
     if (!o) throw notFound('Espaço não encontrado');
-    // a auditoria da plataforma é lida pelos outros administradores: não leva o nome de um espaço privado
-    const label = (await privacyFor(req.user!.id)).hidden.has(o.id) ? 'um espaço privado' : o.name;
+    // a auditoria da plataforma é lida por todos os administradores dela: nunca leva o nome de um espaço privado
+    const label = o.isPrivate ? 'um espaço privado' : o.name;
     await audit(req, { action: 'platform.storage_quota', entityType: 'organization', entityId: o.id, description: `Definiu a cota de armazenamento de ${label}: ${body.quotaMb ? `${body.quotaMb} MB` : 'padrão'}`, details: { quotaMb: body.quotaMb } });
     return { ok: true };
   });
@@ -199,9 +201,10 @@ export default async function platformRoutes(app: FastifyInstance) {
       if (!n) throw badRequest('Precisa haver pelo menos um administrador da plataforma ativo');
     }
     const view = await privacyFor(req.user!.id);
-    const orgs = (await db.select({ id: schema.organizations.id, name: schema.organizations.name, isOwner: schema.memberships.isOwner }).from(schema.memberships)
+    // os nomes vão para a mensagem e para a auditoria da plataforma (lida por todos os administradores dela): privado nunca aparece
+    const orgs = (await db.select({ id: schema.organizations.id, name: schema.organizations.name, isOwner: schema.memberships.isOwner, isPrivate: schema.organizations.isPrivate }).from(schema.memberships)
       .innerJoin(schema.organizations, eq(schema.organizations.id, schema.memberships.orgId)).where(eq(schema.memberships.userId, cur.id)))
-      .map((o) => ({ ...o, name: view.hidden.has(o.id) ? PRIVATE_SPACE_LABEL : o.name }));
+      .map(({ isPrivate, ...o }) => ({ ...o, name: isPrivate ? PRIVATE_SPACE_LABEL : o.name }));
     // remover a conta tiraria a pessoa de um espaço privado que a plataforma não administra
     if (orgs.some((o) => view.locked.has(o.id))) throw new HttpError(403, `${cur.name} participa de um espaço privado: a plataforma não pode tirá-la de lá. Desative a conta em vez de remover.`, 'private_space');
     const owned = orgs.filter((o) => o.isOwner).map((o) => o.name);
@@ -226,10 +229,11 @@ export default async function platformRoutes(app: FastifyInstance) {
   /** scope=platform (padrão): logins e configurações da plataforma; scope=all: tudo, de todos os espaços. */
   app.get<{ Querystring: AuditQuery & { scope?: string } }>('/api/system/audit', guard, async (req) => {
     const all = req.query.scope === 'all';
-    return queryAudit(all ? 'all' : 'platform', req.query, false, 100, null, all ? [...(await privacyFor(req.user!.id)).hidden] : []);
+    // privados que quem olha não ADMINISTRA ficam de fora (membro comum usa a Auditoria do espaço, com os filtros dele)
+    return queryAudit(all ? 'all' : 'platform', req.query, false, 100, null, all ? [...(await privacyFor(req.user!.id)).locked] : []);
   });
   app.get<{ Querystring: { scope?: string } }>('/api/system/audit/users', guard, async (req) => {
     const all = req.query.scope === 'all';
-    return { items: await auditUsers(all ? 'all' : 'platform', all ? [...(await privacyFor(req.user!.id)).hidden] : []) };
+    return { items: await auditUsers(all ? 'all' : 'platform', all ? [...(await privacyFor(req.user!.id)).locked] : []) };
   });
 }

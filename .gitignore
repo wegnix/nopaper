@@ -16,3 +16,9 @@ pre-restore-*.dump
 # holerites e backups copiados para a raiz (dados reais)
 /*.pdf
 /nopaper-*.tar.gz
+# extratos, cópias do banco e amostras de documentos (dados reais): nunca entram
+*.ofx
+*.dump
+/amostras-*/
+# scripts temporários de teste
+apps/api/src/scripts/_tmp-*

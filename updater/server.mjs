@@ -197,6 +197,7 @@ createServer(async (req, res) => {
       const tag = (() => { try { return JSON.parse(raw).version; } catch { return null; } })();
       if (typeof tag !== 'string' || !TAG_RE.test(tag)) return send(res, 400, { error: 'versão inválida' });
       if (state.state === 'running') return send(res, 409, { error: 'já existe uma atualização em andamento' });
+      state.state = 'running'; // já aqui: dois pedidos quase juntos (duplo clique) não podem começar duas atualizações
       void update(tag);
       return send(res, 202, { started: true });
     }

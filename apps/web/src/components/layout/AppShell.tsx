@@ -144,7 +144,8 @@ export function AppShell() {
   }, [accountantOnly]);
   useEffect(() => setDrawer(false), [loc.pathname]);
   // embutido em outro sistema: avisa em que tela está, para o menu de lá acompanhar
-  useEffect(() => notifyHost(loc.pathname + loc.search), [loc.pathname, loc.search]);
+  // só o caminho: a busca digitada e os filtros (que iam junto em `search`) não saem do NoPaper
+  useEffect(() => notifyHost(loc.pathname), [loc.pathname]);
   // servidor atualizado e este front ainda é o antigo (aba aberta ou PWA em cache): oferece recarregar
   const serverVersion = useSession((s) => s.serverVersion);
   useEffect(() => {

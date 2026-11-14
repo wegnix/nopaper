@@ -91,7 +91,7 @@ export interface Unlocked {
  * Se o PDF pede senha, tenta a senha digitada (`typed`) e depois as regras do espaço. Qualquer
  * problema (sem qpdf, arquivo estranho, demora) devolve o arquivo como veio, com `open`.
  */
-export async function unlockPdf(orgId: string, buf: Buffer, typed?: string | null): Promise<Unlocked> {
+export async function unlockPdf(orgId: string, buf: Buffer, typed?: string | null, cleanOnly = false): Promise<Unlocked> {
   const same: Unlocked = { buf, state: 'open', by: null };
   let dir: string | null = null;
   try {
@@ -105,7 +105,8 @@ export async function unlockPdf(orgId: string, buf: Buffer, typed?: string | nul
       // a senha vai por arquivo (não aparece na lista de processos)
       await writeFile(pw, c.password, { mode: 0o600 });
       const rc = await qpdf([`--password-file=${pw}`, '--decrypt', src, out]);
-      if (rc === 0 || rc === 3) {
+      // `cleanOnly` (troca do arquivo já guardado): só vale a saída sem avisos — com aviso o qpdf pode ter "consertado" o PDF descartando partes
+      if (rc === 0 || (rc === 3 && !cleanOnly)) {
         const open = await readFile(out).catch(() => null);
         if (open?.length && open.subarray(0, 5).toString('latin1') === '%PDF-') return { buf: open, state: 'unlocked', by: c.name };
       }
@@ -140,14 +141,18 @@ export async function unlockStoredPdfs(orgId: string): Promise<{ checked: number
       if ((await qpdf(['--requires-password', file])) !== 0) continue;
       const buf = await readFile(file).catch(() => null);
       if (!buf) continue;
-      const u = await unlockPdf(orgId, buf);
+      const u = await unlockPdf(orgId, buf, null, true);
       if (u.state === 'locked') stillLocked++;
       if (u.state !== 'unlocked') continue;
-      const tmp = `${file}.unlock-${randomUUID()}`;
+      // temporário oculto, como os de envio (`.up-*`), para não ser confundido com anexo se sobrar de uma queda
+      const tmp = path.join(path.dirname(file), `.unlock-${randomUUID()}`);
       try {
-        await writeFile(tmp, u.buf, { mode: 0o600 });
+        await writeFile(tmp, u.buf, { mode: 0o640 });
+        // grava primeiro a linha (só se o anexo ainda for este arquivo); se ele foi trocado ou apagado neste meio-tempo, não mexe em nada
+        const [row] = await db.update(t).set({ size: u.buf.length, sha256: createHash('sha256').update(u.buf).digest('hex') })
+          .where(and(eq(t.id, r.id), eq(t.storageKey, r.key))).returning({ id: t.id });
+        if (!row) { await rm(tmp, { force: true }); continue; }
         await rename(tmp, file);
-        await db.update(t).set({ size: u.buf.length, sha256: createHash('sha256').update(u.buf).digest('hex') }).where(eq(t.id, r.id));
         unlocked++;
       } catch { await rm(tmp, { force: true }).catch(() => undefined); stillLocked++; }
     }

@@ -1,5 +1,6 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
-import { billNames, type BillType, type Permission } from '@nopaper/shared';
+import { billNames, billTerms, type BillType, type Permission } from '@nopaper/shared';
 import { EMBEDDED } from './embed';
 
 export interface SessionUser {
@@ -91,8 +92,16 @@ export function useBillNames() {
   return (type: BillType) => billNames(type, kind);
 }
 
+/** Troca "Contas a pagar/receber" por "Despesas/Receitas" num texto, quando o espaço é Pessoal. */
+export function useBillText() {
+  const kind = useOrg()?.kind;
+  return (text: string) => (kind === 'personal' ? billTerms(text.replace(/contas a pagar e a receber/g, 'despesas e receitas'), kind) : text);
+}
+
 /** O que a pessoa pode fazer com contas a pagar/receber neste espaço. */
 export function useBillPerms(type: 'payable' | 'receivable'): BillPerms {
   const can = useCan();
-  return { view: can(`${type}.view`), create: can(`${type}.create`), edit: can(`${type}.edit`), pay: can(`${type}.pay`), delete: can(`${type}.delete`) };
+  const view = can(`${type}.view`), create = can(`${type}.create`), edit = can(`${type}.edit`), pay = can(`${type}.pay`), del = can(`${type}.delete`);
+  // mesmo objeto enquanto as permissões não mudam: as linhas das listas são `memo` e recebem isto
+  return useMemo(() => ({ view, create, edit, pay, delete: del }), [view, create, edit, pay, del]);
 }

@@ -62,6 +62,9 @@ export function auditAreasFor(org: { isAdmin: boolean; can(p: Permission): boole
   return Object.entries(AREA_PERMS).filter(([, perms]) => perms.some((p) => org.can(p))).map(([area]) => area);
 }
 
+/** Fuso que o banco conhece (um nome só com o formato certo, mas inexistente, virava erro 500). */
+const knownZone = (tz: string) => { try { new Intl.DateTimeFormat('en', { timeZone: tz }); return true; } catch { return false; } };
+
 export async function queryAudit(scope: string | 'platform' | 'all', f: AuditQuery, hideRestricted: boolean, limit = 100, allowedAreas: string[] | null = null, excludeOrgs: string[] = []) {
   const t = schema.auditLogs;
   const conds = [];
@@ -78,7 +81,7 @@ export async function queryAudit(scope: string | 'platform' | 'all', f: AuditQue
     const term = `%${f.q.trim().toLowerCase().slice(0, 100)}%`;
     conds.push(sql`(lower(coalesce(${t.description}, '')) like ${term} or lower(${t.action}) like ${term} or lower(coalesce(${t.userName}, '')) like ${term} or lower(coalesce(${t.details}::text, '')) like ${term})`);
   }
-  const tz = f.tz && /^[A-Za-z_]+\/[A-Za-z_\/]+$/.test(f.tz) ? f.tz : 'America/Sao_Paulo';
+  const tz = f.tz && /^[A-Za-z_]+\/[A-Za-z_\/]+$/.test(f.tz) && knownZone(f.tz) ? f.tz : 'America/Sao_Paulo';
   if (f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from)) conds.push(sql`${t.createdAt} >= (${f.from}::date)::timestamp at time zone ${tz}`);
   if (f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to)) conds.push(sql`${t.createdAt} < (${f.to}::date + 1)::timestamp at time zone ${tz}`);
   if (allowedAreas) conds.push(allowedAreas.length ? inArray(sql<string>`split_part(${t.action}, '.', 1)`, allowedAreas) : sql`false`);
@@ -93,9 +96,13 @@ export async function queryAudit(scope: string | 'platform' | 'all', f: AuditQue
 }
 
 /** Quem aparece na auditoria do escopo (para o filtro por pessoa). */
-export async function auditUsers(scope: string | 'platform' | 'all', excludeOrgs: string[] = []) {
+export async function auditUsers(scope: string | 'platform' | 'all', excludeOrgs: string[] = [], allowedAreas: string[] | null = null, hideRestricted = false) {
   const t = schema.auditLogs;
-  const where = scope === 'platform' ? isNull(t.orgId) : scope === 'all' ? (excludeOrgs.length ? or(isNull(t.orgId), notInArray(t.orgId, excludeOrgs)) : undefined) : eq(t.orgId, scope);
+  const base = scope === 'platform' ? isNull(t.orgId) : scope === 'all' ? (excludeOrgs.length ? or(isNull(t.orgId), notInArray(t.orgId, excludeOrgs)) : undefined) : eq(t.orgId, scope);
+  // os mesmos filtros da lista: quem não vê uma área (ou as restritas) não vê quem agiu nela
+  const where = and(base,
+    allowedAreas ? (allowedAreas.length ? inArray(sql<string>`split_part(${t.action}, '.', 1)`, allowedAreas) : sql`false`) : undefined,
+    hideRestricted ? sql`coalesce((${t.details}->>'restricted')::boolean, false) = false` : undefined);
   const rows = await db.selectDistinctOn([t.userId], { id: t.userId, name: t.userName }).from(t).where(where).orderBy(t.userId, sql`${t.id} desc`);
   return rows.filter((r) => r.id).map((r) => ({ id: r.id!, name: r.name ?? '—' })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }

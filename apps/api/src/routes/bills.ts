@@ -6,9 +6,9 @@ import {
   billPerm, isPeriodic,
 } from '@nopaper/shared';
 import { z } from 'zod';
-import { db, schema } from '../db/client.js';
+import { db, schema, type DBOrTx } from '../db/client.js';
 import { parse } from '../lib/validate.js';
-import { badRequest, forbidden } from '../lib/errors.js';
+import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { requireOrg } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
 import {
@@ -18,6 +18,16 @@ import {
 } from '../services/bills.js';
 
 const typeLabel = (t: string) => (t === 'payable' ? 'conta a pagar' : 'conta a receber');
+
+/**
+ * Reestruturar ou parar uma série apaga as ocorrências pendentes. Quem só pode EDITAR faz isso, mas
+ * não quando alguma delas tem anexo (boleto, nota): aí é apagar documento, e exige a permissão de apagar.
+ */
+async function assertCanDropFiles(req: FastifyRequest, b: { type: string }, ids: string[], conn: DBOrTx) {
+  if (!ids.length || req.org!.can(billPerm(b.type as BillType, 'delete'))) return;
+  const [{ n }] = await conn.select({ n: sql<number>`count(*)::int` }).from(schema.attachments).where(inArray(schema.attachments.billId, ids));
+  if (n > 0) throw forbidden('Há ocorrências com anexos que seriam apagadas. Só quem pode apagar contas faz esta mudança.');
+}
 
 export default async function billRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireOrg);
@@ -155,7 +165,13 @@ export default async function billRoutes(app: FastifyInstance) {
     const b = await loadBill(req, req.params.id, 'pay');
     const [u] = await db.update(schema.bills).set({
       status: 'paid', paidAt: body.paidAt ?? orgToday(req), paidAmount: body.paidAmount ?? b.paidAmount ?? b.amount,
-    }).where(eq(schema.bills.id, b.id)).returning();
+    }).where(and(eq(schema.bills.id, b.id), eq(schema.bills.status, 'pending'))).returning();
+    // já estava paga (clique duplo, integração repetindo a chamada): fica como está — a data do pagamento não é regravada
+    if (!u) {
+      const [cur] = await db.select().from(schema.bills).where(eq(schema.bills.id, b.id));
+      if (!cur) throw notFound('Conta não encontrada');
+      return serialize(cur, (await attachmentsFor([b.id])).get(b.id));
+    }
     await audit(req, {
       action: `${b.type}.pay`, entityType: 'bill', entityId: b.id,
       description: `Marcou ${b.type === 'payable' ? 'paga' : 'recebida'} "${b.description}" em ${u.paidAt}`,
@@ -201,7 +217,9 @@ export default async function billRoutes(app: FastifyInstance) {
     const out = await db.transaction(async (tx) => {
       const kids = await tx.select().from(schema.bills).where(eq(schema.bills.parentId, b.id));
       const paidPreserved = kids.filter((k) => k.status === 'paid').length;
-      await deleteBillsWithFiles(tx, kids.filter((k) => k.status !== 'paid').map((k) => k.id));
+      const gone = kids.filter((k) => k.status !== 'paid').map((k) => k.id);
+      await assertCanDropFiles(req, b, gone, tx);
+      await deleteBillsWithFiles(tx, gone);
       const [head] = await tx.update(schema.bills).set({
         recurrenceType: body.recurrenceType, dueDate: plan[0].dueDate, amount: plan[0].amount,
         installmentNumber: plan[0].installmentNumber, totalInstallments: plan[0].totalInstallments,
@@ -230,6 +248,7 @@ export default async function billRoutes(app: FastifyInstance) {
         // preserva a ocorrência selecionada
         ne(schema.bills.id, b.id),
       ));
+      await assertCanDropFiles(req, b, rows.map((r) => r.id), tx);
       const n = await deleteBillsWithFiles(tx, rows.map((r) => r.id));
       await tx.update(schema.bills).set({ isIndefinite: false }).where(eq(schema.bills.id, headId));
       return n;

@@ -36,7 +36,31 @@ function cellValue(v: ExcelJS.CellValue): ImportCell {
   return String(v);
 }
 
+/**
+ * Tamanho que o .xlsx ocupa aberto, somando o que o índice do ZIP declara. Um arquivo de poucos MB
+ * pode declarar vários GB (XML repetitivo), e a biblioteca monta tudo na memória antes dos nossos
+ * limites de linhas. null = índice ilegível (ZIP64 ou arquivo estranho).
+ */
+export function zipDeclaredSize(buf: Buffer): number | null {
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (eocd < 0 || eocd + 22 > buf.length) return null;
+  const count = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16), total = 0;
+  if (count === 0xffff || p === 0xffffffff) return null;
+  for (let i = 0; i < count; i++) {
+    if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) return null;
+    const size = buf.readUInt32LE(p + 24);
+    if (size === 0xffffffff) return null;
+    total += size;
+    p += 46 + buf.readUInt16LE(p + 28) + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
+  }
+  return total;
+}
+const XLSX_MAX_OPEN_BYTES = 150 * 1024 * 1024;
+
 async function readXlsx(buf: Buffer): Promise<ImportSheet[]> {
+  const open = zipDeclaredSize(buf);
+  if (open === null || open > XLSX_MAX_OPEN_BYTES) throw badRequest('Esta planilha é grande demais para importar. Divida em arquivos menores (por ano, por exemplo).');
   const wb = new ExcelJS.Workbook();
   try { await wb.xlsx.load(buf as unknown as ArrayBuffer); } catch { throw badRequest('Não foi possível ler a planilha. Confira se o arquivo é um .xlsx válido.'); }
   const sheets: ImportSheet[] = [];

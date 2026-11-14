@@ -15,7 +15,11 @@ export function FileViewer({ target, onClose }: { target: Target | null; onClose
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setData(null); setError(null);
-    if (target) get<{ url: string; downloadUrl: string; mime: string; name: string }>(target.urlPath ?? `/api/attachments/${target.attachmentId}/url`).then(setData).catch((e) => setError(errMsg(e)));
+    // abrir um arquivo e logo outro: a resposta do primeiro não pode aparecer com o título do segundo
+    let stale = false;
+    if (target) get<{ url: string; downloadUrl: string; mime: string; name: string }>(target.urlPath ?? `/api/attachments/${target.attachmentId}/url`)
+      .then((d) => { if (!stale) setData(d); }).catch((e) => { if (!stale) setError(errMsg(e)); });
+    return () => { stale = true; };
   }, [target]);
 
   const isImage = !!data?.mime.startsWith('image/');

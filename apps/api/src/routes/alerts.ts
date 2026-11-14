@@ -27,7 +27,9 @@ export default async function alertRoutes(app: FastifyInstance) {
       telegramReady: !!tg?.tokenEnc, botUsername: tg?.botUsername ?? null,
       smtpReady: !!(await smtpConfig()),
       deliveries: deliveries.map((d) => ({ id: d.id, channel: d.channel, target: d.target, status: d.status, items: d.items, test: d.test, error: d.error, createdAt: d.createdAt })),
-      pendingLink: pendingLink && pendingLink.expiresAt > Date.now() ? pendingLink.code : null,
+      // o código de vínculo do Telegram só vai para quem pode receber o resumo (senão outra pessoa com
+      // "gerenciar alertas" o usaria para ligar o próprio chat e receber as contas que não pode ver)
+      pendingLink: pendingLink && pendingLink.expiresAt > Date.now() && canReceive(req, cfg) ? pendingLink.code : null,
     };
   });
 
@@ -42,6 +44,7 @@ export default async function alertRoutes(app: FastifyInstance) {
       throw forbidden('Só quem pode ver as contas que entram no resumo (e as categorias restritas, se incluídas) escolhe quem recebe os alertas.');
     }
   };
+  const canReceive = (req: FastifyRequest, cfg: Parameters<typeof assertCanReceive>[1]) => { try { assertCanReceive(req, cfg); return true; } catch { return false; } };
 
   app.put('/api/alerts', guard, async (req) => {
     const body = parse(alertConfigSchema, req.body);

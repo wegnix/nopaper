@@ -30,7 +30,7 @@ test('findBoletoInText: números que fecham os DVs por acaso não viram boleto (
   assert.equal(fake.valid, true);
   assert.equal(findBoletoInText(`Chave de acesso e outros números ${fake.line} fim`), null);
   assert.equal(findBoletoInText(`123 ${fake.line.replace(/\D/g, '')} 456`), null);
-  assert.equal(findBoletoInText('CNPJ 12.345.678/0001-90 fone (43) 3242-0000 CEP 86130-000'), null);
+  assert.equal(findBoletoInText('CNPJ 12.345.678/0001-90 fone (11) 3000-0000 CEP 01000-000'), null);
 });
 
 test('arrecadação: o DV geral do código de barras também tem de fechar', () => {

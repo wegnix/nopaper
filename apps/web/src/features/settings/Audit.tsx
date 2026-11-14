@@ -95,7 +95,8 @@ function AuditView({ endpoint, usersEndpoint, areas, title, subtitle, showOrg, e
   const toggle = (id: number) => { const s = new Set(open); if (s.has(id)) s.delete(id); else s.add(id); setOpen(s); };
 
   const exportCsv = () => {
-    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    // texto que começa com = + - @ ganha um apóstrofo: a planilha não o executa como fórmula
+    const esc = (v: unknown) => { const s = String(v ?? ''); return `"${(/^[=+\-@\t\r]/.test(s) ? `'${s}` : s).replace(/"/g, '""')}"`; };
     const head = ['data', ...(showOrg ? ['espaço'] : []), 'pessoa', 'ação', 'descrição', 'ip', 'navegador', 'detalhes'];
     const lines = rows.map((r) => [new Date(r.createdAt).toLocaleString('pt-BR'), ...(showOrg ? [r.orgName ?? ''] : []), r.userName ?? 'sistema', r.action, r.description ?? '', r.ip ?? '', shortUA(r.userAgent) ?? '', r.details ? JSON.stringify(r.details) : ''].map(esc).join(';'));
     downloadBlob(new Blob(['﻿' + [head.join(';'), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' }), `auditoria-${new Date().toISOString().slice(0, 10)}.csv`);

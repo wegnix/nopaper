@@ -298,8 +298,24 @@ export async function deleteBillsWithFiles(conn: DBOrTx, ids: string[]) {
   const files = await conn.select({ key: schema.attachments.storageKey }).from(schema.attachments).where(inArray(schema.attachments.billId, ids));
   // filhas apontando para cabeças apagadas viram órfãs (FK set null) — tratado por quem chama
   const deleted = await conn.delete(schema.bills).where(inArray(schema.bills.id, ids)).returning({ id: schema.bills.id });
-  await Promise.all(files.map((f) => deleteFile(f.key)));
+  removeFilesLater(files.map((f) => f.key));
   return deleted.length;
+}
+
+/**
+ * Os arquivos só saem do disco depois que a exclusão valeu. Quem chama costuma estar dentro de uma
+ * transação: se ela falhar adiante, as linhas dos anexos voltam — e os arquivos precisam estar lá.
+ * Por isso a remoção espera um pouco e confere, fora da transação, que nenhuma linha aponta mais
+ * para o arquivo (uma queda nesse intervalo só deixa um arquivo sobrando, nunca um anexo sem arquivo).
+ */
+function removeFilesLater(keys: string[], delayMs = 5000) {
+  if (!keys.length) return;
+  setTimeout(() => {
+    void (async () => {
+      const still = new Set((await db.select({ key: schema.attachments.storageKey }).from(schema.attachments).where(inArray(schema.attachments.storageKey, keys))).map((r) => r.key));
+      await Promise.all(keys.filter((k) => !still.has(k)).map((k) => deleteFile(k)));
+    })().catch(() => undefined);
+  }, delayMs).unref();
 }
 
 // ------------------------------------------------------------------ recorrência indefinida

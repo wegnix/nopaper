@@ -39,6 +39,9 @@ const serialize = (r: Row, phone: string | null): PayslipSignatureRow => ({
   sentToAccountantAt: r.sentToAccountantAt?.toISOString() ?? null,
 });
 
+/** Primeiro nome sem acento e em minúsculas, para comparar o holerite com o cadastro. */
+const firstName = (n: string | null | undefined) => (n ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().split(/\s+/)[0] ?? '';
+
 export default async function esignRoutes(app: FastifyInstance) {
   const guard = (p: 'payroll.view' | 'payroll.edit') => ({ preHandler: [requirePerm(p), async (req: FastifyRequest) => { assertCompany(req); }] });
   const view = guard('payroll.view'), edit = guard('payroll.edit');
@@ -157,10 +160,19 @@ export default async function esignRoutes(app: FastifyInstance) {
       const emp = employees.find((e) => e.payslipCode === slip.code);
       if (!emp) { skipped.push({ name: slip.name, reason: `nenhum funcionário com a matrícula ${slip.code} (importe os holerites na folha ou preencha a matrícula no cadastro)` }); continue; }
       let cpf = digits(emp.document);
+      const fromSlip = digits(slip.document);
+      const slipCpf = fromSlip.length === 11 && isValidCPF(fromSlip) ? fromSlip : null;
+      // a matrícula sozinha não basta (1, 2, 3… repetem entre empresas e podem ser reaproveitadas): o holerite só vai
+      // para o link da pessoa se o CPF do PDF for o dela ou, sem CPF no PDF, se o primeiro nome for o mesmo
+      if (cpf.length === 11 && isValidCPF(cpf) && slipCpf && slipCpf !== cpf) {
+        skipped.push({ name: emp.name, reason: `o holerite da matrícula ${slip.code} traz o CPF de outra pessoa (${slip.name}); confira a matrícula no cadastro` }); continue;
+      }
+      if (!slipCpf && firstName(slip.name) !== firstName(emp.name)) {
+        skipped.push({ name: emp.name, reason: `o holerite da matrícula ${slip.code} está em nome de ${slip.name}; confira a matrícula no cadastro` }); continue;
+      }
       if (!(cpf.length === 11 && isValidCPF(cpf))) {
-        const fromSlip = digits(slip.document);
         // o CPF é o que abre o link: gravar no cadastro o que veio do PDF é coisa de quem gerencia a folha
-        if (fromSlip.length === 11 && isValidCPF(fromSlip) && req.org!.can('payroll.manage')) {
+        if (slipCpf && req.org!.can('payroll.manage')) {
           cpf = fromSlip;
           emp.document = formatDocument(fromSlip);
           await db.update(schema.employees).set({ document: emp.document }).where(eq(schema.employees.id, emp.id));
@@ -171,7 +183,10 @@ export default async function esignRoutes(app: FastifyInstance) {
       const saved = await saveFile(orgId, pdf, 'pdf');
       const base = { employeeName: emp.name, employeeDocument: formatDocument(cpf), net: slip.net, slip: slip as unknown as Record<string, unknown>, storageKey: saved.key, sha256: saved.sha256, size: pdf.length, periodId: p.id };
       if (old) {
-        await db.update(schema.payslipSignatures).set({ ...base, viewedAt: null, failedAttempts: 0, lockedUntil: null }).where(eq(schema.payslipSignatures.id, old.id));
+        // só troca o arquivo de quem continua pendente: se a pessoa assinou neste meio-tempo, o assinado fica como está
+        const [done] = await db.update(schema.payslipSignatures).set({ ...base, viewedAt: null, failedAttempts: 0, lockedUntil: null })
+          .where(and(eq(schema.payslipSignatures.id, old.id), eq(schema.payslipSignatures.status, 'pending'))).returning({ id: schema.payslipSignatures.id });
+        if (!done) { await deleteFile(saved.key); skipped.push({ name: emp.name, reason: 'já assinou o holerite deste mês' }); continue; }
         await deleteFile(old.storageKey);
         updated++;
       } else {
@@ -213,7 +228,8 @@ export default async function esignRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>('/api/payroll/signatures/:id', edit, async (req) => {
     const r = await loadRow(req, req.params.id);
     if (r.status === 'signed') throw conflict('Este documento já foi assinado e não pode ser cancelado.');
-    await db.delete(schema.payslipSignatures).where(eq(schema.payslipSignatures.id, r.id));
+    const [removed] = await db.delete(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.id, r.id), eq(schema.payslipSignatures.status, 'pending'))).returning({ id: schema.payslipSignatures.id });
+    if (!removed) throw conflict('Este documento já foi assinado e não pode ser cancelado.');
     await deleteFile(r.storageKey);
     await audit(req, { action: 'payroll.esign.cancel', entityType: 'payslip_signature', entityId: r.id, description: `Cancelou o envio d${what(r)} de ${r.employeeName} para assinatura` });
     return { ok: true };
@@ -255,8 +271,11 @@ export default async function esignRoutes(app: FastifyInstance) {
     if (!org) throw gone();
     return { r, org };
   };
+  // a chave vale para ESTE arquivo: se o holerite for reenviado (outro PDF) depois de aberto, a pessoa informa o
+  // CPF de novo e vê o arquivo novo antes de assinar — nunca assina um documento que não viu
+  const keyId = (r: Row) => `esign:${r.id}:${r.sha256}`;
   const checkKey = (r: Row, key: string | undefined) => {
-    if (!key || !verifyFileToken(`esign:${r.id}`, key)) throw new HttpError(401, 'Sua sessão expirou. Informe o CPF de novo.', 'esign_expired');
+    if (!key || !verifyFileToken(keyId(r), key)) throw new HttpError(401, 'Sua sessão expirou. Informe o CPF de novo.', 'esign_expired');
   };
 
   /** Antes do CPF: só o nome da empresa, o primeiro nome e o mês. */
@@ -281,7 +300,7 @@ export default async function esignRoutes(app: FastifyInstance) {
     }
     await db.update(schema.payslipSignatures).set({ failedAttempts: 0, viewedAt: r.viewedAt ?? new Date() }).where(eq(schema.payslipSignatures.id, r.id));
     const [emp] = r.employeeId ? await db.select().from(schema.employees).where(eq(schema.employees.id, r.employeeId)) : [];
-    const base = { key: signFileToken(`esign:${r.id}`, 30 * 60), kind: r.kind as EsignKind, company: legalName(org), employeeName: r.employeeName, competence: r.competence, status: r.status as EsignOpened['status'], signedAt: r.signedAt?.toISOString() ?? null };
+    const base = { key: signFileToken(keyId(r), 30 * 60), kind: r.kind as EsignKind, company: legalName(org), employeeName: r.employeeName, competence: r.competence, status: r.status as EsignOpened['status'], signedAt: r.signedAt?.toISOString() ?? null };
     if (r.kind === 'term') {
       const t = r.slip as { term?: string[] };
       return { ...base, net: '0.00', totalEarnings: '0.00', totalDeductions: '0.00', items: [], termPending: false, termToken: null, term: t.term ?? [] };
@@ -343,8 +362,9 @@ export default async function esignRoutes(app: FastifyInstance) {
     // só uma assinatura vale: a troca de pending → signed é a trava
     const done = await db.update(schema.payslipSignatures)
       .set({ status: 'signed', signedKey: saved.key, signedSha256: saved.sha256, signedSize: pdf.length, signedAt: now, signerIp: ip, signerUa: ua, termVersion: ESIGN_TERM_VERSION })
-      .where(and(eq(schema.payslipSignatures.id, r.id), eq(schema.payslipSignatures.status, 'pending'))).returning({ id: schema.payslipSignatures.id });
-    if (!done.length) { await deleteFile(saved.key); throw conflict('Este documento já foi assinado.'); }
+      // … e só sobre o arquivo que foi lido acima (se a empresa reenviou outro PDF neste instante, a assinatura não vale)
+      .where(and(eq(schema.payslipSignatures.id, r.id), eq(schema.payslipSignatures.status, 'pending'), eq(schema.payslipSignatures.sha256, r.sha256))).returning({ id: schema.payslipSignatures.id });
+    if (!done.length) { await deleteFile(saved.key); throw conflict('Este documento mudou ou já foi assinado. Abra o link de novo.'); }
     if (term && emp) await db.update(schema.employees).set({ esignAcceptedAt: now, esignTermVersion: ESIGN_TERM_VERSION, esignAcceptedIp: ip }).where(eq(schema.employees.id, emp.id));
     await audit(req, {
       orgId: r.orgId, action: 'payroll.esign.signed', entityType: 'payslip_signature', entityId: r.id,

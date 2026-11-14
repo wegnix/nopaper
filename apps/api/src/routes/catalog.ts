@@ -6,6 +6,10 @@ import { parse } from '../lib/validate.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
+import { getPayrollSettings } from '../services/payroll.js';
+
+/** É a categoria em que a folha lança os salários? (só espaço Empresa tem folha) */
+const isPayrollCategory = async (org: { id: string; kind: string }, categoryId: string) => org.kind === 'company' && (await getPayrollSettings(org.id)).categoryId === categoryId;
 
 const anyView = requirePerm('payable.view', 'receivable.view', 'cards.view', 'reports.view');
 
@@ -44,6 +48,8 @@ export default async function catalogRoutes(app: FastifyInstance) {
       const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.bills).where(eq(schema.bills.categoryId, c.id));
       // regra herdada do sistema anterior: nunca tornar restrita uma categoria que já tem contas (evita vazamento retroativo)
       if (body.isRestricted && n > 0) throw badRequest(`Categoria em uso por ${n} conta(s). Crie uma nova categoria restrita em vez de converter esta.`);
+      // a categoria dos salários é sempre restrita (regra da folha): tirar a marca aqui mostraria os salários a quem vê contas a pagar
+      if (!body.isRestricted && await isPayrollCategory(req.org!, c.id)) throw badRequest('Esta é a categoria das contas de salário da folha: ela precisa continuar restrita. Para usar outra, troque em Folha → Configurar.');
     }
     if (body.label && body.label.toLowerCase() !== c.label.toLowerCase()) {
       const [dup] = await db.select().from(schema.categories)
@@ -60,6 +66,9 @@ export default async function catalogRoutes(app: FastifyInstance) {
     if (!c || (c.isRestricted && !req.org!.can('bills.view_restricted'))) throw notFound('Categoria não encontrada');
     const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.bills).where(eq(schema.bills.categoryId, c.id));
     if (n > 0) throw badRequest(`Categoria em uso por ${n} conta(s). Mova ou apague essas contas antes.`);
+    const [{ cards }] = await db.select({ cards: sql<number>`count(*)::int` }).from(schema.cards).where(eq(schema.cards.billCategoryId, c.id));
+    if (cards > 0) throw badRequest(`Categoria usada pela fatura de ${cards} cartão(ões). Troque a categoria no cadastro do cartão antes.`);
+    if (await isPayrollCategory(req.org!, c.id)) throw badRequest('Esta é a categoria das contas de salário da folha. Troque em Folha → Configurar antes de apagar.');
     await db.delete(schema.categories).where(eq(schema.categories.id, c.id));
     await audit(req, { action: 'category.delete', entityType: 'category', entityId: c.id, description: `Apagou categoria ${c.label}`, details: { restricted: c.isRestricted } });
     return { ok: true };

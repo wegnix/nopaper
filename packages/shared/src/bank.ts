@@ -137,7 +137,7 @@ export const BANK_NAMES: Record<string, string> = {
   '336': 'C6 Bank', '341': 'Itaú', '380': 'PicPay', '403': 'Cora', '422': 'Safra', '655': 'Votorantim', '748': 'Sicredi', '756': 'Sicoob',
 };
 export const bankName = (code: string | null | undefined) => (code ? BANK_NAMES[normBank(code) ?? ''] ?? `Banco ${code}` : 'Banco');
-/** "Sicoob · ag. 4355-9 · cc 48287-0". */
+/** "Sicoob · ag. 0001-9 · cc 12345-6". */
 export function accountLabel(a: { bankCode?: string | null; branch?: string | null; accountNumber?: string | null }) {
   return [bankName(a.bankCode), a.branch && `ag. ${a.branch}`, a.accountNumber && `cc ${a.accountNumber}`].filter(Boolean).join(' · ');
 }

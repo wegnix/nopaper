@@ -23,27 +23,33 @@ export function newApiToken() {
   return { token, tokenHash: sha256(token), hint: token.slice(0, 7) };
 }
 
+/** Só este formato é token: nada de espaços ou caracteres invisíveis no fim (dariam hashes diferentes para o mesmo token). */
+const BEARER_TOKEN = new RegExp(`^Bearer (${API_TOKEN_PREFIX}[A-Za-z0-9_-]{10,200})$`);
+export const bearerApiToken = (authorization: string | undefined): string | null => BEARER_TOKEN.exec(authorization ?? '')?.[1] ?? null;
+
 /**
- * Chamadas por minuto de quem chama a API pública. O limite roda antes da autenticação, então a
+ * Limite de chamadas de quem chama a API pública. O limite roda antes da autenticação, então a
  * consulta é pelo cabeçalho; fica 30 s em memória (e é esquecida quando um token é salvo ou apagado).
- * Token desconhecido ou sem limite próprio = o padrão.
+ * `id` = o token, se ele existe: a contagem é por token (uma só para todas as rotas). Token que
+ * não existe devolve `id: null` e quem chama é contado pelo IP — inventar tokens não zera a conta.
  */
-const rateCache = new Map<string, { max: number; at: number }>();
+const rateCache = new Map<string, { id: string | null; max: number; at: number }>();
 export const forgetRateLimits = () => rateCache.clear();
-export async function rateLimitFor(authorization: string | undefined): Promise<number> {
-  const m = /^Bearer\s+(\S+)$/i.exec(authorization ?? '');
-  if (!m || !m[1]!.startsWith(API_TOKEN_PREFIX)) return API_RATE_LIMIT_PER_MINUTE;
-  const hash = sha256(m[1]!);
+export async function rateInfoFor(authorization: string | undefined): Promise<{ id: string | null; max: number }> {
+  const token = bearerApiToken(authorization);
+  if (!token) return { id: null, max: API_RATE_LIMIT_PER_MINUTE };
+  const hash = sha256(token);
   const hit = rateCache.get(hash);
-  if (hit && Date.now() - hit.at < 30_000) return hit.max;
-  let max = API_RATE_LIMIT_PER_MINUTE;
+  if (hit && Date.now() - hit.at < 30_000) return hit;
+  let id: string | null = null, max = API_RATE_LIMIT_PER_MINUTE;
   try {
-    const [t] = await db.select({ rateLimit: schema.apiTokens.rateLimit }).from(schema.apiTokens).where(eq(schema.apiTokens.tokenHash, hash)).limit(1);
-    if (t?.rateLimit) max = Math.min(API_RATE_LIMIT_MAX, Math.max(API_RATE_LIMIT_MIN, t.rateLimit));
-  } catch { /* banco fora (manutenção): vale o padrão */ }
+    const [t] = await db.select({ id: schema.apiTokens.id, rateLimit: schema.apiTokens.rateLimit }).from(schema.apiTokens).where(eq(schema.apiTokens.tokenHash, hash)).limit(1);
+    if (t) { id = t.id; if (t.rateLimit) max = Math.min(API_RATE_LIMIT_MAX, Math.max(API_RATE_LIMIT_MIN, t.rateLimit)); }
+  } catch { /* banco fora (manutenção): vale o padrão, por IP */ }
   if (rateCache.size > 5000) rateCache.clear();
-  rateCache.set(hash, { max, at: Date.now() });
-  return max;
+  const info = { id, max, at: Date.now() };
+  rateCache.set(hash, info);
+  return info;
 }
 
 /** O IP de quem chama está na lista do token? (lista vazia = qualquer IP) */

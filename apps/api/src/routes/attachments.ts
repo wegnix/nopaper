@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { ATTACHMENT_SLOTS, ATTACHMENT_SLOT_LABEL, billPerm, type AttachmentSlot, type BillType } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { env } from '../env.js';
-import { badRequest, forbidden, HttpError, notFound } from '../lib/errors.js';
+import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/errors.js';
 import { requireOrg, requirePerm } from '../lib/auth.js';
 import { assertStorageRoom } from '../services/storageQuota.js';
 import { audit } from '../lib/audit.js';
@@ -46,7 +46,9 @@ export default async function attachmentRoutes(app: FastifyInstance) {
     const up = await readUpload(req);
     const pdf = await openPdf(req, up);
     if (pdf.locked && up.password) throw badRequest('A senha não abriu este PDF. Confira e tente de novo.');
-    return { ...(await classifyDocument(pdf.buf, up.mime, up.filename)), locked: pdf.locked, unlockedBy: pdf.unlockedBy };
+    // o nome da regra que abriu só vai para quem cuida das regras (para os demais serviria para testar senhas guardadas)
+    const unlockedBy = pdf.unlockedBy && !req.org!.can('org.settings') && pdf.unlockedBy !== 'senha informada' ? 'regra do espaço' : pdf.unlockedBy;
+    return { ...(await classifyDocument(pdf.buf, up.mime, up.filename)), locked: pdf.locked, unlockedBy };
   });
 
   app.post<{ Params: { id: string }; Querystring: { slot?: string } }>('/api/bills/:id/attachments', { preHandler: requireOrg }, async (req) => {
@@ -75,8 +77,10 @@ export default async function attachmentRoutes(app: FastifyInstance) {
       : req.org!.can(billPerm(t, 'create')) || req.org!.can(billPerm(t, 'edit'));
     if (!okSlot) throw forbidden(`Sem permissão para anexar ${ATTACHMENT_SLOT_LABEL[slot].toLowerCase()} nesta conta`);
 
-    const { key, sha256 } = await saveFile(b.orgId, buf, ALLOWED_UPLOADS[mime]);
     const [old] = await db.select().from(schema.attachments).where(and(eq(schema.attachments.billId, b.id), eq(schema.attachments.slot, slot)));
+    // trocar um boleto ou nota que já está lá apaga o arquivo anterior: é editar a conta, não só cadastrar
+    if (old && slot !== 'payment_proof' && !req.org!.can(billPerm(t, 'edit'))) throw forbidden(`Esta conta já tem ${ATTACHMENT_SLOT_LABEL[slot].toLowerCase()}. Só quem pode editar a conta troca o arquivo.`);
+    const { key, sha256 } = await saveFile(b.orgId, buf, ALLOWED_UPLOADS[mime]);
     await db.transaction(async (tx) => {
       if (old) await tx.delete(schema.attachments).where(eq(schema.attachments.id, old.id));
       await tx.insert(schema.attachments).values({
@@ -88,6 +92,10 @@ export default async function attachmentRoutes(app: FastifyInstance) {
       if (classification?.pixCode && !b.pixKey && slot === 'boleto') {
         await tx.update(schema.bills).set({ pixKey: classification.pixCode }).where(eq(schema.bills.id, b.id));
       }
+    }).catch(async (e) => {
+      // a gravação falhou (ex.: dois envios ao mesmo tempo para a mesma vaga): o arquivo recém-gravado não fica sobrando
+      await deleteFile(key);
+      throw (e as { cause?: { code?: string }; code?: string }).cause?.code === '23505' || (e as { code?: string }).code === '23505' ? conflict('Outro arquivo acabou de ser anexado nesta vaga. Atualize e tente de novo.') : e;
     });
     if (old) await deleteFile(old.storageKey);
     const restricted = (await restrictedCategoryIds(b.orgId)).includes(b.categoryId);

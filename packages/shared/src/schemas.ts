@@ -5,13 +5,20 @@ import { documentError, formatDocument, normalizeDocument } from './document.js'
 import { parseMoneyInput } from './money.js';
 import { addDaysISO, addMonthsISO, addYearsISO } from './dates.js';
 
-export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida (AAAA-MM-DD)');
+/** Data de calendário de verdade: "2026-02-30" tem o formato certo, mas não existe (e virava erro interno no banco). */
+const realDate = (v: string) => { const d = new Date(`${v}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v; };
+export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida (AAAA-MM-DD)').refine(realDate, 'Data inválida: este dia não existe');
 
 /** Valor monetário: aceita número ou string ("1.234,56", "1234.56"); normaliza para "1234.56". */
 export const money = z.union([z.string(), z.number()]).transform((v, ctx) => {
   const r = parseMoneyInput(v);
   if (r === null) {
     ctx.addIssue({ code: 'custom', message: 'Valor inválido' });
+    return z.NEVER;
+  }
+  // teto do banco (numeric(14,2)): acima disso a gravação falhava com erro interno
+  if (r.replace('-', '').length > 15) {
+    ctx.addIssue({ code: 'custom', message: 'Valor grande demais' });
     return z.NEVER;
   }
   return r;
@@ -115,7 +122,8 @@ export const profileSchema = z.object({
   email: emailSchema.optional(),
   currentPassword: z.string().max(200).optional(),
   telegramChatId: optText(64),
-  preferences: z.record(z.string(), z.unknown()).optional(),
+  /** Mesmo formato estrito de `preferencesSchema` (antes aceitava qualquer JSON, de qualquer tamanho). */
+  preferences: preferencesSchema.shape.preferences.optional(),
 });
 
 // ---------------------------------------------------------------- org / members / groups

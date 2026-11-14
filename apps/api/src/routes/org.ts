@@ -256,7 +256,7 @@ export default async function orgRoutes(app: FastifyInstance) {
   app.get<{ Querystring: AuditQuery }>('/api/audit', { preHandler: requirePerm('audit.view') }, async (req) => {
     return queryAudit(req.org!.id, { ...req.query, tz: req.org!.timezone }, !req.org!.can('bills.view_restricted'), 100, auditAreasFor(req.org!));
   });
-  app.get('/api/audit/users', { preHandler: requirePerm('audit.view') }, async (req) => ({ items: await auditUsers(req.org!.id) }));
+  app.get('/api/audit/users', { preHandler: requirePerm('audit.view') }, async (req) => ({ items: await auditUsers(req.org!.id, [], auditAreasFor(req.org!), !req.org!.can('bills.view_restricted')) }));
 }
 
 /** Campos que mudaram: { campo: { from, to } }. */

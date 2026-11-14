@@ -14,7 +14,7 @@ import { openApiDocument } from '../lib/openapi.js';
 import { registerV1Writes } from './v1write.js';
 import { registerV1Areas } from './v1areas.js';
 import { latestEventCursor, listEvents } from '../services/events.js';
-import { rateLimitFor } from '../services/integrations.js';
+import { rateInfoFor } from '../services/integrations.js';
 
 /**
  * API pública (`/api/v1`): superfície estável para outros sistemas, separada da API interna que o
@@ -23,17 +23,6 @@ import { rateLimitFor } from '../services/integrations.js';
  */
 
 const STATUS_CODES: Record<number, string> = { 400: 'invalid_request', 401: 'unauthorized', 403: 'forbidden', 404: 'not_found', 409: 'conflict', 413: 'too_large', 429: 'rate_limited', 503: 'maintenance' };
-
-/** Cada token tem a própria cota (a chave é o hash do cabeçalho: o limite roda antes da autenticação). */
-const limited = {
-  config: {
-    rateLimit: {
-      // o padrão, ou o limite próprio do token (Configurações → Integrações)
-      max: (req: FastifyRequest) => rateLimitFor(req.headers.authorization), timeWindow: '1 minute',
-      keyGenerator: (req: FastifyRequest) => (req.headers.authorization ? `v1:${createHash('sha256').update(req.headers.authorization).digest('hex')}` : `v1ip:${req.ip}`),
-    },
-  },
-};
 
 async function requireToken(req: FastifyRequest) {
   if (req.integration && req.org) return;
@@ -107,6 +96,17 @@ const listQuery = z.object({
 });
 
 export default async function v1Routes(app: FastifyInstance) {
+  /**
+   * Um só contador por token para a API pública inteira (o limite "por rota" do plugin dava uma cota
+   * nova em cada endereço). Token que não existe é contado pelo IP de quem chama. O limite roda antes
+   * da autenticação; o padrão ou o limite próprio do token vêm de `rateInfoFor`.
+   */
+  const limiter = app.rateLimit({
+    timeWindow: '1 minute',
+    max: async (req: FastifyRequest) => (await rateInfoFor(req.headers.authorization)).max,
+    keyGenerator: async (req: FastifyRequest) => { const t = await rateInfoFor(req.headers.authorization); return t.id ? `v1:${t.id}` : `v1ip:${req.ip}`; },
+  });
+  const limited = { config: { rateLimit: false as const }, onRequest: limiter as never };
   // erros no formato da API pública: { error: { code, message, … } }
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof HttpError) {
@@ -127,6 +127,12 @@ export default async function v1Routes(app: FastifyInstance) {
 
   await app.register(async (api) => {
     api.addHook('preHandler', requireToken);
+    // ids e demais pedaços do endereço: só letras, números, "-", "_" e "." (vão para o endereço da rota interna)
+    api.addHook('preHandler', async (req) => {
+      for (const v of Object.values((req.params ?? {}) as Record<string, unknown>)) {
+        if (typeof v !== 'string' || !/^[A-Za-z0-9._-]{1,80}$/.test(v) || v.includes('..')) throw notFound('Não encontrado');
+      }
+    });
 
     /** Teste de conexão: de qual espaço é o token e o que ele pode fazer. */
     api.get('/api/v1/space', limited, async (req) => {

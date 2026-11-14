@@ -14,6 +14,7 @@ import { useOrg } from '@/lib/session';
 import { cn, isTouch, plural } from '@/lib/utils';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
 import { useAccountantOnly, useAccountants, useAccountingDocs, type AccountingDoc } from './data';
+import { useProgressive } from '@/lib/useProgressive';
 import { KIND_ICON, acceptFiles, canPreview, docTitle, fileAccept, norm, sentMonth, sizeText, when } from './common';
 
 /**
@@ -43,6 +44,8 @@ function DocList({ docs, loading, side, emptyTitle, emptyText, onView, actions }
     const t = norm(q.trim());
     return docs.filter((d) => (!month || sentMonth(d.createdAt) === month) && (!t || norm(`${docTitle(d)} ${d.originalName} ${d.note ?? ''} ${d.uploadedByName ?? ''}`).includes(t)));
   }, [docs, q, month]);
+  // lista longa (anos de documentos): desenha os primeiros e completa conforme a pessoa rola
+  const prog = useProgressive(list, `${q}|${month}`);
   const filtered = !!q.trim() || !!month;
   const chip = (d: AccountingDoc) => (side === 'recipient'
     ? (d.status === 'new' ? <StatusChip status="today" label="Novo" /> : <StatusChip status="paid" label="Recebido" />)
@@ -66,8 +69,9 @@ function DocList({ docs, loading, side, emptyTitle, emptyText, onView, actions }
         <Empty icon={<Inbox className="size-5" />} title={filtered ? 'Nada encontrado com esses filtros' : emptyTitle}
           action={filtered && <Button variant="secondary" onClick={() => { setQ(''); setMonth(''); }}>Limpar filtros</Button>}>{filtered ? null : emptyText}</Empty>
       ) : (
+        <div className="relative">
         <ul className="divide-y divide-line">
-          {list.map((d, idx) => {
+          {prog.visible.map((d, idx) => {
             const Icon = KIND_ICON[d.kind];
             const m = sentMonth(d.createdAt);
             const head = idx === 0 || sentMonth(list[idx - 1]!.createdAt) !== m;
@@ -98,6 +102,9 @@ function DocList({ docs, loading, side, emptyTitle, emptyText, onView, actions }
             );
           })}
         </ul>
+        {prog.sentinel}
+        {prog.hidden > 0 && <p className="border-t border-line px-4 py-2 text-center text-xs text-faint" aria-live="polite">Carregando mais {prog.hidden.toLocaleString('pt-BR')}…</p>}
+        </div>
       )}
     </>
   );

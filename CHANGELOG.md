@@ -8,6 +8,56 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.23.4] - 2026-11-14
+
+### Segurança
+Resultado de uma revisão completa (todas as rotas testadas com vários usuários e espaços, mais leitura do código
+por área). Nenhum acesso indevido entre espaços foi encontrado; os pontos abaixo foram corrigidos.
+- **Leitor de documentos**: um PDF montado de propósito conseguia prender o servidor por minutos, para todos os
+  espaços. A leitura ganhou limites de tamanho e de tempo.
+- **OCR e importação de planilha**: imagem com dimensões gigantes, fila de leitura sem limite e planilha
+  compactada que ocupa vários GB ao abrir passam a ser recusadas antes de consumir a memória.
+- **API pública**:
+  - o limite de chamadas vale por token no total (antes cada endereço da API tinha uma cota própria) e chamadas com
+    tokens inválidos são contadas pelo endereço IP;
+  - um endereço montado de forma maliciosa não alcança mais rotas internas fora da lista da API;
+  - criar conta com um `externalId` que já existe em conta de outro tipo responde 409, sem devolver a conta.
+- **Webhooks**: um destino lento ou que nunca termina de responder não segura mais as entregas dos outros espaços
+  (prazo total por envio e tempo máximo por webhook a cada rodada).
+- **Assinatura de holerites**:
+  - a assinatura vale só para o arquivo que a pessoa abriu — se a empresa reenviar o holerite, o link pede o CPF de
+    novo e mostra o arquivo novo;
+  - reenviar e cancelar não mexem mais em documento que acabou de ser assinado;
+  - o holerite só vai para o link do funcionário se o CPF do PDF for o dele (ou, sem CPF no PDF, se o primeiro
+    nome for o mesmo): matrícula repetida não entrega o holerite à pessoa errada.
+- **Espaço privado**: quem é administrador da plataforma e membro comum de um espaço privado não lê mais a auditoria
+  dele pela Plataforma; a cota de armazenamento de um espaço privado só é alterada por quem o administra; o nome
+  de um espaço privado não aparece mais na auditoria da plataforma.
+- **Alertas**: o código para ligar o Telegram só é mostrado a quem pode receber o resumo.
+- **Permissões**: quem só pode *cadastrar* contas não troca mais um boleto ou nota já anexado; quem só pode *editar*
+  não apaga, ao mudar ou parar uma repetição, ocorrências que têm anexos; a categoria dos salários da folha não
+  pode deixar de ser restrita pela tela de categorias; a lista de pessoas da Auditoria respeita as áreas e as
+  categorias restritas de quem consulta.
+- Outros: exportação da Auditoria em CSV protegida contra fórmulas; o link de assinatura não fica mais no registro
+  de acessos do servidor web; no modo integrado, o NoPaper informa ao outro sistema só a tela aberta (sem a busca
+  digitada); a aba do WhatsApp aberta pela Assinatura não tem acesso à aba do NoPaper.
+
+### Corrigido
+- Mudar a repetição de uma conta podia apagar os arquivos dos anexos mesmo quando a mudança falhava.
+- Data que não existe (30/02) e valor grande demais agora dão aviso em vez de "erro interno".
+- Pagar uma conta que já está paga (clique duplo ou chamada repetida pela API) não troca mais a data do pagamento.
+- Apagar uma categoria usada pela fatura de um cartão dava "erro interno"; agora explica o motivo.
+- Campo de busca das contas: continuar digitando depois de uma pausa não perde mais as últimas letras.
+- Durante uma atualização, uma página de erro podia ficar guardada como tela offline do aplicativo instalado.
+- Visualizador de arquivos: abrir um anexo e logo outro não mostra mais o primeiro com o título do segundo.
+- "Contas a pagar/receber" aparecia em alguns textos de Cartões e Contas bancárias no espaço Pessoal.
+- Atualização pela web: dois pedidos quase simultâneos não iniciam mais duas atualizações.
+
+### Melhorado
+- **Contador**: a lista de documentos é montada conforme você rola; com milhares de documentos a tela travava por
+  alguns segundos ao abrir.
+- Listas de contas: marcar uma conta volta a redesenhar só a linha marcada.
+
 ## [1.23.3] - 2026-11-14
 
 ### Melhorado
