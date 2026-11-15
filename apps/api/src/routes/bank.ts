@@ -176,9 +176,11 @@ export default async function bankRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>('/api/bank/imports/:id', imp, async (req) => {
     const [im] = await db.select().from(schema.bankImports).where(and(eq(schema.bankImports.id, req.params.id), eq(schema.bankImports.orgId, req.org!.id)));
     if (!im) throw notFound('Importação não encontrada');
-    const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.bankTransactions).where(and(eq(schema.bankTransactions.importId, im.id), eq(schema.bankTransactions.status, 'linked')));
-    if (n) throw conflict(`${n} lançamento(s) desta importação estão ligados a contas. Desfaça essas conciliações antes de desfazer a importação.`);
     const removed = await db.transaction(async (tx) => {
+      // confere com os lançamentos travados: uma conciliação feita neste instante não é apagada junto
+      const rows = await tx.select({ status: schema.bankTransactions.status }).from(schema.bankTransactions).where(eq(schema.bankTransactions.importId, im.id)).for('update');
+      const n = rows.filter((x) => x.status === 'linked').length;
+      if (n) throw conflict(`${n} lançamento(s) desta importação estão ligados a contas. Desfaça essas conciliações antes de desfazer a importação.`);
       const r = await tx.delete(schema.bankTransactions).where(eq(schema.bankTransactions.importId, im.id)).returning({ id: schema.bankTransactions.id });
       await tx.delete(schema.bankImports).where(eq(schema.bankImports.id, im.id));
       await refreshBalance(tx, im.accountId);
@@ -255,7 +257,11 @@ export default async function bankRoutes(app: FastifyInstance) {
           tx.update(schema.bankTransactions).set({ ...patch, reconciledBy: req.user!.id, reconciledAt: new Date() }).where(eq(schema.bankTransactions.id, t.id));
         if (act.kind === 'ignore') { await mark({ status: 'ignored' }); done.ignored++; continue; }
         if (act.kind === 'link') {
-          const b = await loadBill(req, act.billId, 'view', tx);
+          const seen = await loadBill(req, act.billId, 'view', tx);
+          // trava a CONTA também: outra conciliação ao mesmo tempo (outro lançamento, outra pessoa) espera aqui e,
+          // quando passar, já enxerga que a conta foi ligada — sem isso a mesma conta ficava com dois lançamentos
+          const [b] = await tx.select().from(schema.bills).where(eq(schema.bills.id, seen.id)).for('update');
+          if (!b) throw notFound('Conta não encontrada');
           touched.add(b.categoryId);
           if (b.type !== type) throw badRequest(`"${b.description}" é ${b.type === 'payable' ? 'a pagar' : 'a receber'}, mas o lançamento de ${label} é ${type === 'payable' ? 'uma saída' : 'uma entrada'}.`);
           const [other] = await tx.select({ id: schema.bankTransactions.id }).from(schema.bankTransactions)
@@ -301,13 +307,18 @@ export default async function bankRoutes(app: FastifyInstance) {
 
   /** Desfaz a conciliação de um lançamento (volta a conta para pendente ou apaga a conta criada por ele). */
   app.post<{ Params: { id: string } }>('/api/bank/transactions/:id/undo', imp, async (req) => {
-    const [t] = await db.select().from(schema.bankTransactions).where(and(eq(schema.bankTransactions.id, req.params.id), eq(schema.bankTransactions.orgId, req.org!.id)));
-    if (!t) throw notFound('Lançamento do extrato não encontrado');
-    if (t.status === 'pending') return { ok: true };
-    const type = typeOf(t.amount);
+    const [first] = await db.select().from(schema.bankTransactions).where(and(eq(schema.bankTransactions.id, req.params.id), eq(schema.bankTransactions.orgId, req.org!.id)));
+    if (!first) throw notFound('Lançamento do extrato não encontrado');
+    if (first.status === 'pending') return { ok: true };
+    const type = typeOf(first.amount);
     let what = 'Voltou a pendente o lançamento ignorado';
     let restricted = false;
-    await db.transaction(async (tx) => {
+    let t = first;
+    const changed = await db.transaction(async (tx) => {
+      // relê com trava: dois "desfazer" ao mesmo tempo (ou desfazer × conciliar) não agem sobre o mesmo estado antigo
+      const [cur] = await tx.select().from(schema.bankTransactions).where(eq(schema.bankTransactions.id, first.id)).for('update');
+      if (!cur || cur.status === 'pending') return false;
+      t = cur;
       if (t.status === 'linked' && t.billId) {
         const b = await loadBill(req, t.billId, 'view', tx);
         restricted = (await restrictedCategoryIds(req.org!.id)).includes(b.categoryId);
@@ -327,7 +338,9 @@ export default async function bankRoutes(app: FastifyInstance) {
         } else what = `Desligou "${b.description}" do lançamento do extrato`;
       } else if (t.status === 'linked') what = 'Desligou o lançamento do extrato (a conta já tinha sido apagada)';
       await tx.update(schema.bankTransactions).set({ status: 'pending', action: null, billId: null, reconciledBy: null, reconciledAt: null }).where(eq(schema.bankTransactions.id, t.id));
+      return true;
     });
+    if (!changed) return { ok: true };
     await audit(req, { action: 'bank.reconcile_undo', entityType: 'bank_transaction', entityId: t.id, description: `${what} (${formatDateBR(t.postedAt)} ${formatBRL(t.amount)})`, details: { restricted } });
     return { ok: true };
   });

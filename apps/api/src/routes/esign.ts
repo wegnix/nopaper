@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
-  ESIGN_LOCK_MINUTES, ESIGN_MAX_ATTEMPTS, ESIGN_TERM_COMPETENCE, ESIGN_TERM_VERSION, esignOpenSchema, esignSendAccountantSchema, esignSubmitSchema, esignTermText,
+  ESIGN_LOCK_MINUTES, ESIGN_MAX_ATTEMPTS, ESIGN_TERM_COMPETENCE, ESIGN_TERM_VERSION, payslipDocLabel, esignOpenSchema, esignSendAccountantSchema, esignSubmitSchema, esignTermText,
   formatDocument, isValidCPF, refLabelPT, type EsignKind, type EsignOpened, type EsignPublicInfo, type EsignTermParties, type Payslip, type PayslipSignatureRow, orgAddressLine, orgContactLine, orgRegistrationsLine } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import { env } from '../env.js';
@@ -14,7 +14,7 @@ import { decryptSecret, encryptSecret } from '../lib/secrets.js';
 import { deleteFile, readStoredFile, saveFile, signFileToken, verifyFileToken } from '../lib/storage.js';
 import { assertCompany, loadPeriod } from '../services/payroll.js';
 import { buildSignedPdf, buildTermPdf, splitPayslips } from '../services/esign.js';
-import { resolveRecipient } from '../services/accounting.js';
+import { resolveRecipients } from '../services/accounting.js';
 import { assertStorageRoom } from '../services/storageQuota.js';
 import { checkPayslipsSpace } from '../services/spaceCheck.js';
 
@@ -25,16 +25,17 @@ type Org = typeof schema.organizations.$inferSelect;
 type Employee = typeof schema.employees.$inferSelect;
 const fileName = (r: Row, signed: boolean) => (r.kind === 'term'
   ? `Termo de assinatura eletrônica ${signed ? 'assinado ' : ''}- ${r.employeeName}.pdf`
-  : `Holerite ${signed ? 'assinado ' : ''}- ${r.employeeName} - ${r.competence}.pdf`).replace(/[\\/:*?"<>|]/g, '');
+  : `Holerite ${signed ? 'assinado ' : ''}- ${r.employeeName} - ${r.competence}${r.docKey ? ` - ${r.docKey}` : ''}.pdf`).replace(/[\\/:*?"<>|]/g, '');
 /** Nome para documentos: a razão social (o nome do espaço é o nome fantasia). */
 const legalName = (org: Org) => org.legalName?.trim() || org.name;
 /** Inscrições, endereço e contato da empresa (Dados do espaço) para os documentos. */
 const companyExtras = (org: Org) => ({ companyRegistrations: orgRegistrationsLine(org), companyAddress: orgAddressLine(org), companyContact: orgContactLine(org), companyLogo: org.logo });
-const what = (r: Row) => (r.kind === 'term' ? 'o termo de aceite' : `o holerite de ${refLabelPT(r.competence)}`);
+const docLabel = (r: Row) => (r.kind === 'term' ? null : payslipDocLabel((r.slip as { title?: string } | null)?.title));
+const what = (r: Row) => (r.kind === 'term' ? 'o termo de aceite' : docLabel(r) ? `o recibo de ${docLabel(r)} de ${refLabelPT(r.competence)}` : `o holerite de ${refLabelPT(r.competence)}`);
 const termAccepted = (e: Employee | undefined) => !!e?.esignAcceptedAt && e.esignTermVersion === ESIGN_TERM_VERSION;
 const cpfOf = (e: Employee) => { const d = digits(e.document); return d.length === 11 && isValidCPF(d) ? d : null; };
 const serialize = (r: Row, phone: string | null): PayslipSignatureRow => ({
-  id: r.id, kind: r.kind as EsignKind, employeeId: r.employeeId, employeeName: r.employeeName, phone, competence: r.competence, net: r.net, status: r.status as PayslipSignatureRow['status'],
+  id: r.id, kind: r.kind as EsignKind, employeeId: r.employeeId, employeeName: r.employeeName, phone, competence: r.competence, docLabel: docLabel(r), net: r.net, status: r.status as PayslipSignatureRow['status'],
   createdAt: r.createdAt.toISOString(), viewedAt: r.viewedAt?.toISOString() ?? null, signedAt: r.signedAt?.toISOString() ?? null,
   sentToAccountantAt: r.sentToAccountantAt?.toISOString() ?? null,
 });
@@ -62,14 +63,18 @@ export default async function esignRoutes(app: FastifyInstance) {
     if (termAccepted(emp)) return null;
     const cpf = cpfOf(emp);
     if (!cpf) return null;
-    const [old] = await db.select().from(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.orgId, org.id), eq(schema.payslipSignatures.employeeId, emp.id), eq(schema.payslipSignatures.kind, 'term')));
-    if (old) return old.status === 'pending' ? old : null;
+    const olds = await db.select().from(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.orgId, org.id), eq(schema.payslipSignatures.employeeId, emp.id), eq(schema.payslipSignatures.kind, 'term')));
+    const waiting = olds.find((o) => o.status === 'pending');
+    if (waiting) return waiting;
+    if (olds.some((o) => o.termVersion === ESIGN_TERM_VERSION)) return null;
+    // já assinou uma versão ANTERIOR do termo: gera o da versão atual (antes isto devolvia nada e os holerites ficavam sem saída)
+    const docKey = olds.length ? `v${ESIGN_TERM_VERSION}`.slice(0, 40) : '';
     const parties: EsignTermParties = { company: legalName(org), companyDocument: org.document, ...companyExtras(org), employeeName: emp.name, employeeDocument: formatDocument(cpf) };
     const pdf = await buildTermPdf(parties);
     const saved = await saveFile(org.id, pdf, 'pdf');
     const token = randomBytes(32).toString('base64url');
     const [row] = await db.insert(schema.payslipSignatures).values({
-      orgId: org.id, kind: 'term', employeeId: emp.id, employeeName: emp.name, employeeDocument: parties.employeeDocument, competence: ESIGN_TERM_COMPETENCE, net: '0',
+      orgId: org.id, kind: 'term', employeeId: emp.id, employeeName: emp.name, employeeDocument: parties.employeeDocument, competence: ESIGN_TERM_COMPETENCE, docKey, net: '0',
       slip: { term: esignTermText(parties), company: parties.company, companyDocument: parties.companyDocument }, tokenHash: hashToken(token), tokenEnc: encryptSecret(token),
       storageKey: saved.key, sha256: saved.sha256, size: pdf.length, createdBy,
     }).returning();
@@ -152,11 +157,13 @@ export default async function esignRoutes(app: FastifyInstance) {
     const competence = split.ref;
 
     const employees = await db.select().from(schema.employees).where(eq(schema.employees.orgId, orgId));
-    const existing = await db.select().from(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.orgId, orgId), eq(schema.payslipSignatures.competence, competence)));
+    const competences = [...new Set(split.slips.map((x) => x.ref ?? competence))];
+    const existing = await db.select().from(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.orgId, orgId), inArray(schema.payslipSignatures.competence, competences), eq(schema.payslipSignatures.kind, 'payslip')));
     const existingTerms = new Set((await db.select({ e: schema.payslipSignatures.employeeId }).from(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.orgId, orgId), eq(schema.payslipSignatures.kind, 'term')))).map((x) => x.e));
     const skipped: Array<{ name: string; reason: string }> = [];
     let created = 0, updated = 0, terms = 0;
-    for (const { slip, pdf } of split.slips) {
+    for (const { slip, pdf, ref: slipRef, docKey } of split.slips) {
+      const comp = slipRef ?? competence;
       const emp = employees.find((e) => e.payslipCode === slip.code);
       if (!emp) { skipped.push({ name: slip.name, reason: `nenhum funcionário com a matrícula ${slip.code} (importe os holerites na folha ou preencha a matrícula no cadastro)` }); continue; }
       let cpf = digits(emp.document);
@@ -178,8 +185,8 @@ export default async function esignRoutes(app: FastifyInstance) {
           await db.update(schema.employees).set({ document: emp.document }).where(eq(schema.employees.id, emp.id));
         } else { skipped.push({ name: emp.name, reason: 'sem CPF no cadastro do funcionário (o CPF é o que abre o link)' }); continue; }
       }
-      const old = existing.find((x) => x.employeeId === emp.id);
-      if (old?.status === 'signed') { skipped.push({ name: emp.name, reason: 'já assinou o holerite deste mês' }); continue; }
+      const old = existing.find((x) => x.employeeId === emp.id && x.competence === comp && x.docKey === docKey);
+      if (old?.status === 'signed') { skipped.push({ name: emp.name, reason: docKey ? `já assinou este recibo (${slip.title})` : 'já assinou o holerite deste mês' }); continue; }
       const saved = await saveFile(orgId, pdf, 'pdf');
       const base = { employeeName: emp.name, employeeDocument: formatDocument(cpf), net: slip.net, slip: slip as unknown as Record<string, unknown>, storageKey: saved.key, sha256: saved.sha256, size: pdf.length, periodId: p.id };
       if (old) {
@@ -191,7 +198,7 @@ export default async function esignRoutes(app: FastifyInstance) {
         updated++;
       } else {
         const token = randomBytes(32).toString('base64url');
-        await db.insert(schema.payslipSignatures).values({ ...base, orgId, employeeId: emp.id, competence, tokenHash: hashToken(token), tokenEnc: encryptSecret(token), createdBy: req.user!.id });
+        await db.insert(schema.payslipSignatures).values({ ...base, orgId, employeeId: emp.id, competence: comp, docKey, tokenHash: hashToken(token), tokenEnc: encryptSecret(token), createdBy: req.user!.id });
         created++;
       }
       // quem ainda não assinou o termo de aceite ganha o dele (assina antes do holerite)
@@ -238,18 +245,23 @@ export default async function esignRoutes(app: FastifyInstance) {
   /** Manda os holerites assinados para o contador (caixa "Recebidos" dele), um arquivo por funcionário. */
   app.post('/api/payroll/signatures/send-accountant', { preHandler: [...view.preHandler, requirePerm('accounting.send')] }, async (req) => {
     const { ids, recipientId: rawRecipient } = parse(esignSendAccountantSchema, req.body);
-    const recipientId = await resolveRecipient(req.org!.id, rawRecipient);
+    const recipients = await resolveRecipients(req.org!.id, rawRecipient);
     const rows = await db.select().from(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.orgId, req.org!.id), inArray(schema.payslipSignatures.id, ids)));
     const ready = rows.filter((r) => r.status === 'signed' && r.signedKey && !r.sentToAccountantAt);
     if (!ready.length) throw badRequest('Nenhum documento assinado para enviar (ou já foram enviados).');
     for (const r of ready) {
       const buf = await readStoredFile(r.signedKey!);
+      let doc: { id: string } | undefined;
+      // "todos os contadores": um documento para cada um (o primeiro fica ligado à assinatura)
+      for (const recipientId of recipients) {
       const saved = await saveFile(req.org!.id, buf, 'pdf');
-      const [doc] = await db.insert(schema.accountingDocuments).values({
+      const [made] = await db.insert(schema.accountingDocuments).values({
         orgId: req.org!.id, direction: 'to_accountant', recipientId, kind: r.kind === 'term' ? 'term' : 'payslip', competence: r.kind === 'term' ? null : r.competence,
         note: `${r.kind === 'term' ? 'Termo de aceite de assinatura eletrônica assinado' : 'Holerite assinado eletronicamente'} por ${r.employeeName}`.slice(0, 500),
         originalName: fileName(r, true), mime: 'application/pdf', size: buf.length, storageKey: saved.key, sha256: saved.sha256, detected: null, uploadedBy: req.user!.id,
       }).returning({ id: schema.accountingDocuments.id });
+      doc ??= made;
+      }
       await db.update(schema.payslipSignatures).set({ accountingDocId: doc!.id, sentToAccountantAt: new Date() }).where(eq(schema.payslipSignatures.id, r.id));
     }
     await audit(req, {
@@ -281,7 +293,7 @@ export default async function esignRoutes(app: FastifyInstance) {
   /** Antes do CPF: só o nome da empresa, o primeiro nome e o mês. */
   app.get<{ Params: { token: string } }>('/api/sign/:token', strict, async (req): Promise<EsignPublicInfo> => {
     const { r, org } = await byToken(req.params.token);
-    return { kind: r.kind as EsignKind, company: org.name, firstName: r.employeeName.trim().split(/\s+/)[0] ?? '', competence: r.competence, status: r.status as EsignPublicInfo['status'] };
+    return { kind: r.kind as EsignKind, company: org.name, firstName: r.employeeName.trim().split(/\s+/)[0] ?? '', competence: r.competence, status: r.status as EsignPublicInfo['status'], docLabel: docLabel(r) };
   });
 
   /** Confere o CPF e abre o holerite. Depois de alguns erros o link trava por um tempo. */

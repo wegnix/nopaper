@@ -348,3 +348,16 @@ export type PayrollPayslipApply = z.infer<typeof payrollPayslipApplySchema>;
 
 /** Rubrica de pró-labore: sócio não tem FGTS, 13º nem férias (não entra na base desses custos). */
 export const isProLabore = (name: string) => /pro.?labore/.test(personKey(name));
+
+/**
+ * Chave do TIPO de recibo dentro da mesma competência. O holerite do mês (salário ou pró-labore) é a
+ * chave vazia; 13º, férias, adiantamento, rescisão… ganham uma chave própria — assim o recibo do 13º
+ * de dezembro não substitui (nem é barrado por) o holerite de dezembro na assinatura.
+ */
+export function payslipDocKey(title: string | null | undefined): string {
+  const t = (title ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!t || /^(salario|pro labore|prolabore|mensal|salario mensal|folha|folha mensal)$/.test(t)) return '';
+  return t.replace(/ /g, '-').slice(0, 40);
+}
+/** Nome do tipo de recibo para mostrar ("13º Salário", "Férias"); null no holerite do mês. */
+export const payslipDocLabel = (title: string | null | undefined): string | null => (payslipDocKey(title) ? (title ?? '').trim().slice(0, 60) : null);

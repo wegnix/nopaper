@@ -1,14 +1,16 @@
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib';
-import { ESIGN_TERM_DECLARATION, ESIGN_TERM_TITLE, esignDeclaration, esignTermText, formatBRL, parsePayslips, refLabelPT, type EsignKind, type EsignTermParties, type Payslip } from '@nopaper/shared';
+import { ESIGN_TERM_DECLARATION, ESIGN_TERM_TITLE, esignDeclaration, esignTermText, formatBRL, parsePayslips, payslipDocKey, refLabelPT, type EsignKind, type EsignTermParties, type Payslip } from '@nopaper/shared';
 import { pdfToPageCells } from './pdf.js';
 
 /**
  * Separa o PDF do contador em um PDF por funcionário (as páginas em que a matrícula aparece).
  * Lê página por página com o mesmo leitor da importação de holerites.
  */
-export async function splitPayslips(buf: Buffer): Promise<{ ref: string | null; company: string | null; companyDocument: string | null; slips: Array<{ slip: Payslip; pdf: Buffer }> }> {
+export async function splitPayslips(buf: Buffer): Promise<{ ref: string | null; company: string | null; companyDocument: string | null; slips: Array<{ slip: Payslip; pdf: Buffer; ref: string | null; docKey: string }> }> {
   const pages = await pdfToPageCells(buf, 200);
-  const found = new Map<string, { slip: Payslip; pages: number[] }>();
+  // um documento por funcionário + tipo de recibo + competência: o 13º e o holerite do mesmo mês não se misturam,
+  // e um PDF com dois meses não vira tudo o mês da primeira página
+  const found = new Map<string, { slip: Payslip; pages: number[]; ref: string | null; docKey: string }>();
   let ref: string | null = null, company: string | null = null, companyDocument: string | null = null;
   pages.forEach((rows, i) => {
     const r = parsePayslips(rows);
@@ -17,17 +19,19 @@ export async function splitPayslips(buf: Buffer): Promise<{ ref: string | null; 
     companyDocument ??= r.companyDocument;
     for (const s of r.slips) {
       if (!s.code) continue;
-      const hit = found.get(s.code);
-      if (hit) { if (!hit.pages.includes(i)) hit.pages.push(i); } else found.set(s.code, { slip: s, pages: [i] });
+      const docKey = payslipDocKey(s.title);
+      const id = `${s.code}|${docKey}|${r.ref ?? ''}`;
+      const hit = found.get(id);
+      if (hit) { if (!hit.pages.includes(i)) hit.pages.push(i); } else found.set(id, { slip: s, pages: [i], ref: r.ref, docKey });
     }
   });
   if (!found.size) return { ref, company, companyDocument, slips: [] };
   const src = await PDFDocument.load(buf, { ignoreEncryption: true });
-  const slips: Array<{ slip: Payslip; pdf: Buffer }> = [];
+  const slips: Array<{ slip: Payslip; pdf: Buffer; ref: string | null; docKey: string }> = [];
   for (const f of found.values()) {
     const doc = await PDFDocument.create();
     for (const p of await doc.copyPages(src, f.pages)) doc.addPage(p);
-    slips.push({ slip: f.slip, pdf: Buffer.from(await doc.save()) });
+    slips.push({ slip: f.slip, pdf: Buffer.from(await doc.save()), ref: f.ref ?? ref, docKey: f.docKey });
   }
   return { ref, company, companyDocument, slips };
 }

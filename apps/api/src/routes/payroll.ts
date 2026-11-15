@@ -17,7 +17,7 @@ import { audit } from '../lib/audit.js';
 import { assertCategoryUsable, assertFolder, attachmentsFor, serialize } from '../services/bills.js';
 import {
   assertCompany, assertEntryEditable, deleteEntries, ensurePayrollDefaults, getPayrollSettings, loadEmployee, loadEntry,
-  loadPeriod, paidBillsCount, recomputeCosts, restrictPayrollCategory, rewriteOpenEntries, rubricsOf, savePayrollSettings, syncEntries, writeEntry,
+  loadPeriod, paidBillsCount, recomputeCosts, restrictPayrollCategory, rewriteOpenEntries, rubricsOf, patchPayrollSettings, syncEntries, writeEntry,
 } from '../services/payroll.js';
 import { checkPayslipsSpace } from '../services/spaceCheck.js';
 
@@ -76,10 +76,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     const before = await getPayrollSettings(req.org!.id);
     const nowRestricted = await db.transaction((tx) => restrictPayrollCategory(tx, req.org!.id, body.categoryId!));
     // impressão e comissões têm rotas próprias: a tela de configuração pode estar com uma cópia velha
-    body.print = before.print;
-    body.commissions = before.commissions;
-    body.payslips = before.payslips;
-    await savePayrollSettings(req.org!.id, body);
+    await patchPayrollSettings(req.org!.id, (cur) => ({ ...body, print: cur.print, commissions: cur.commissions, payslips: cur.payslips }));
     // contas pendentes passam a usar a categoria/pasta/forma de pagamento novas
     const ids = await pendingEntryIds(eq(schema.payrollEntries.orgId, req.org!.id));
     await db.transaction((tx) => syncEntries(tx, ids, req.user!.id));
@@ -100,7 +97,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
       if (JSON.stringify(before.print[k]) !== JSON.stringify(print[k])) changes[k] = { from: before.print[k], to: print[k] };
     }
     if (Object.keys(changes).length) {
-      await savePayrollSettings(req.org!.id, { ...before, print });
+      await patchPayrollSettings(req.org!.id, (cur) => ({ ...cur, print }));
       await audit(req, { action: 'payroll.settings.print', entityType: 'payroll', description: 'Alterou as colunas da impressão da folha', details: { changes } });
     }
     return print;
@@ -118,7 +115,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     const before = await getPayrollSettings(req.org!.id);
     const next = { ...body, groups: mergeCommissionGroups(before.commissions.groups, body.groups) };
     const summary = (c: typeof next) => c.rules.map((r) => ({ nome: r.name, grupos: r.groups.map((g) => g.code).join(','), base: r.base, taxa: r.rate, metas: r.tiers, rubrica: rubrics.get(r.rubricId)?.name ?? r.rubricId, ativa: r.active }));
-    await savePayrollSettings(req.org!.id, { ...before, commissions: next });
+    await patchPayrollSettings(req.org!.id, (cur) => ({ ...cur, commissions: { ...body, groups: mergeCommissionGroups(cur.commissions.groups, body.groups) } }));
     await audit(req, { action: 'payroll.settings.commissions', entityType: 'payroll', description: 'Alterou as regras de comissão da folha', details: { changes: { regras: { from: summary(before.commissions), to: summary(next) } } } });
     return next;
   });
@@ -137,7 +134,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     // grupos novos ficam disponíveis para as regras
     const settings = await getPayrollSettings(req.org!.id);
     const groups = mergeCommissionGroups(settings.commissions.groups, reportGroups(report));
-    if (JSON.stringify(groups) !== JSON.stringify(settings.commissions.groups)) await savePayrollSettings(req.org!.id, { ...settings, commissions: { ...settings.commissions, groups } });
+    if (JSON.stringify(groups) !== JSON.stringify(settings.commissions.groups)) await patchPayrollSettings(req.org!.id, (cur) => ({ ...cur, commissions: { ...cur.commissions, groups: mergeCommissionGroups(cur.commissions.groups, reportGroups(report)) } }));
     return { fileName: file.filename.slice(0, 200), report };
   });
 
@@ -304,7 +301,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
       }
       return { applied, skipped, unchanged, linked, createdEmployees, createdRubrics, map: mapChanged ? map : null, settings };
     });
-    if (out.map) await savePayrollSettings(orgId, { ...(await getPayrollSettings(orgId)), payslips: { map: out.map } });
+    if (out.map) await patchPayrollSettings(orgId, (cur) => ({ ...cur, payslips: { map: out.map! } }));
     const result = { applied: out.applied, skipped: out.skipped, unchanged: out.unchanged, linked: out.linked, createdEmployees: out.createdEmployees, createdRubrics: out.createdRubrics };
     await audit(req, {
       action: 'payroll.payslips', entityType: 'payroll_period', entityId: p.id,

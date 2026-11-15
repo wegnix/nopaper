@@ -1,5 +1,5 @@
 import { createHash, randomUUID, createHmac, timingSafeEqual } from 'node:crypto';
-import { mkdir, writeFile, unlink, readFile, stat, rename } from 'node:fs/promises';
+import { mkdir, writeFile, unlink, readFile, stat, rename, link, copyFile } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Transform, type Readable } from 'node:stream';
@@ -47,6 +47,18 @@ export async function saveUploadStream(orgId: string, stream: Readable, sniff: (
     await unlink(tmp).catch(() => undefined);
     throw e;
   }
+}
+
+/**
+ * Segunda entrada para o mesmo arquivo (sem ocupar disco de novo): cada uma é apagada por conta própria.
+ * Serve ao envio "para todos os contadores": cada contador tem o seu documento, com o seu "recebido".
+ */
+export async function linkFile(orgId: string, key: string) {
+  const src = resolveKey(key);
+  const copy = `${orgId}/${randomUUID().replace(/-/g, '')}${path.extname(key)}`;
+  const dst = path.join(root, copy);
+  try { await link(src, dst); } catch { await copyFile(src, dst); } // sistema de arquivos sem link: copia
+  return copy;
 }
 
 function resolveKey(key: string) {

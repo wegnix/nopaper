@@ -288,6 +288,13 @@
       "when": 1794617870624,
       "tag": "0040_api_token_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794771483407,
+      "tag": "0041_signature_doc_key",
+      "breakpoints": true
     }
   ]
 }

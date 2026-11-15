@@ -9,7 +9,8 @@ import { HttpError } from '../lib/errors.js';
  * pessoa), nem ver o nome dele ou a auditoria dele nas telas da Plataforma.
  *
  * Limite conhecido (não é resolvido aqui): o arquivo de backup e o acesso ao servidor continuam
- * contendo os dados de todos os espaços.
+ * contendo os dados de todos os espaços; e os avisos por e-mail/Telegram passam pelo SMTP e pelo bot da
+ * plataforma (quem os configura pode ler o que é enviado).
  */
 export const PRIVATE_SPACE_LABEL = 'Espaço privado';
 

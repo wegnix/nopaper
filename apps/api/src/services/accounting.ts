@@ -23,6 +23,17 @@ export async function accountantsOf(orgId: string): Promise<Array<{ id: string; 
  * Para quem vai um envio do espaço: um contador só → ele; mais de um → quem envia escolhe (um deles
  * ou "all" = todos). Devolve o id do destinatário ou null (todos os contadores do espaço).
  */
+/**
+ * Para quem vai o envio, uma entrada por documento a criar. "Todos" num espaço com mais de um contador
+ * vira um documento para CADA contador: assim o "recebido" ou o "remover" de um não some com o
+ * documento do outro (antes era um documento só, com estado único para todos).
+ */
+export async function resolveRecipients(orgId: string, raw: string | null | undefined): Promise<Array<string | null>> {
+  const list = await accountantsOf(orgId);
+  if (list.length > 1 && raw === 'all') return list.map((a) => a.id);
+  return [await resolveRecipient(orgId, raw)];
+}
+
 export async function resolveRecipient(orgId: string, raw: string | null | undefined): Promise<string | null> {
   const list = await accountantsOf(orgId);
   if (list.length <= 1) return list[0]?.id ?? null;

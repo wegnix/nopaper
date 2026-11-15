@@ -1,18 +1,24 @@
 import type { FastifyRequest } from 'fastify';
 import { and, eq, inArray, isNotNull, ne } from 'drizzle-orm';
-import { accountLabel, sameAccountKey, formatDocument, normalizeDocument, personKey, sameCompany, type Payslip, type SpaceCheck } from '@nopaper/shared';
+import { accountLabel, sameAccountKey, formatDocument, normalizeDocument, personKey, sameCompany, type Payslip, type Permission, type SpaceCheck } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
+import { loadOrgContext } from '../lib/auth.js';
 
 /**
  * Proteção contra importar no espaço errado. Só olha para os OUTROS espaços de que a própria pessoa
  * participa — nunca revela a existência de um espaço a quem não é membro dele. Token de integração
  * não é membro de nada: para ele só vale a comparação com o próprio espaço.
  */
-async function otherSpaces(req: FastifyRequest) {
+async function otherSpaces(req: FastifyRequest, need: Permission) {
   if (!req.user || req.integration) return [];
-  return db.select({ id: schema.organizations.id, name: schema.organizations.name, document: schema.organizations.document })
+  const rows = await db.select({ id: schema.organizations.id, name: schema.organizations.name, document: schema.organizations.document })
     .from(schema.memberships).innerJoin(schema.organizations, eq(schema.organizations.id, schema.memberships.orgId))
     .where(and(eq(schema.memberships.userId, req.user.id), eq(schema.memberships.active, true), ne(schema.memberships.orgId, req.org!.id)));
+  // só os espaços em que a pessoa pode VER aquela área (folha, banco, cartões): ser membro não basta para o aviso
+  // contar o que há lá (senão um arquivo montado serviria para sondar funcionários ou contas de outro espaço)
+  const out: typeof rows = [];
+  for (const r of rows) if ((await loadOrgContext(req.user.id, r.id))?.can(need)) out.push(r);
+  return out;
 }
 
 const digits = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '');
@@ -37,7 +43,7 @@ export async function checkPayslipsSpace(req: FastifyRequest, report: { company:
   const here = normalizeDocument(org?.document ?? '');
   const fileDoc = normalizeDocument(report.companyDocument ?? '');
   if (fileDoc && here && (fileDoc === here || sameCompany(fileDoc, here))) return null;
-  const others = await otherSpaces(req);
+  const others = await otherSpaces(req, 'payroll.view');
   const company = report.company ? ` · ${report.company}` : '';
   if (fileDoc) {
     const found = `CNPJ ${formatDocument(fileDoc)}${company}`;
@@ -67,7 +73,7 @@ export async function checkPayslipsSpace(req: FastifyRequest, report: { company:
 export async function checkBankSpace(req: FastifyRequest, unknownKeys: string[]): Promise<SpaceCheck | null> {
   const keys = unknownKeys.filter(Boolean);
   if (!keys.length) return null;
-  const others = await otherSpaces(req);
+  const others = await otherSpaces(req, 'bank.view');
   if (!others.length) return null;
   const theirs = await db.select().from(schema.bankAccounts)
     .where(and(inArray(schema.bankAccounts.orgId, others.map((o) => o.id)), isNotNull(schema.bankAccounts.matchKey)));
@@ -86,7 +92,7 @@ export async function checkCardSpace(req: FastifyRequest, accountId: string | nu
   const [mine] = await db.select({ id: schema.cards.id, name: schema.cards.name }).from(schema.cards)
     .where(and(eq(schema.cards.orgId, req.org!.id), eq(schema.cards.ofxAccount, accountId)));
   if (mine) return { knownCard: mine, spaceCheck: null };
-  const others = await otherSpaces(req);
+  const others = await otherSpaces(req, 'cards.view');
   if (!others.length) return { knownCard: null, spaceCheck: null };
   const [hit] = await db.select({ name: schema.cards.name, orgId: schema.cards.orgId }).from(schema.cards)
     .where(and(inArray(schema.cards.orgId, others.map((o) => o.id)), isNotNull(schema.cards.ofxAccount), eq(schema.cards.ofxAccount, accountId)));

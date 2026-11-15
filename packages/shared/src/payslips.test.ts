@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isProLabore, parsePayslips, payrollPayslipApplySchema, payslipEmployeeFor, payslipItemKey, payslipOk, payslipRubricFor, payslipRubricName, type PdfCell } from './payslips.js';
+import { isProLabore, parsePayslips, payrollPayslipApplySchema, payslipEmployeeFor, payslipItemKey, payslipOk, payslipRubricFor, payslipRubricName, type PdfCell, payslipDocKey, payslipDocLabel } from './payslips.js';
 import { payrollTotals } from './payroll.js';
 
 // células como o pdfToCells devolve (x = começo, w = largura); dados fictícios
@@ -167,4 +167,13 @@ test('pró-labore: sem FGTS, 13º e férias no custo', () => {
   // fora do Simples o INSS patronal incide também no pró-labore
   const normal = payrollTotals('0', [{ rubricId: 'p', amount: '1000.00' }], rubrics, { regime: 'normal', ratPct: 0, thirdPartyPct: 0, provisions: true });
   assert.deepEqual([normal.fgts, normal.employerInss, normal.provisions], ['0.00', '200.00', '0.00']);
+});
+
+test('tipo de recibo: o holerite do mês é a chave vazia; 13º, férias e adiantamento têm chave própria', () => {
+  for (const t of ['Salário', 'salario', 'Pro-labore', 'Pró-Labore', '', null]) assert.equal(payslipDocKey(t), '', String(t));
+  assert.equal(payslipDocKey('Férias'), 'ferias');
+  assert.equal(payslipDocKey('13º Salário'), '13-salario');
+  assert.notEqual(payslipDocKey('Adiantamento Salarial'), payslipDocKey('13º Salário'));
+  assert.equal(payslipDocLabel('Salário'), null);
+  assert.equal(payslipDocLabel('13º Salário'), '13º Salário');
 });

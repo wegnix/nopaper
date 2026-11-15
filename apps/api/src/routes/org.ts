@@ -86,6 +86,12 @@ export default async function orgRoutes(app: FastifyInstance) {
     const body = parse(z.object({ private: z.boolean() }), req.body);
     if (!req.org!.isOwner) throw forbidden('Só o dono do espaço pode ligar ou desligar o espaço privado');
     const [before] = await db.select({ isPrivate: schema.organizations.isPrivate }).from(schema.organizations).where(eq(schema.organizations.id, req.org!.id));
+    if (body.private && !before?.isPrivate) {
+      // senha provisória é conhecida por quem a definiu (pode ter sido a plataforma): com ela dá para entrar como a pessoa
+      const prov = await db.select({ name: schema.users.name }).from(schema.memberships).innerJoin(schema.users, eq(schema.users.id, schema.memberships.userId))
+        .where(and(eq(schema.memberships.orgId, req.org!.id), eq(schema.users.mustChangePassword, true), isNull(schema.users.deletedAt)));
+      if (prov.length) throw badRequest(`Antes de tornar o espaço privado, ${prov.length === 1 ? `${prov[0]!.name} precisa` : `estas pessoas precisam`} entrar e criar a própria senha (ainda ${prov.length === 1 ? 'está' : 'estão'} com a senha provisória): ${prov.map((p) => p.name).join(', ')}. Ou tire ${prov.length === 1 ? 'essa pessoa' : 'essas pessoas'} do espaço em Membros.`, 'provisional_password');
+    }
     const [org] = await db.update(schema.organizations).set({ isPrivate: body.private }).where(eq(schema.organizations.id, req.org!.id)).returning();
     if (before?.isPrivate !== org.isPrivate) {
       await audit(req, {
@@ -150,7 +156,13 @@ export default async function orgRoutes(app: FastifyInstance) {
       const created = !u;
       // conta que já existe: só entra por aqui se quem adiciona já divide algum espaço com ela (a mesma
       // regra da lista "Conta que já existe"); senão qualquer um poria contas alheias no próprio espaço
-      if (u && !req.user!.isSuperadmin) {
+      const [{ isPrivate }] = await tx.select({ isPrivate: schema.organizations.isPrivate }).from(schema.organizations).where(eq(schema.organizations.id, orgId));
+      // espaço privado: a plataforma não associa contas a ele, então quem o administra pode trazer uma conta que já
+      // existe informando o e-mail exato (nos demais espaços continua valendo a regra do espaço em comum)
+      if (u && isPrivate && u.mustChangePassword) {
+        throw badRequest(`${u.name} ainda está com a senha provisória, definida por quem criou a conta. Peça para a pessoa entrar e criar a própria senha antes de participar de um espaço privado.`, 'provisional_password');
+      }
+      if (u && !req.user!.isSuperadmin && !isPrivate) {
         const shared = await tx.execute(sql`select 1 from memberships m join memberships mine on mine.org_id = m.org_id and mine.user_id = ${req.user!.id} and mine.active where m.user_id = ${u.id} limit 1`);
         if (!shared.rows.length) throw badRequest('Já existe uma conta com este e-mail na plataforma. Peça ao administrador da plataforma para associá-la a este espaço.', 'account_exists');
       }

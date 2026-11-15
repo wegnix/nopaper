@@ -98,7 +98,7 @@ export function SignaturesDialog({ open, onClose, periodId, refStr, payMonth }: 
   const linkOf = async (r: PayslipSignatureRow) => `${window.location.origin}/assinar/${(await get<{ token: string }>(`/api/payroll/signatures/${r.id}/link`)).token}`;
   const message = (r: PayslipSignatureRow, url: string) => (r.kind === 'term'
     ? `Olá, ${r.employeeName.split(' ')[0]}! A partir de agora os holerites serão assinados pelo celular. Para começar, leia e assine o termo de aceite: ${url}`
-    : `Olá, ${r.employeeName.split(' ')[0]}! Seu holerite de ${refLabelPT(r.competence)} está disponível para conferir e assinar: ${url}`);
+    : `Olá, ${r.employeeName.split(' ')[0]}! Seu ${r.docLabel ? `recibo de ${r.docLabel}` : 'holerite'} de ${refLabelPT(r.competence)} está disponível para conferir e assinar: ${url}`);
   const copy = async (r: PayslipSignatureRow) => {
     try { await navigator.clipboard.writeText(await linkOf(r)); toast.success(`Link de ${r.employeeName.split(' ')[0]} copiado`); } catch (e) { toast.error(errMsg(e)); }
   };
@@ -134,7 +134,7 @@ export function SignaturesDialog({ open, onClose, periodId, refStr, payMonth }: 
               <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
                 <div className="min-w-0 flex-1 basis-48">
                   <p className="line-clamp-2 break-words text-sm font-medium leading-snug sm:line-clamp-1">{r.employeeName}</p>
-                  <p className="text-xs text-muted">{r.kind === 'term' ? 'Termo de aceite de assinatura eletrônica' : <>Holerite de {refLabelPT(r.competence)} · líquido <span className="tnum">{formatBRL(r.net)}</span></>}</p>
+                  <p className="text-xs text-muted">{r.kind === 'term' ? 'Termo de aceite de assinatura eletrônica' : <>{r.docLabel ? `${r.docLabel} de ` : 'Holerite de '}{refLabelPT(r.competence)} · líquido <span className="tnum">{formatBRL(r.net)}</span></>}</p>
                   {r.sentToAccountantAt && <p className="text-xs text-faint">Enviado ao contador em {when(r.sentToAccountantAt)}</p>}
                 </div>
                 {r.status === 'signed' ? <StatusChip status="paid" label={`Assinado em ${when(r.signedAt!)}`} />

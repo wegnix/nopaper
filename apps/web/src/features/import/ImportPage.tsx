@@ -16,6 +16,7 @@ import { useConfirm } from '@/components/ui/dialog';
 import { api, errMsg, get, post } from '@/lib/api';
 import { useCategories, useFolders } from '@/lib/queries';
 import { useBillNames, useCan, useSession } from '@/lib/session';
+import { useProgressive } from '@/lib/useProgressive';
 import { cn, isTouch, plural } from '@/lib/utils';
 
 interface ReadResult { fileName: string; sheets: ImportSheet[] }
@@ -86,7 +87,13 @@ export function ImportPage() {
   const valid = useMemo(() => rows.filter((r) => !r.skip), [rows]);
 
   // duplicatas + sugestões de categoria pelo histórico
-  const checkKey = useMemo(() => valid.map((r) => dupKey(r.description, r.dueDate!, r.amount!)).join('~'), [valid]);
+  // chave curta (quantidade + resumo das linhas): a chave antiga era o texto de todas as linhas e, numa planilha
+  // do ano inteiro, o react-query comparava dezenas de KB a cada desenho
+  const checkKey = useMemo(() => {
+    let h = 2166136261;
+    for (const r of valid) for (const ch of dupKey(r.description, r.dueDate!, r.amount!)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+    return `${valid.length}:${(h >>> 0).toString(36)}`;
+  }, [valid]);
   const check = useQuery({
     enabled: valid.length > 0, queryKey: ['bills', orgId, 'import-check', type, checkKey], staleTime: Infinity, placeholderData: (p) => p,
     queryFn: () => post<{ duplicates: number[]; suggestions: Record<string, string> }>('/api/import/check', {
@@ -155,6 +162,9 @@ export function ImportPage() {
   };
 
   const shown = rows.filter((r) => filter === 'all' ? true : filter === 'warn' ? !r.skip && r.warnings.length : filter === 'skip' ? !!r.skip : dupSet.has(r.key));
+  // planilha grande: desenha as primeiras linhas e completa conforme a pessoa rola
+  const prog = useProgressive(shown, `${filter}|${rows.length}`);
+  const catById = useMemo(() => new Map(cats.map((c) => [c.id, c])), [cats]);
 
   return (
     <div className="flex flex-col gap-6 pb-24">
@@ -302,6 +312,7 @@ export function ImportPage() {
                       {dupSet.size > 0 && <span className="ml-auto"><Checkbox checked={includeDups} onChange={setIncludeDups} label="Importar mesmo as que já existem" /></span>}
                     </div>
                     <div className="max-h-[65vh] overflow-auto">
+                      <div className="relative">
                       <table className="w-full text-sm">
                         <thead className="sticky top-0 z-10 bg-surface text-left text-xs text-muted">
                           <tr className="border-b border-line">
@@ -315,7 +326,7 @@ export function ImportPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-line">
-                          {shown.map((r) => {
+                          {prog.visible.map((r) => {
                             const dup = dupSet.has(r.key);
                             const off = !!r.skip || excluded.has(r.key) || (dup && !includeDups);
                             return (
@@ -336,12 +347,15 @@ export function ImportPage() {
                                   {r.paidAt ? <span className="text-ok">Pago {formatDateBR(r.paidAt)}</span> : r.skip ? '' : <span className="text-muted">Pendente</span>}
                                   {r.paymentMethod && <p className="max-w-[160px] truncate text-faint">{r.paymentMethod}</p>}
                                 </td>
-                                <td className="p-2">{!r.skip && <CategoryChip category={cats.find((c) => c.id === catFor(normText(r.description), r.categoryName ? catByLabel.get(normText(r.categoryName)) ?? null : null))} />}</td>
+                                <td className="p-2">{!r.skip && <CategoryChip category={catById.get(catFor(normText(r.description), r.categoryName ? catByLabel.get(normText(r.categoryName)) ?? null : null))} />}</td>
                               </tr>
                             );
                           })}
                         </tbody>
                       </table>
+                      {prog.sentinel}
+                      </div>
+                      {prog.hidden > 0 && <p className="py-2 text-center text-xs text-faint" aria-live="polite">Carregando mais {prog.hidden.toLocaleString('pt-BR')}…</p>}
                       {!shown.length && <p className="py-12 text-center text-sm text-muted">Nada aqui.</p>}
                     </div>
                   </Card>

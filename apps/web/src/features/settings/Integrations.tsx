@@ -307,6 +307,7 @@ export function IntegrationsPage() {
                   {t.rateLimit && t.rateLimit !== API_RATE_LIMIT_PER_MINUTE && ` · até ${t.rateLimit.toLocaleString('pt-BR')} chamadas/min`}
                   {t.allowedIps.length > 0 && ` · ${t.allowedIps.length === 1 ? `só de ${t.allowedIps[0]}` : `${t.allowedIps.length} endereços aceitos`}`}
                   {' · '}criado em {dateBR(t.createdAt)}{t.createdByName && ` por ${t.createdByName}`}
+                  {t.creatorGone && <span className="ml-1 rounded bg-warn/15 px-1.5 py-0.5 font-medium text-warn" title="O token continua funcionando mesmo depois que quem o criou sai do espaço. Confira se ele ainda deve existir.">quem criou não está mais no espaço</span>}
                 </p>
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {t.permissions.length === 0 && <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">Sem permissões</span>}

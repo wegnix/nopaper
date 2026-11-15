@@ -196,6 +196,10 @@ createServer(async (req, res) => {
       for await (const c of req) { raw += c; if (raw.length > 1024) break; }
       const tag = (() => { try { return JSON.parse(raw).version; } catch { return null; } })();
       if (typeof tag !== 'string' || !TAG_RE.test(tag)) return send(res, 400, { error: 'versão inválida' });
+      // só para a frente: voltar para uma versão antiga poria código velho sobre o banco já migrado
+      const parts = (t) => /^v(\d+)\.(\d+)\.(\d+)$/.exec(String(t).trim())?.slice(1).map(Number);
+      const want = parts(tag), have = parts(await currentRef().catch(() => ''));
+      if (want && have && (want[0] - have[0] || want[1] - have[1] || want[2] - have[2]) < 0) return send(res, 400, { error: 'só é possível atualizar para uma versão mais nova que a instalada' });
       if (state.state === 'running') return send(res, 409, { error: 'já existe uma atualização em andamento' });
       state.state = 'running'; // já aqui: dois pedidos quase juntos (duplo clique) não podem começar duas atualizações
       void update(tag);

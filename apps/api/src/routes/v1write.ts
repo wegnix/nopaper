@@ -10,6 +10,7 @@ import { parse } from '../lib/validate.js';
 import { HttpError } from '../lib/errors.js';
 import { attachmentsFor, deleteBillsWithFiles, loadBill, orgToday, restrictedCategoryIds, seriesRows, visibilityCond, type AttachmentSummary, type BillRow } from '../services/bills.js';
 import { createForward } from '../lib/forward.js';
+import { audit } from '../lib/audit.js';
 import { claimIdempotencyKey, finishIdempotencyKey, releaseIdempotencyKey } from '../services/integrations.js';
 
 /**
@@ -147,8 +148,12 @@ export function registerV1Writes(app: FastifyInstance, api: FastifyInstance, h: 
       installmentAmounts: rec?.amounts, installmentDueDates: rec?.dueDates, firstInstallment: rec?.firstInstallment,
     });
     const ids = created.items.map((i) => i.id);
+    // a criação já ficou na auditoria (e nos eventos): se a série for desfeita aqui, registra a exclusão também,
+    // para quem acompanha os eventos não ficar com contas que não existem
+    const undone = (why: string) => audit(req, { action: `${body.type}.delete`, entityType: 'bill', entityId: ids[0], description: `Desfez a criação de "${body.description}" (${ids.length} lançamento(s)): ${why}`, details: { ids, undone: true } });
     if (occurrenceIds.length > ids.length) {
       await deleteBillsWithFiles(db, ids);
+      await undone('externalIds a mais');
       throw new HttpError(400, `recurrence.externalIds tem ${occurrenceIds.length} itens, mas a série gerou ${ids.length} conta(s).`, 'validation');
     }
     if (wanted.length || body.source) {
@@ -161,6 +166,7 @@ export function registerV1Writes(app: FastifyInstance, api: FastifyInstance, h: 
       } catch (e) {
         // duas chamadas ao mesmo tempo com o mesmo externalId: a outra chegou antes; desfaz esta
         await deleteBillsWithFiles(db, ids);
+        await undone('externalId já usado');
         if (!isUniqueViolation(e)) throw e;
         const [other] = headExternalId ? await findByExternalId(req, [headExternalId]) : [];
         if (!other || other.type !== body.type) throw externalConflict();
@@ -190,6 +196,10 @@ export function registerV1Writes(app: FastifyInstance, api: FastifyInstance, h: 
       try {
         await db.update(schema.bills).set({ ...(externalId !== undefined ? { externalId } : {}), ...(source !== undefined ? { source } : {}) }).where(eq(schema.bills.id, b.id));
       } catch (e) { if (isUniqueViolation(e)) throw externalConflict(); throw e; }
+      const changes: Record<string, { from: unknown; to: unknown }> = {};
+      if (externalId !== undefined && externalId !== b.externalId) changes.externalId = { from: b.externalId, to: externalId };
+      if (source !== undefined && source !== b.source) changes.source = { from: b.source, to: source };
+      if (Object.keys(changes).length) await audit(req, { action: `${b.type}.update`, entityType: 'bill', entityId: b.id, description: `Alterou a identificação externa de "${b.description}"`, details: { changes, restricted: (await restrictedCategoryIds(b.orgId)).includes(b.categoryId) } });
     }
     return billOut(req, b.id);
   });

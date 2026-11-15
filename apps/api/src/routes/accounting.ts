@@ -10,12 +10,12 @@ import { parse } from '../lib/validate.js';
 import { badRequest, forbidden, HttpError, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
-import { ALLOWED_UPLOADS, ARCHIVE_UPLOADS, deleteFile, readStoredFile, saveUploadStream, signFileToken, sniffArchive, sniffMime, streamStoredFile, verifyFileToken } from '../lib/storage.js';
+import { ALLOWED_UPLOADS, ARCHIVE_UPLOADS, deleteFile, readStoredFile, saveUploadStream, signFileToken, sniffArchive, sniffMime, streamStoredFile, verifyFileToken, linkFile } from '../lib/storage.js';
 import { classifyDocument } from '../services/classifier.js';
 import { pdfToCells } from '../services/pdf.js';
 import { loadAlertConfig } from '../services/alerts.js';
 import { loadBill, restrictedCategoryIds } from '../services/bills.js';
-import { accountantsOf, resolveRecipient } from '../services/accounting.js';
+import { accountantsOf, resolveRecipients } from '../services/accounting.js';
 import { assertStorageRoom, storageInfo } from '../services/storageQuota.js';
 import { escapeHtml, sendEmail, telegramSend, telegramToken } from '../services/notify.js';
 import { checkPayslipsSpace } from '../services/spaceCheck.js';
@@ -219,6 +219,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
     const saved: Array<{ key: string; sha256: string; size: number; mime: string; filename: string }> = [];
     const sniff = (head: Buffer) => { const mime = sniffMime(head) ?? sniffArchive(head); return mime && EXT[mime] ? { mime, ext: EXT[mime]! } : null; };
     let docs: Doc[];
+    const extra: string[] = [];
     await assertStorageRoom(req.org!.id);
     try {
       for await (const part of req.parts({ limits: { fileSize: max * 1024 * 1024, files: MAX_FILES } })) {
@@ -232,13 +233,21 @@ export default async function accountingRoutes(app: FastifyInstance) {
       }
       if (!saved.length) throw badRequest('Escolha ao menos um arquivo');
       const body = parse(accountingSendSchema, fields);
-      const recipientId = await resolveRecipient(req.org!.id, body.recipientId);
-      docs = await db.insert(schema.accountingDocuments).values(saved.map((f) => ({
-        orgId: req.org!.id, direction: 'to_accountant', recipientId, kind: body.kind, competence: body.competence ?? null, note: body.note,
+      const recipients = await resolveRecipients(req.org!.id, body.recipientId);
+      // "todos os contadores": um documento por contador (mesmo arquivo no disco, por link)
+      const entries: Array<typeof saved[number] & { recipientId: string | null }> = [];
+      for (const f of saved) for (const [i, recipientId] of recipients.entries()) {
+        const key = i === 0 ? f.key : await linkFile(req.org!.id, f.key);
+        if (i > 0) extra.push(key);
+        entries.push({ ...f, key, recipientId });
+      }
+      docs = await db.insert(schema.accountingDocuments).values(entries.map((f) => ({
+        orgId: req.org!.id, direction: 'to_accountant', recipientId: f.recipientId, kind: body.kind, competence: body.competence ?? null, note: body.note,
         originalName: f.filename, mime: f.mime, size: f.size, storageKey: f.key, sha256: f.sha256, detected: null, uploadedBy: req.user!.id,
       }))).returning();
     } catch (e) {
       for (const f of saved) await deleteFile(f.key);
+      for (const k of extra) await deleteFile(k);
       throw e;
     }
     await audit(req, {
@@ -246,7 +255,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
       description: `Enviou ${docs.length === 1 ? `"${docs[0]!.originalName}"` : `${docs.length} arquivos`} para o contador (${ACCOUNTING_KIND_LABEL[docs[0]!.kind as AccountingKind]}${docs[0]!.competence ? ` – ${refLabelPT(docs[0]!.competence)}` : ''})`,
       details: { kind: docs[0]!.kind, competence: docs[0]!.competence, files: docs.map((d) => d.originalName) },
     });
-    return { created: docs.length, storage: await storageInfo(req.org!.id) };
+    return { created: saved.length, storage: await storageInfo(req.org!.id) };
   });
 
   /**

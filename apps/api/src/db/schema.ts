@@ -645,6 +645,8 @@ export const payslipSignatures = pgTable('payslip_signatures', {
   employeeDocument: varchar('employee_document', { length: 32 }).notNull(),
   /** Competência do holerite (AAAA-MM). */
   competence: varchar('competence', { length: 7 }).notNull(),
+  /** Tipo do recibo na competência: '' = holerite do mês; '13o-salario', 'ferias'… (`payslipDocKey`). */
+  docKey: varchar('doc_key', { length: 40 }).notNull().default(''),
   net: numeric('net', { precision: 14, scale: 2 }).notNull(),
   /** Holerite lido do PDF (linhas e totais) para mostrar no celular. */
   slip: jsonb('slip').notNull(),
@@ -674,6 +676,6 @@ export const payslipSignatures = pgTable('payslip_signatures', {
   createdAt: createdAt(),
 }, (t) => [
   uniqueIndex('payslip_signatures_token_uq').on(t.tokenHash),
-  uniqueIndex('payslip_signatures_emp_comp_uq').on(t.orgId, t.employeeId, t.competence),
+  uniqueIndex('payslip_signatures_emp_comp_uq').on(t.orgId, t.employeeId, t.competence, t.docKey),
   index('payslip_signatures_period_idx').on(t.orgId, t.periodId),
 ]);

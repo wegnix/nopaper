@@ -19,6 +19,7 @@ import { PRIVATE_SPACE_LABEL, assertOrgOpenToPlatform, inLockedSpace, privacyFor
  */
 export default async function platformRoutes(app: FastifyInstance) {
   const guard = { preHandler: [requireAuth, requireSuperadmin] };
+  const activeSuperadmins = async () => (await db.select({ n: sql<number>`count(*)::int` }).from(schema.users).where(and(eq(schema.users.isSuperadmin, true), eq(schema.users.active, true), isNull(schema.users.deletedAt))))[0]!.n;
 
   /** `actorId` = quem está olhando: espaços privados de que ele não participa saem sem nome e sem grupos. */
   const userView = async (actorId: string, id?: string) => {
@@ -82,6 +83,12 @@ export default async function platformRoutes(app: FastifyInstance) {
     for (const [k, v] of Object.entries(patch)) if ((cur as Record<string, unknown>)[k] !== v) changes[k] = { from: (cur as Record<string, unknown>)[k], to: v };
     if (!Object.keys(changes).length) return (await userView(req.user!.id, cur.id))[0];
     await db.update(schema.users).set(patch).where(eq(schema.users.id, cur.id));
+    // duas pessoas rebaixando uma à outra no mesmo instante passam as duas na contagem de cima: confere de novo
+    // depois de gravar e, se a plataforma ficou sem administrador, desfaz esta mudança
+    if (cur.isSuperadmin && (body.isSuperadmin === false || body.active === false) && !(await activeSuperadmins())) {
+      await db.update(schema.users).set({ isSuperadmin: cur.isSuperadmin, active: cur.active }).where(eq(schema.users.id, cur.id));
+      throw badRequest('Precisa haver pelo menos um administrador da plataforma ativo');
+    }
     // conta desativada: derruba as sessões abertas
     if (body.active === false) await db.update(schema.sessions).set({ revokedAt: new Date() }).where(and(eq(schema.sessions.userId, cur.id), isNull(schema.sessions.revokedAt)));
     await audit(req, { action: 'platform.user_update', entityType: 'user', entityId: cur.id, description: `Alterou a conta de ${cur.name}`, details: { changes } });
@@ -211,6 +218,13 @@ export default async function platformRoutes(app: FastifyInstance) {
     if (owned.length) throw conflict(`${cur.name} é dono(a) do espaço ${owned.map((n) => `“${n}”`).join(', ')}. Um espaço não pode ficar sem dono: desative a conta em vez de remover.`);
     const tag = randomBytes(5).toString('hex');
     await db.transaction(async (tx) => {
+      if (cur.isSuperadmin) {
+        // uma remoção de administrador da plataforma por vez: a contagem abaixo não pode ser feita por duas ao mesmo tempo
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('nopaper:superadmins'))`);
+        const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(schema.users)
+          .where(and(eq(schema.users.isSuperadmin, true), eq(schema.users.active, true), isNull(schema.users.deletedAt), ne(schema.users.id, cur.id)));
+        if (!n) throw badRequest('Precisa haver pelo menos um administrador da plataforma ativo');
+      }
       await tx.update(schema.sessions).set({ revokedAt: new Date() }).where(and(eq(schema.sessions.userId, cur.id), isNull(schema.sessions.revokedAt)));
       await tx.delete(schema.memberships).where(eq(schema.memberships.userId, cur.id));
       await tx.update(schema.users).set({

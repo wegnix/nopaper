@@ -69,6 +69,8 @@ export interface PayslipSignatureRow {
   employeeName: string;
   phone: string | null;
   competence: string;
+  /** Tipo do recibo quando não é o holerite do mês ("13º Salário", "Férias"); null no holerite normal e no termo. */
+  docLabel: string | null;
   net: string;
   status: EsignStatus;
   createdAt: string;
@@ -78,7 +80,7 @@ export interface PayslipSignatureRow {
 }
 
 /** O que a página pública mostra antes do CPF (nada sensível). */
-export interface EsignPublicInfo { kind: EsignKind; company: string; firstName: string; competence: string; status: EsignStatus }
+export interface EsignPublicInfo { kind: EsignKind; company: string; firstName: string; competence: string; status: EsignStatus; docLabel?: string | null }
 /** Depois do CPF conferido. */
 export interface EsignOpened {
   key: string;

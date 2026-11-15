@@ -8,6 +8,53 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.24.0] - 2026-11-15
+
+### Novo
+- **Assinatura de holerites: 13º, férias e adiantamento são documentos próprios.** Antes, um recibo de 13º ou de
+  férias da mesma competência substituía o holerite do mês que ainda não tinha sido assinado, ou era recusado com
+  "já assinou o holerite deste mês". Agora cada tipo de recibo tem o seu link e a sua assinatura; a lista e a
+  mensagem do WhatsApp mostram qual é ("13º Salário de dezembro"). Um PDF com mais de um mês também passa a
+  separar cada holerite pela própria competência.
+- **Integrações**: o token criado por alguém que não participa mais do espaço aparece marcado na lista (ele
+  continua funcionando, então vale revisar se ainda deve existir).
+
+### Segurança
+- **Conciliação bancária**: duas pessoas (ou duas abas) conciliando ao mesmo tempo não ligam mais a mesma conta a
+  dois lançamentos; desfazer uma conciliação ou uma importação no mesmo instante de outra operação também ficou
+  protegido.
+- **Dois contadores no mesmo espaço**: um envio "para todos" vira um documento para cada contador. Antes, quando
+  um marcava como recebido ou removia, o documento mudava ou sumia para o outro.
+- **Espaço privado**:
+  - não dá para tornar o espaço privado, nem trazer uma conta para ele, enquanto a pessoa estiver com a senha
+    provisória (quem definiu essa senha poderia entrar como ela) — basta a pessoa entrar e criar a própria senha;
+  - quem administra um espaço privado pode trazer uma conta que já existe informando o e-mail exato (antes a
+    tela mandava pedir à plataforma, que não alcança espaços privados);
+  - o cartão do espaço privado avisa que os e-mails e mensagens de alerta passam pelo servidor de e-mail e pelo bot
+    da plataforma.
+- **Aviso de espaço errado nas importações**: só considera o outro espaço se você puder ver aquela área lá (folha,
+  contas bancárias ou cartões).
+- **Plataforma**: dois administradores rebaixando ou removendo um ao outro no mesmo instante não deixam mais a
+  instalação sem administrador.
+- **Atualização pela web**: o atualizador recusa instalar uma versão mais antiga que a instalada.
+
+### Corrigido
+- **Folha**: gravar as colunas da impressão, as regras de comissão ou ler um relatório de vendas ao mesmo tempo
+  podia apagar, sem aviso, a mudança que a outra pessoa tinha acabado de salvar.
+- **Cartões**: desfazer a única fatura importada de um cartão faz o cartão esquecer a conta que tinha aprendido
+  (antes ficava preso a ela, mesmo se a importação tinha sido no cartão errado); um cartão não aprende a conta que
+  já é de outro cartão.
+- **Assinatura**:
+  - girar o celular não desloca mais o traço no quadro de assinatura (o quadro é limpo e a pessoa assina de novo);
+  - uma futura mudança no texto do termo de aceite gera o termo novo para quem assinou o antigo.
+- **API pública**: desfazer a criação de uma série (identificadores externos a mais ou repetidos) registra a
+  exclusão nos eventos; trocar a identificação externa de uma conta fica na auditoria; uma chamada lenta repetida
+  com a mesma `Idempotency-Key` só é refeita depois de 10 minutos (era 1).
+- Dica dos botões: "Copiado!" volta a aparecer depois de copiar; leitores de tela leem a dica.
+
+### Melhorado
+- Importar planilha: a prévia de planilhas grandes é montada conforme você rola.
+
 ## [1.23.4] - 2026-11-14
 
 ### Segurança

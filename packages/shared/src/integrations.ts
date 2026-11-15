@@ -85,5 +85,7 @@ export interface ApiTokenInfo {
   lastUsedIp: string | null;
   createdAt: string;
   createdByName: string | null;
+  /** Quem criou o token não participa mais do espaço (ou está desativado): vale revisar se o token ainda deve existir. */
+  creatorGone?: boolean;
   webhook: WebhookInfo | null;
 }

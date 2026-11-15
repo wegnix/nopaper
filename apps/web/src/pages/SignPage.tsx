@@ -70,8 +70,8 @@ function SignFlow({ token, cpf0, next }: { token: string; cpf0: string; next: st
                   ? <>Você já assinou o termo de aceite de assinatura eletrônica da {info.company}. Informe o seu CPF para ver e baixar a sua via.</>
                   : <>A {info.company} vai passar a enviar os holerites para você assinar pelo celular. Para ler e assinar o <b className="text-ink">termo de aceite</b>, informe o seu CPF.</>)
                 : (info.status === 'signed'
-                  ? <>Você já assinou o holerite de <b className="text-ink">{refLabelPT(info.competence)}</b> da {info.company}. Informe o seu CPF para ver e baixar a sua via.</>
-                  : <>O seu holerite de <b className="text-ink">{refLabelPT(info.competence)}</b> da {info.company} está pronto para conferir e assinar. Para abrir, informe o seu CPF.</>)}
+                  ? <>Você já assinou o {info.docLabel ? `recibo de ${info.docLabel}` : 'holerite'} de <b className="text-ink">{refLabelPT(info.competence)}</b> da {info.company}. Informe o seu CPF para ver e baixar a sua via.</>
+                  : <>O seu {info.docLabel ? `recibo de ${info.docLabel}` : 'holerite'} de <b className="text-ink">{refLabelPT(info.competence)}</b> da {info.company} está pronto para conferir e assinar. Para abrir, informe o seu CPF.</>)}
             </p>
             <form onSubmit={(e) => { e.preventDefault(); open(cpf); }} className="mt-5 flex flex-col gap-3">
               <Field label="CPF" error={error}>
@@ -251,6 +251,16 @@ function SignaturePad({ ref, onInk }: { ref: React.Ref<PadHandle>; onInk: (has: 
     box.current = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
   }, [onInk]);
   useEffect(() => { setup(); }, [setup]);
+  // girar o celular (ou mudar a largura da tela) muda o tamanho do quadro: sem refazer a escala, o traço
+  // sairia deslocado do dedo. O que já foi desenhado é limpo — a pessoa assina de novo no quadro novo.
+  useEffect(() => {
+    const c = canvas.current;
+    if (!c || typeof ResizeObserver === 'undefined') return;
+    let w = c.getBoundingClientRect().width;
+    const ro = new ResizeObserver(() => { const now = c.getBoundingClientRect().width; if (Math.abs(now - w) > 1) { w = now; setup(); } });
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [setup]);
 
   const png = () => {
     const c = canvas.current;

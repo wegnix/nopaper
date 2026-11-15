@@ -1,4 +1,4 @@
-import { cloneElement, forwardRef, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent, type InputHTMLAttributes, type PointerEvent, type ReactElement, type ReactNode, type TextareaHTMLAttributes } from 'react';
+import { cloneElement, forwardRef, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type FocusEvent, type InputHTMLAttributes, type PointerEvent, type ReactElement, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
 import { PixelSpinner } from '@/components/brand/Brand';
 import { Checkbox as RCheckbox, Switch as RSwitch } from 'radix-ui';
@@ -116,23 +116,39 @@ export function Switch({ checked, onChange, label, hint, disabled }: { checked: 
 export function Tooltip({ content, children, side = 'top' }: { content: ReactNode; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** O elemento sob o ponteiro (ou com o foco), enquanto estiver lá. */
+  const over = useRef<Element | null>(null);
+  const id = useId();
   useEffect(() => () => clearTimeout(timer.current), []);
+  // a dica mudou com o ponteiro ainda em cima (ex.: "Copiar" → "Copiado!" depois do clique): mostra a nova
+  const text = typeof content === 'string' ? content : null;
+  useEffect(() => { if (over.current && text) setAnchor(over.current.getBoundingClientRect()); }, [text]);
   if (!content || !isValidElement(children)) return <>{children}</>;
-  type H = Record<string, ((e: never) => void) | undefined>;
-  const own = children.props as H;
+  type H = Record<string, unknown>;
+  type F = ((e: never) => void) | undefined;
+  const own = children.props as Record<string, F>;
   const show = (el: Element, delay: number) => { clearTimeout(timer.current); timer.current = setTimeout(() => setAnchor(el.getBoundingClientRect()), delay); };
   const hide = () => { clearTimeout(timer.current); setAnchor(null); };
   const child = cloneElement(children as ReactElement<H>, {
-    onPointerEnter: (e: PointerEvent<Element>) => { own.onPointerEnter?.(e as never); if (e.pointerType !== 'touch') show(e.currentTarget, 250); },
-    onPointerLeave: (e: PointerEvent<Element>) => { own.onPointerLeave?.(e as never); hide(); },
+    // leitores de tela leem a dica junto com o botão enquanto ela está aberta
+    ...(anchor ? { 'aria-describedby': id } : {}),
+    onPointerEnter: (e: PointerEvent<Element>) => { own.onPointerEnter?.(e as never); if (e.pointerType !== 'touch') { over.current = e.currentTarget; show(e.currentTarget, 250); } },
+    onPointerLeave: (e: PointerEvent<Element>) => { own.onPointerLeave?.(e as never); over.current = null; hide(); },
     onPointerDown: (e: PointerEvent<Element>) => { own.onPointerDown?.(e as never); hide(); },
-    onFocus: (e: FocusEvent<Element>) => { own.onFocus?.(e as never); if (e.currentTarget.matches(':focus-visible')) show(e.currentTarget, 0); },
+    onFocus: (e: FocusEvent<Element>) => {
+      own.onFocus?.(e as never);
+      if (!e.currentTarget.matches(':focus-visible')) return;
+      show(e.currentTarget, 0);
+      // foco que voltou sozinho (janela fechada com Esc): a dica não fica presa na tela
+      const el = e.currentTarget;
+      setTimeout(() => { if (over.current !== el) setAnchor(null); }, 4000);
+    },
     onBlur: (e: FocusEvent<Element>) => { own.onBlur?.(e as never); hide(); },
   } as H);
-  return <>{child}{anchor && createPortal(<TooltipBubble anchor={anchor} side={side} onClose={hide}>{content}</TooltipBubble>, document.body)}</>;
+  return <>{child}{anchor && createPortal(<TooltipBubble id={id} anchor={anchor} side={side} onClose={hide}>{content}</TooltipBubble>, document.body)}</>;
 }
 
-function TooltipBubble({ anchor, side, onClose, children }: { anchor: DOMRect; side: 'top' | 'bottom' | 'left' | 'right'; onClose: () => void; children: ReactNode }) {
+function TooltipBubble({ id, anchor, side, onClose, children }: { id: string; anchor: DOMRect; side: 'top' | 'bottom' | 'left' | 'right'; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
@@ -156,7 +172,7 @@ function TooltipBubble({ anchor, side, onClose, children }: { anchor: DOMRect; s
     return () => { window.removeEventListener('scroll', onClose, true); window.removeEventListener('keydown', key); };
   }, [onClose]);
   return (
-    <div ref={ref} role="tooltip" style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
+    <div ref={ref} id={id} role="tooltip" style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
       className="pointer-events-none fixed z-[9000] max-w-xs rounded-md bg-ink px-2.5 py-1.5 text-xs text-bg shadow-lg">
       {children}
     </div>

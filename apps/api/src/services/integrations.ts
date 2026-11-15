@@ -103,6 +103,8 @@ export async function listApiTokens(orgId: string, timezone: string): Promise<Ap
     id: schema.apiTokens.id, name: schema.apiTokens.name, hint: schema.apiTokens.hint, permissions: schema.apiTokens.permissions,
     allowedIps: schema.apiTokens.allowedIps, expiresAt: schema.apiTokens.expiresAt, rateLimit: schema.apiTokens.rateLimit, lastUsedAt: schema.apiTokens.lastUsedAt,
     lastUsedIp: schema.apiTokens.lastUsedIp, createdAt: schema.apiTokens.createdAt, createdByName: schema.users.name,
+    // quem criou ainda participa do espaço? (o token continua valendo depois que a pessoa sai: a tela avisa)
+    creatorGone: sql<boolean>`${schema.apiTokens.createdBy} is not null and not exists (select 1 from memberships m join users u on u.id = m.user_id where m.org_id = ${schema.apiTokens.orgId} and m.user_id = ${schema.apiTokens.createdBy} and m.active and u.active and u.deleted_at is null)`,
     webhookUrl: schema.apiTokens.webhookUrl, webhookGroups: schema.apiTokens.webhookGroups, webhookStatus: schema.apiTokens.webhookStatus,
     webhookError: schema.apiTokens.webhookError, webhookLastAt: schema.apiTokens.webhookLastAt,
   }).from(schema.apiTokens).leftJoin(schema.users, eq(schema.users.id, schema.apiTokens.createdBy))
@@ -118,6 +120,8 @@ export async function listApiTokens(orgId: string, timezone: string): Promise<Ap
 
 // ------------------------------------------------------------------ Idempotency-Key
 const IDEMPOTENCY_TTL_MS = 24 * 3600_000;
+/** Chamada "em andamento" só é dada por morta depois disto (uma série grande demora; com 1 min a repetição rodava de novo e duplicava). */
+const IDEMPOTENCY_RUNNING_MS = 10 * 60_000;
 
 /** Apaga as respostas guardadas há mais de 24 h (job diário). */
 export async function cleanIdempotencyKeys() {
@@ -133,7 +137,7 @@ export async function claimIdempotencyKey(tokenId: string, key: string, request:
   const requestHash = sha256(request);
   // vencidas e chamadas que morreram no meio (mais de 1 min sem resposta) não seguram a chave
   await db.delete(t).where(and(eq(t.tokenId, tokenId), eq(t.key, key),
-    or(lt(t.createdAt, new Date(Date.now() - IDEMPOTENCY_TTL_MS)), and(isNull(t.status), lt(t.createdAt, new Date(Date.now() - 60_000))))));
+    or(lt(t.createdAt, new Date(Date.now() - IDEMPOTENCY_TTL_MS)), and(isNull(t.status), lt(t.createdAt, new Date(Date.now() - IDEMPOTENCY_RUNNING_MS))))));
   const [mine] = await db.insert(t).values({ tokenId, key, requestHash }).onConflictDoNothing().returning({ key: t.key });
   if (mine) return { state: 'new' };
   const [row] = await db.select().from(t).where(and(eq(t.tokenId, tokenId), eq(t.key, key)));

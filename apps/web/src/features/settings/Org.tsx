@@ -282,6 +282,7 @@ function PrivateCard({ org, onChange }: { org: Org; onChange: (v: boolean) => vo
         <li>Quem já é membro continua sendo: confira a lista em Membros.</li>
         <li>Quem participa de um espaço privado troca a própria senha em Meu perfil. Se esquecer a senha, só quem tem acesso ao servidor consegue redefinir.</li>
         <li>O backup da instalação continua levando os dados de todos os espaços, inclusive os privados. Quem baixa o arquivo de backup ou acessa o servidor alcança esses dados.</li>
+        <li>Os avisos por e-mail e Telegram saem pelo servidor de e-mail e pelo bot configurados na plataforma: quem os administra pode ter acesso ao conteúdo dos avisos.</li>
       </ul>
     </Card>
   );

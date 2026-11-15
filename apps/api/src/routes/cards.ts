@@ -264,7 +264,11 @@ export default async function cardRoutes(app: FastifyInstance) {
       const items = body.items.filter((i) => !dup.has(i.fitId));
       if (!items.length) return { batchId: null, created: 0, skipped: dup.size, total: '0.00' };
       // 1ª fatura importada: guarda a conta do arquivo, para reconhecer as próximas (e avisar se vierem para outro cartão/espaço)
-      if (body.accountId && !card.ofxAccount) await tx.update(schema.cards).set({ ofxAccount: body.accountId }).where(eq(schema.cards.id, card.id));
+      // o cartão aprende a conta da 1ª fatura — menos se essa conta já é de OUTRO cartão do espaço (importação no cartão errado)
+      if (body.accountId && !card.ofxAccount) {
+        const [taken] = await tx.select({ id: schema.cards.id }).from(schema.cards).where(and(eq(schema.cards.orgId, card.orgId), eq(schema.cards.ofxAccount, body.accountId)));
+        if (!taken) await tx.update(schema.cards).set({ ofxAccount: body.accountId }).where(eq(schema.cards.id, card.id));
+      }
       const batchId = randomUUID();
       const total = fromCents(items.reduce((a, i) => a + toCents(i.amount), 0));
       await tx.insert(schema.importBatches).values({ id: batchId, orgId: req.org!.id, type: 'card', fileName: body.fileName, rowCount: items.length, totalAmount: total, createdBy: req.user!.id });
@@ -349,8 +353,14 @@ export default async function cardRoutes(app: FastifyInstance) {
         .where(and(eq(schema.cardTransactions.orgId, req.org!.id), eq(schema.cardTransactions.importBatchId, b.id)));
       const paidRefs = [...new Set(txs.filter((t) => t.status === 'paid').map((t) => t.ref))].sort();
       if (paidRefs.length) throw conflict(`Há lançamentos desta importação em fatura já paga (${paidRefs.map(refName).join(', ')}). Reverta o pagamento dessa fatura antes de desfazer.`);
+      const cardIds = (await tx.selectDistinct({ id: schema.cardTransactions.cardId }).from(schema.cardTransactions).where(eq(schema.cardTransactions.importBatchId, b.id))).map((c) => c.id);
       const n = await deleteTransactions(tx, txs.map((t) => t.id), req.user!.id);
       await tx.update(schema.importBatches).set({ undoneAt: new Date() }).where(eq(schema.importBatches.id, b.id));
+      // desfez a única fatura importada do cartão: ele esquece a conta que tinha aprendido (podia ser a errada)
+      for (const id of cardIds) {
+        const [left] = await tx.select({ id: schema.cardTransactions.id }).from(schema.cardTransactions).where(and(eq(schema.cardTransactions.cardId, id), sql`${schema.cardTransactions.importBatchId} is not null`)).limit(1);
+        if (!left) await tx.update(schema.cards).set({ ofxAccount: null }).where(eq(schema.cards.id, id));
+      }
       return n;
     });
     await audit(req, { action: 'card.import.undo', entityType: 'import', entityId: b.id, description: `Desfez a importação da fatura "${b.fileName}" (${removed} lançamento(s) removido(s))`, details: { removed } });

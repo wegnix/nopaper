@@ -77,6 +77,21 @@ export async function savePayrollSettings(orgId: string, value: PayrollSettings)
     .onConflictDoUpdate({ target: [schema.orgSettings.orgId, schema.orgSettings.key], set: { value } });
 }
 
+/**
+ * Muda uma PARTE da configuração a partir do que está gravado agora, uma mudança por vez no espaço.
+ * A configuração é um bloco só (geral, impressão, comissões, holerites): ler, mexer e gravar o bloco
+ * inteiro fazia duas gravações quase juntas apagarem uma a mudança da outra, sem erro.
+ */
+export async function patchPayrollSettings(orgId: string, change: (cur: PayrollSettings) => PayrollSettings): Promise<PayrollSettings> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`nopaper:payroll-settings:${orgId}`}))`);
+    const value = change(await getPayrollSettings(orgId, tx));
+    await tx.insert(schema.orgSettings).values({ orgId, key: SETTINGS_KEY, value })
+      .onConflictDoUpdate({ target: [schema.orgSettings.orgId, schema.orgSettings.key], set: { value } });
+    return value;
+  });
+}
+
 export async function rubricsOf(orgId: string, conn: DBOrTx = db) {
   return conn.select().from(schema.payrollRubrics).where(eq(schema.payrollRubrics.orgId, orgId))
     .orderBy(asc(schema.payrollRubrics.sortOrder), asc(schema.payrollRubrics.name));
