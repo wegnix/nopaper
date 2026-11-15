@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, desc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import {
-  ACCOUNTING_KIND_LABEL, accountingHandleSchema, accountingSendSchema, accountingUploadSchema, formatBRL, formatDateBR, parseBoleto, parsePayslips, refLabelPT,
+  ACCOUNTING_KIND_LABEL, accountingHandleSchema, accountingSendSchema, accountingUploadSchema, formatBRL, formatDateBR, parseBoleto, parsePayslips, parseVacationReport, refLabelPT,
   type AccountingDetected, type AccountingKind,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
@@ -16,6 +16,7 @@ import { pdfToCells } from '../services/pdf.js';
 import { loadAlertConfig } from '../services/alerts.js';
 import { loadBill, restrictedCategoryIds } from '../services/bills.js';
 import { accountantsOf, resolveRecipients } from '../services/accounting.js';
+import { readVacationReport } from '../services/vacations.js';
 import { assertStorageRoom, storageInfo } from '../services/storageQuota.js';
 import { escapeHtml, sendEmail, telegramSend, telegramToken } from '../services/notify.js';
 import { checkPayslipsSpace } from '../services/spaceCheck.js';
@@ -58,6 +59,11 @@ async function detect(kind: AccountingKind, buf: Buffer, mime: string, filename:
       if (mime !== 'application/pdf') return null;
       const r = parsePayslips(await pdfToCells(buf, 200));
       return r.slips.length ? { slips: r.slips.length, slipsRef: r.ref, company: r.company } : null;
+    }
+    if (kind === 'vacation') {
+      if (mime !== 'application/pdf') return null;
+      const r = parseVacationReport(await pdfToCells(buf));
+      return r.rows.length ? { vacations: r.rows.length, vacationsBase: r.baseDate, company: r.company } : null;
     }
     const c = await classifyDocument(buf, mime, filename);
     // só vale o que veio de um boleto/guia reconhecido com segurança (números soltos de outro PDF enganam)
@@ -187,6 +193,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
       if (!saved.length) throw badRequest('Escolha ao menos um arquivo');
       body = parse(accountingUploadSchema, fields);
       if (body.kind === 'payslip' && saved.some((f) => f.mime !== 'application/pdf')) throw badRequest('Os holerites precisam ser enviados em PDF (o arquivo original do sistema de folha).');
+      if (body.kind === 'vacation' && saved.some((f) => f.mime !== 'application/pdf')) throw badRequest('O relatório de férias precisa ser enviado em PDF (o arquivo original do sistema de folha).');
       const values = [];
       for (const f of saved) {
         values.push({
@@ -326,6 +333,15 @@ export default async function accountingRoutes(app: FastifyInstance) {
     const report = parsePayslips(cells);
     if (!report.slips.length) throw badRequest('Não achei holerites neste PDF. Ele precisa ser o PDF original do sistema de folha, não uma foto ou digitalização.', 'payslips_unknown');
     return { fileName: d.originalName, report, spaceCheck: await checkPayslipsSpace(req, report) };
+  });
+
+  /** Lê o relatório de férias que o contador enviou, para aplicar em Folha → Férias (nada é gravado aqui). */
+  app.post<{ Params: { id: string } }>('/api/accounting/documents/:id/vacations', { preHandler: [requirePerm('accounting.review'), requirePerm('payroll.edit')] }, async (req) => {
+    const { d, side } = await loadDoc(req, req.params.id);
+    if (side !== 'recipient' || d.direction !== 'to_client') throw notFound('Documento não encontrado');
+    if (req.org!.kind !== 'company') throw badRequest('A folha de pagamento só está disponível em espaços do tipo Empresa.', 'company_only');
+    if (d.mime !== 'application/pdf') throw badRequest('Este documento não é um PDF.');
+    return readVacationReport(req.org!.id, await readStoredFile(d.storageKey), d.originalName);
   });
 
   /** URL assinada (10 min) para ver/baixar. */

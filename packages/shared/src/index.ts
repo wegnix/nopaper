@@ -22,3 +22,4 @@ export * from './org.js';
 export * from './pdfPasswords.js';
 export * from './integrations.js';
 export * from './spaceCheck.js';
+export * from './vacations.js';

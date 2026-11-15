@@ -7,7 +7,7 @@ import { MONTHS_PT_SHORT } from './dates.js';
  * `accounting.review` recebe o aviso, confere e lança (conta a pagar com o boleto anexado, ou a
  * importação dos holerites na folha).
  */
-export const ACCOUNTING_KINDS = ['payslip', 'office_fee', 'das', 'darf', 'dae', 'state_tax', 'other'] as const;
+export const ACCOUNTING_KINDS = ['payslip', 'vacation', 'office_fee', 'das', 'darf', 'dae', 'state_tax', 'other'] as const;
 /** O que o espaço manda para o contador (sentido inverso): notas fiscais, termos assinados e outros arquivos. */
 export const ACCOUNTING_CLIENT_KINDS = ['invoice', 'term', 'other'] as const;
 export type AccountingKind = (typeof ACCOUNTING_KINDS)[number] | (typeof ACCOUNTING_CLIENT_KINDS)[number];
@@ -15,11 +15,12 @@ export type AccountingKind = (typeof ACCOUNTING_KINDS)[number] | (typeof ACCOUNT
 export const ACCOUNTING_DIRECTIONS = ['to_client', 'to_accountant'] as const;
 export type AccountingDirection = (typeof ACCOUNTING_DIRECTIONS)[number];
 export const ACCOUNTING_KIND_LABEL: Record<AccountingKind, string> = {
-  payslip: 'Holerites', office_fee: 'Mensalidade do escritório', das: 'DAS', darf: 'DARF', dae: 'DAE',
+  payslip: 'Holerites', vacation: 'Relatório de férias', office_fee: 'Mensalidade do escritório', das: 'DAS', darf: 'DARF', dae: 'DAE',
   state_tax: 'GARE / DARE / GNRE', other: 'Outro documento', invoice: 'Notas fiscais', term: 'Termos',
 };
 export const ACCOUNTING_KIND_HINT: Record<AccountingKind, string> = {
   payslip: 'PDF com os holerites de todos (folha do mês)',
+  vacation: 'Períodos aquisitivos abertos de férias dos funcionários',
   office_fee: 'Boleto ou recibo dos honorários',
   das: 'Simples Nacional',
   darf: 'Tributos federais',
@@ -30,7 +31,9 @@ export const ACCOUNTING_KIND_HINT: Record<AccountingKind, string> = {
   term: 'Termos assinados (aceite de assinatura eletrônica e outros)',
 };
 /** Guias e boletos: viram conta a pagar. */
-export const accountingIsPayable = (k: AccountingKind) => k !== 'payslip' && k !== 'other' && k !== 'term';
+export const accountingIsPayable = (k: AccountingKind) => k !== 'payslip' && k !== 'vacation' && k !== 'other' && k !== 'term';
+/** Tipos que só existem em espaço Empresa (folha de pagamento). */
+export const accountingIsPayroll = (k: AccountingKind) => k === 'payslip' || k === 'vacation';
 
 export const ACCOUNTING_STATUSES = ['new', 'done', 'dismissed'] as const;
 export type AccountingStatus = (typeof ACCOUNTING_STATUSES)[number];
@@ -67,11 +70,13 @@ export const accountingHandleSchema = z.object({
 export interface AccountingDetected {
   amount?: string | null; dueDate?: string | null; barcode?: string | null; pix?: boolean;
   slips?: number; slipsRef?: string | null; company?: string | null;
+  /** Relatório de férias: quantos períodos e a data base. */
+  vacations?: number; vacationsBase?: string | null;
 }
 
 const refLabel = (r: string) => `${MONTHS_PT_SHORT[Number(r.slice(5, 7)) - 1]}/${r.slice(0, 4)}`;
 /** Descrição sugerida para a conta a pagar: "DAS – Out/2026". */
 export function accountingBillDescription(kind: AccountingKind, competence: string | null): string {
-  const base = kind === 'office_fee' ? 'Honorários contabilidade' : kind === 'state_tax' ? 'Guia estadual' : kind === 'other' || kind === 'payslip' ? 'Documento do contador' : ACCOUNTING_KIND_LABEL[kind];
+  const base = kind === 'office_fee' ? 'Honorários contabilidade' : kind === 'state_tax' ? 'Guia estadual' : kind === 'other' || kind === 'payslip' || kind === 'vacation' ? 'Documento do contador' : ACCOUNTING_KIND_LABEL[kind];
   return competence ? `${base} – ${refLabel(competence)}` : base;
 }

@@ -1,4 +1,5 @@
 import { and, asc, eq, gte, inArray, lt, lte, notInArray, sql } from 'drizzle-orm';
+import { vacationDigest } from './vacations.js';
 import {
   COLOR_PRESETS, addDaysISO, alertConfigSchema, billNames, isColorKey, formatBRL, formatDateBR, sumMoney, todayISO, diffDaysISO, type AlertConfig, type BillType,
 } from '@nopaper/shared';
@@ -93,7 +94,9 @@ async function digestFor(orgId: string, type: BillType, rule: AlertConfig['payab
   return { type, sections };
 }
 
-export interface Digest { orgId: string; orgName: string; /** Perfil do espaço: no Pessoal as contas são Despesas / Receitas. */ orgKind: string; today: string; parts: TypeDigest[]; count: number }
+export interface Digest { orgId: string; orgName: string; /** Perfil do espaço: no Pessoal as contas são Despesas / Receitas. */ orgKind: string; today: string; parts: TypeDigest[]; count: number;
+  /** Férias que pedem programação (Folha → Férias): quem cruzou hoje uma das antecedências, ou está urgente. */
+  vacations: Awaited<ReturnType<typeof vacationDigest>> }
 
 export async function buildDigest(orgId: string, cfg: AlertConfig): Promise<Digest> {
   const [org] = await db.select({ name: schema.organizations.name, kind: schema.organizations.kind, tz: schema.organizations.timezone }).from(schema.organizations).where(eq(schema.organizations.id, orgId));
@@ -103,8 +106,10 @@ export async function buildDigest(orgId: string, cfg: AlertConfig): Promise<Dige
     digestFor(orgId, 'payable', cfg.payable, today, hidden),
     digestFor(orgId, 'receivable', cfg.receivable, today, hidden),
   ])).filter((p): p is TypeDigest => !!p);
-  const count = parts.reduce((a, p) => a + p.sections.reduce((b, s) => b + s.items.length, 0), 0);
-  return { orgId, orgName: org?.name ?? 'NoPaper', orgKind: org?.kind ?? 'company', today, parts, count };
+  // um problema nas férias não pode impedir o resumo das contas
+  const vacations = await vacationDigest(orgId, today).catch(() => []);
+  const count = parts.reduce((a, p) => a + p.sections.reduce((b, s) => b + s.items.length, 0), 0) + vacations.length;
+  return { orgId, orgName: org?.name ?? 'NoPaper', orgKind: org?.kind ?? 'company', today, parts, count, vacations };
 }
 
 const path = (t: BillType) => (t === 'payable' ? 'pagar' : 'receber');
@@ -114,9 +119,20 @@ const emptyText = 'Nenhuma conta vencida ou vencendo no período configurado.';
 const codeLink = (d: Digest, t: BillType, id: string) => `${env.APP_URL}/${path(t)}?codigo=${id}&espaco=${d.orgId}`;
 const SLOT_SHORT: Record<string, string> = { boleto: 'boleto', invoice: 'nota fiscal', payment_proof: 'comprovante' };
 
+/** "30 dias: começar até 01/01/2027 para não pagar em dobro (faltam 45 dias)". */
+const vacationLine = (v: Digest['vacations'][number]) => `${String(v.days).replace('.', ',')} dia(s): ${v.daysToLimit < 0
+  ? `o prazo para começar sem dobra passou em ${formatDateBR(v.limit)}`
+  : `começar até ${formatDateBR(v.limit)} para não pagar em dobro (${v.daysToLimit === 0 ? 'é hoje' : `faltam ${v.daysToLimit} dia${v.daysToLimit === 1 ? '' : 's'}`})`}`;
+
 export function digestTelegram(d: Digest): string {
   const out: string[] = [`<b>NoPaper · ${escapeHtml(d.orgName)}</b>`, `Resumo de ${formatDateBR(d.today)}`];
-  if (!d.parts.length) out.push('', `${emptyText} ✨`);
+  if (!d.parts.length && !d.vacations.length) out.push('', `${emptyText} ✨`);
+  if (d.vacations.length) {
+    out.push('', '<b>Férias a programar</b>');
+    for (const v of d.vacations.slice(0, MAX_ITEMS)) out.push(`${v.urgency === 'late' ? '🔴' : v.urgency === 'due' ? '🟡' : '🔵'} ${escapeHtml(v.name)} — ${vacationLine(v)}`);
+    if (d.vacations.length > MAX_ITEMS) out.push(`<i>… e mais ${d.vacations.length - MAX_ITEMS}</i>`);
+    out.push(`<a href="${env.APP_URL}/folha?aba=ferias">Abrir as férias</a>`);
+  }
   for (const p of d.parts) {
     out.push('', `<b>${billNames(p.type, d.orgKind).title}</b>`);
     for (const s of p.sections) {
@@ -136,13 +152,24 @@ export function digestTelegram(d: Digest): string {
 
 export function digestEmail(d: Digest): { subject: string; html: string; text: string } {
   const overdue = d.parts.flatMap((p) => p.sections.filter((s) => s.tone === 'overdue')).reduce((a, s) => a + s.items.length, 0);
-  const subject = `NoPaper · ${d.orgName}: ${d.count} ${d.count === 1 ? 'conta' : 'contas'} para acompanhar${overdue ? ` (${overdue} em atraso)` : ''}`;
+  const bills = d.count - d.vacations.length;
+  const subject = `NoPaper · ${d.orgName}: ${[bills ? `${bills} ${bills === 1 ? 'conta' : 'contas'} para acompanhar${overdue ? ` (${overdue} em atraso)` : ''}` : '', d.vacations.length ? `${d.vacations.length} ${d.vacations.length === 1 ? 'férias a programar' : 'férias a programar'}` : ''].filter(Boolean).join(' · ') || 'resumo do dia'}`;
   const color = { overdue: '#d9483b', today: '#b7791f', soon: '#5b4be8' };
   const cell = 'padding:7px 0;border-bottom:1px solid #dfe3ee;vertical-align:top';
   let html = `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:640px;margin:0 auto;color:#141a29">
 <h2 style="margin:0 0 4px;font-size:20px">${escapeHtml(d.orgName)}</h2><p style="margin:0 0 20px;color:#5b6478">Resumo de ${formatDateBR(d.today)}</p>`;
   const text: string[] = [`${d.orgName} — resumo de ${formatDateBR(d.today)}`];
-  if (!d.parts.length) { html += `<p>${emptyText}</p>`; text.push('', emptyText); }
+  if (!d.parts.length && !d.vacations.length) { html += `<p>${emptyText}</p>`; text.push('', emptyText); }
+  if (d.vacations.length) {
+    html += '<h3 style="margin:24px 0 6px;font-size:16px">Férias a programar</h3><table style="width:100%;border-collapse:collapse;font-size:14px">';
+    text.push('', 'FÉRIAS A PROGRAMAR');
+    for (const v of d.vacations) {
+      html += `<tr><td style="${cell}">${escapeHtml(v.name)}</td><td style="${cell};padding-left:10px;color:${v.urgency === 'late' ? color.overdue : v.urgency === 'due' ? color.today : '#5b6478'}">${escapeHtml(vacationLine(v))}</td></tr>`;
+      text.push(`  - ${v.name}: ${vacationLine(v)}`);
+    }
+    html += `</table><p style="margin:12px 0 0"><a href="${env.APP_URL}/folha?aba=ferias" style="color:#5b4be8">Abrir as férias</a></p>`;
+    text.push(`${env.APP_URL}/folha?aba=ferias`);
+  }
   for (const p of d.parts) {
     const names = billNames(p.type, d.orgKind);
     const all = p.sections.flatMap((s) => s.items);

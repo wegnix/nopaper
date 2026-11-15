@@ -23,19 +23,20 @@ import { useCommissionImport, useMonth, usePayrollMeta, usePeriods, type Entry, 
 import { EntryDialog } from './EntryDialog';
 import { SignaturesDialog } from './Signatures';
 import { EmployeesTab } from './Employees';
+import { VacationsTab } from './Vacations';
 import { SettingsDialog, type SettingsTab } from './SettingsDialog';
 import { CommissionsDialog } from './Commissions';
 import { ImportDialog } from './ImportDialog';
 import { PayslipsDialog } from './Payslips';
 import { PayrollPrint, amountOf, extraColumnsOf, printColumnsOf, type PrintRow } from './PayrollPrint';
 
-type Tab = 'mes' | 'funcionarios' | 'historico';
+type Tab = 'mes' | 'funcionarios' | 'ferias' | 'historico';
 
 export function PayrollPage() {
   const org = useOrg();
   const can = useCan();
   const [sp, setSp] = useSearchParams();
-  const tab = (['mes', 'funcionarios', 'historico'].includes(sp.get('aba') ?? '') ? sp.get('aba') : 'mes') as Tab;
+  const tab = (['mes', 'funcionarios', 'ferias', 'historico'].includes(sp.get('aba') ?? '') ? sp.get('aba') : 'mes') as Tab;
   const ref = /^\d{4}-\d{2}$/.test(sp.get('mes') ?? '') ? sp.get('mes')! : todayISO().slice(0, 7);
   const set = (patch: Record<string, string | null>) => { const n = new URLSearchParams(sp); for (const [k, v] of Object.entries(patch)) v === null ? n.delete(k) : n.set(k, v); setSp(n, { replace: true }); };
   const meta = usePayrollMeta();
@@ -82,7 +83,7 @@ export function PayrollPage() {
         </>} />
 
       <Segmented className="self-start max-sm:self-stretch" value={tab} onChange={(v) => set({ aba: v === 'mes' ? null : v })} options={[
-        { value: 'mes', label: 'Mês' }, { value: 'funcionarios', label: `Funcionários (${employees.filter((e) => e.active && !e.payslipOnly).length})` }, { value: 'historico', label: 'Histórico' },
+        { value: 'mes', label: 'Mês' }, { value: 'funcionarios', label: `Funcionários (${employees.filter((e) => e.active && !e.payslipOnly).length})` }, { value: 'ferias', label: 'Férias' }, { value: 'historico', label: 'Histórico' },
       ]} />
 
       {!settings.categoryId && canManage && (
@@ -91,6 +92,7 @@ export function PayrollPage() {
 
       {tab === 'mes' && <MonthView refStr={ref} onRef={(r) => set({ mes: r })} openEntryId={openEntryId} onEntryOpened={() => setOpenEntryId(null)} onConfigure={() => setSettingsOpen('commissions')} />}
       {tab === 'funcionarios' && <EmployeesTab employees={employees} canManage={canManage} onOpenMonth={(r) => set({ aba: null, mes: r })} />}
+      {tab === 'ferias' && <VacationsTab canEdit={can('payroll.edit')} canManage={canManage} reportDoc={sp.get('relatorio')} onReportOpened={() => set({ relatorio: null })} />}
       {tab === 'historico' && <HistoryView periods={periods.data ?? []} loading={periods.isLoading} onOpen={(r) => set({ aba: null, mes: r })} />}
 
       <SettingsDialog open={!!settingsOpen} initialTab={settingsOpen ?? 'bills'} onClose={() => setSettingsOpen(null)} settings={settings} rubrics={rubrics} employees={employees} />

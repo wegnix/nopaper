@@ -4,11 +4,10 @@ import { Link, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  Building2, Check, CircleCheck, CircleSlash, Eye, FileText, FileUp, Landmark, MoreHorizontal, Paperclip, Receipt, RotateCcw, Search, Trash2, Upload, UsersRound, Wallet, X,
-} from 'lucide-react';
+  Building2, Check, CircleCheck, CircleSlash, Eye, FileText, FileUp, Landmark, MoreHorizontal, Paperclip, Receipt, RotateCcw, Search, Trash2, Upload, UsersRound, Wallet, X, Palmtree } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import {
-  ACCOUNTING_KINDS, ACCOUNTING_KIND_HINT, ACCOUNTING_KIND_LABEL, ACCOUNTING_STATUS_LABEL, accountingBillDescription, accountingIsPayable, addMonthsRef,
+  ACCOUNTING_KINDS, ACCOUNTING_KIND_HINT, ACCOUNTING_KIND_LABEL, ACCOUNTING_STATUS_LABEL, accountingBillDescription, accountingIsPayable, accountingIsPayroll, addMonthsRef,
   MONTHS_PT, formatBRL, formatDateBR, refLabelPT, todayISO, type AccountingKind, type AccountingStatus,
 } from '@nopaper/shared';
 import { Button, Card, Empty, Field, Input, PageHeader, Segmented, Select, Spinner } from '@/components/ui/base';
@@ -97,7 +96,10 @@ export function AccountingPage() {
     if (d.kind === 'payslip' && org?.kind === 'company' && can('payroll.edit')) {
       return <Button size="sm" variant="primary" icon={<UsersRound className="size-4" />} onClick={() => navigate(`/folha?holerite=${d.id}`)}>Importar na folha</Button>;
     }
-    if (d.kind !== 'payslip' && can('payable.create')) {
+    if (d.kind === 'vacation' && org?.kind === 'company' && can('payroll.edit')) {
+      return <Button size="sm" variant="primary" icon={<Palmtree className="size-4" />} onClick={() => navigate(`/folha?aba=ferias&relatorio=${d.id}`)}>Abrir nas férias</Button>;
+    }
+    if (!accountingIsPayroll(d.kind) && can('payable.create')) {
       return <Button size="sm" variant={accountingIsPayable(d.kind) ? 'primary' : 'secondary'} loading={opening === d.id} icon={<Wallet className="size-4" />} onClick={() => launchBill(d)}>Lançar conta</Button>;
     }
     return <Button size="sm" variant="secondary" icon={<Check className="size-4" />} onClick={() => handle(d, 'done')}>Marcar como conferido</Button>;
@@ -245,7 +247,7 @@ export function AccountingPage() {
 
 /** Envio: tipo → competência → arquivos (vários de uma vez). */
 function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: () => void; onClose?: () => void }) {
-  const kinds = ACCOUNTING_KINDS.filter((k) => company || k !== 'payslip');
+  const kinds = ACCOUNTING_KINDS.filter((k) => company || !accountingIsPayroll(k));
   const [kind, setKind] = useState<AccountingKind | null>(null);
   const thisMonth = todayISO().slice(0, 7);
   /** Padrão: o mês atual — o do envio/pagamento (holerites e guias chegam no mês em que são pagos). */
@@ -321,7 +323,7 @@ function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: ()
             className={cn('flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition', over ? 'border-accent bg-accent-soft/40' : 'border-line hover:border-accent hover:bg-accent-soft/30')}>
             <span className="grid size-11 place-items-center rounded-2xl bg-accent-soft text-accent"><Upload className="size-5" /></span>
             <span className="font-medium">{isTouch() ? 'Toque para escolher os arquivos' : 'Arraste os arquivos aqui ou clique para escolher'}</span>
-            <span className="text-xs text-faint">{kind === 'payslip' ? 'O PDF original do sistema de folha, com os holerites de todos.' : 'PDF de preferência (lemos valor, vencimento e código de barras). Até 20 arquivos por envio.'}</span>
+            <span className="text-xs text-faint">{kind === 'payslip' ? 'O PDF original do sistema de folha, com os holerites de todos.' : kind === 'vacation' ? 'O PDF original do relatório “Períodos Aquisitivos Abertos de Férias”.' : 'PDF de preferência (lemos valor, vencimento e código de barras). Até 20 arquivos por envio.'}</span>
           </button>
           {files.length > 0 && (
             <ul className="divide-y divide-line/60 rounded-xl border border-line">

@@ -382,6 +382,8 @@ export const employees = pgTable('employees', {
   esignAcceptedAt: timestamp('esign_accepted_at', { withTimezone: true }),
   esignTermVersion: varchar('esign_term_version', { length: 8 }),
   esignAcceptedIp: varchar('esign_accepted_ip', { length: 64 }),
+  /** Férias: início do período aquisitivo mais antigo ainda em aberto (os anteriores já foram resolvidos). null = controle ainda não iniciado. */
+  vacationFrom: date('vacation_from'),
   notes: text('notes'),
   /** Criado por uma importação da planilha (desfazer a importação remove se não tiver outros meses). */
   importBatchId: uuid('import_batch_id'),
@@ -411,6 +413,40 @@ export const payrollRubrics = pgTable('payroll_rubrics', {
 }, (t) => [uniqueIndex('payroll_rubrics_org_name_uq').on(t.orgId, sql`lower(${t.name})`)]);
 
 /** Folha de um mês (competência AAAA-MM). */
+/**
+ * Férias registradas de um funcionário: já gozadas, programadas ou vendidas (abono), sempre ligadas a um
+ * período aquisitivo (`period_start`). As contas (saldo, limite sem dobra) ficam em `vacations.ts` do shared.
+ */
+export const employeeVacations = pgTable('employee_vacations', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+  periodStart: date('period_start').notNull(),
+  /** null = gozadas antes do controle, sem data conhecida (vem do relatório do contador). */
+  startDate: date('start_date'),
+  days: smallint('days').notNull().default(0),
+  /** Dias vendidos (abono pecuniário). */
+  soldDays: smallint('sold_days').notNull().default(0),
+  notes: text('notes'),
+  /** manual | report (relatório do contador) | receipt (recibo de férias enviado para assinatura). */
+  source: varchar('source', { length: 12 }).notNull().default('manual'),
+  /** Criado sozinho a partir de um recibo de férias: alguém precisa conferir as datas. */
+  needsReview: boolean('needs_review').notNull().default(false),
+  signatureId: uuid('signature_id'),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [index('employee_vacations_emp_idx').on(t.employeeId, t.periodStart)]);
+
+/** Ajustes de um período aquisitivo: faltas injustificadas (reduzem o direito) ou direito perdido. */
+export const employeeVacationAdjusts = pgTable('employee_vacation_adjusts', {
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+  periodStart: date('period_start').notNull(),
+  absences: smallint('absences').notNull().default(0),
+  forfeited: boolean('forfeited').notNull().default(false),
+}, (t) => [primaryKey({ columns: [t.employeeId, t.periodStart] })]);
+
 export const payrollPeriods = pgTable('payroll_periods', {
   id: id(),
   orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),

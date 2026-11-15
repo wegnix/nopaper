@@ -15,6 +15,9 @@ import { deleteFile, readStoredFile, saveFile, signFileToken, verifyFileToken } 
 import { assertCompany, loadPeriod } from '../services/payroll.js';
 import { buildSignedPdf, buildTermPdf, splitPayslips } from '../services/esign.js';
 import { resolveRecipients } from '../services/accounting.js';
+import { pdfToText } from '../services/pdf.js';
+import { orgToday } from '../services/bills.js';
+import { registerVacationReceipt } from '../services/vacations.js';
 import { assertStorageRoom } from '../services/storageQuota.js';
 import { checkPayslipsSpace } from '../services/spaceCheck.js';
 
@@ -161,7 +164,7 @@ export default async function esignRoutes(app: FastifyInstance) {
     const existing = await db.select().from(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.orgId, orgId), inArray(schema.payslipSignatures.competence, competences), eq(schema.payslipSignatures.kind, 'payslip')));
     const existingTerms = new Set((await db.select({ e: schema.payslipSignatures.employeeId }).from(schema.payslipSignatures).where(and(eq(schema.payslipSignatures.orgId, orgId), eq(schema.payslipSignatures.kind, 'term')))).map((x) => x.e));
     const skipped: Array<{ name: string; reason: string }> = [];
-    let created = 0, updated = 0, terms = 0;
+    let created = 0, updated = 0, terms = 0, vacations = 0;
     for (const { slip, pdf, ref: slipRef, docKey } of split.slips) {
       const comp = slipRef ?? competence;
       const emp = employees.find((e) => e.payslipCode === slip.code);
@@ -198,8 +201,13 @@ export default async function esignRoutes(app: FastifyInstance) {
         updated++;
       } else {
         const token = randomBytes(32).toString('base64url');
-        await db.insert(schema.payslipSignatures).values({ ...base, orgId, employeeId: emp.id, competence: comp, docKey, tokenHash: hashToken(token), tokenEnc: encryptSecret(token), createdBy: req.user!.id });
+        const [made] = await db.insert(schema.payslipSignatures).values({ ...base, orgId, employeeId: emp.id, competence: comp, docKey, tokenHash: hashToken(token), tokenEnc: encryptSecret(token), createdBy: req.user!.id }).returning({ id: schema.payslipSignatures.id });
         created++;
+        // recibo de férias: o controle de férias é atualizado sozinho (fica marcado para alguém conferir as datas)
+        if (docKey.startsWith('ferias') && made) {
+          const text = await pdfToText(pdf).catch(() => '');
+          if (await registerVacationReceipt({ orgId, employeeId: emp.id, signatureId: made.id, text, today: orgToday(req), createdBy: req.user!.id }).catch(() => null)) vacations++;
+        }
       }
       // quem ainda não assinou o termo de aceite ganha o dele (assina antes do holerite)
       const hadTerm = existingTerms.has(emp.id);
@@ -212,7 +220,7 @@ export default async function esignRoutes(app: FastifyInstance) {
         details: { competence, created, updated, skipped: skipped.length },
       });
     }
-    return { competence, created, updated, terms, skipped };
+    return { competence, created, updated, terms, vacations, skipped };
   });
 
   /** Token do link pessoal (o endereço é montado na tela: /assinar/<token>). */

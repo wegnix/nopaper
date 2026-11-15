@@ -8,6 +8,32 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.25.0] - 2026-11-15
+
+### Novo
+- **Controle de férias** (Folha → Férias, só espaço Empresa): mostra, para cada funcionário, quantos dias de
+  férias ele tem a tirar e **até quando precisa começar para a empresa não pagar em dobro**, seguindo a CLT
+  (arts. 129 a 145).
+  - **Cálculo pela lei**: período aquisitivo de 12 meses a partir da admissão, 12 meses seguintes para tirar,
+    30 dias de direito (menos com faltas injustificadas), proporcional do período em andamento, e os dias que
+    passarem do prazo contados como dobra.
+  - **Quem pede atenção primeiro**: a lista vem ordenada pela urgência — prazo estourado, urgente, programar e em
+    dia — com os dias que faltam.
+  - **Programar férias**: escolha o período, a data e os dias (e os dias vendidos). A janela mostra o último dia, a
+    volta ao trabalho, até quando avisar por escrito e até quando pagar, e avisa se algo foge da lei: mais de 3
+    períodos, nenhum com 14 dias, período com menos de 5, venda acima de 1/3, início em sexta ou sábado, aviso
+    com menos de 30 dias ou dias depois do prazo.
+  - **Relatório do contador**: envie o PDF "Períodos Aquisitivos Abertos de Férias" e o NoPaper preenche a
+    admissão, os períodos em aberto e os dias já tirados de todos os funcionários de uma vez.
+  - **Avisos com antecedência configurável** (padrão: 120, 60 e 30 dias antes do limite): na tela e no resumo
+    diário por Telegram e e-mail.
+  - **Atualização automática**: quando um recibo de férias é enviado para assinatura, as férias do funcionário são
+    registradas sozinhas e ficam marcadas para conferência das datas.
+  - **Pela área do contador**: o contador tem o tipo de documento **Relatório de férias**. O que ele envia aparece
+    na aba Férias ("O contador enviou um relatório de férias") e na janela do relatório, pronto para conferir e
+    aplicar, sem baixar e subir o arquivo de novo; ao aplicar, o documento fica como lançado. Enviar o PDF do
+    computador continua funcionando.
+
 ## [1.24.0] - 2026-11-15
 
 ### Novo
