@@ -8,6 +8,22 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.26.0] - 2026-11-15
+
+### Novo
+- **Área do contador: documentos organizados por grupo.** O contador escolhe primeiro o grupo e depois o tipo:
+  - **Folha de pagamento**: Holerites, 13º salário, Férias (recibos e avisos) e Relatórios da folha;
+  - **Impostos**: DAS, DARF, DAE, GARE / DARE / GNRE e Outros impostos;
+  - **Honorários**: Mensalidade do escritório e Outros honorários;
+  - **Outros documentos**: o que não se encaixa nos demais.
+  Um relatório de férias enviado em "Relatórios da folha" é reconhecido sozinho e já aparece em Folha → Férias.
+  Recibos de 13º e de férias aparecem na janela de Assinaturas da folha, em "Enviados pelo contador".
+  "Outros impostos" e "Outros honorários" viram conta a pagar como os demais.
+
+### Melhorado
+- **Envio do contador**: os arquivos escolhidos aparecem em destaque, num quadro "N arquivos prontos para enviar",
+  com o nome inteiro de cada um, o tamanho e o total.
+
 ## [1.25.0] - 2026-11-15
 
 ### Novo

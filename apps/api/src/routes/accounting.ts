@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, desc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import {
-  ACCOUNTING_KIND_LABEL, accountingHandleSchema, accountingSendSchema, accountingUploadSchema, formatBRL, formatDateBR, parseBoleto, parsePayslips, parseVacationReport, refLabelPT,
+  ACCOUNTING_KIND_LABEL, accountingIsPayroll, accountingIsSlips, accountingHandleSchema, accountingSendSchema, accountingUploadSchema, formatBRL, formatDateBR, parseBoleto, parsePayslips, parseVacationReport, refLabelPT,
   type AccountingDetected, type AccountingKind,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
@@ -55,12 +55,12 @@ const previewable = (mime: string) => !!ALLOWED_UPLOADS[mime];
 /** O que dá para ler do arquivo já no envio (ajuda quem confere; nada disso é obrigatório). */
 async function detect(kind: AccountingKind, buf: Buffer, mime: string, filename: string): Promise<AccountingDetected | null> {
   try {
-    if (kind === 'payslip') {
+    if (accountingIsSlips(kind)) {
       if (mime !== 'application/pdf') return null;
       const r = parsePayslips(await pdfToCells(buf, 200));
       return r.slips.length ? { slips: r.slips.length, slipsRef: r.ref, company: r.company } : null;
     }
-    if (kind === 'vacation') {
+    if (kind === 'vacation' || kind === 'payroll_report') {
       if (mime !== 'application/pdf') return null;
       const r = parseVacationReport(await pdfToCells(buf));
       return r.rows.length ? { vacations: r.rows.length, vacationsBase: r.baseDate, company: r.company } : null;
@@ -192,13 +192,18 @@ export default async function accountingRoutes(app: FastifyInstance) {
       }
       if (!saved.length) throw badRequest('Escolha ao menos um arquivo');
       body = parse(accountingUploadSchema, fields);
-      if (body.kind === 'payslip' && saved.some((f) => f.mime !== 'application/pdf')) throw badRequest('Os holerites precisam ser enviados em PDF (o arquivo original do sistema de folha).');
-      if (body.kind === 'vacation' && saved.some((f) => f.mime !== 'application/pdf')) throw badRequest('O relatório de férias precisa ser enviado em PDF (o arquivo original do sistema de folha).');
+      if (accountingIsPayroll(body.kind) && req.org!.kind !== 'company') throw badRequest('Documentos da folha só podem ser enviados a espaços do tipo Empresa.', 'company_only');
+      if ((accountingIsSlips(body.kind) || body.kind === 'vacation') && saved.some((f) => f.mime !== 'application/pdf')) {
+        throw badRequest(`${ACCOUNTING_KIND_LABEL[body.kind]}: envie o PDF original do sistema de folha (não uma foto ou digitalização).`);
+      }
       const values = [];
       for (const f of saved) {
+        const detected = await detect(body.kind, await readStoredFile(f.key), f.mime, f.filename);
+        // um relatório da folha que é o relatório de férias ganha o tipo próprio: aparece pronto em Folha → Férias
+        const kind = body.kind === 'payroll_report' && detected?.vacations ? 'vacation' : body.kind;
         values.push({
-          orgId, direction: 'to_client', kind: body.kind, competence: body.competence ?? null, note: body.note, originalName: f.filename, mime: f.mime, size: f.size,
-          storageKey: f.key, sha256: f.sha256, detected: await detect(body.kind, await readStoredFile(f.key), f.mime, f.filename), uploadedBy: req.user!.id,
+          orgId, direction: 'to_client', kind, competence: body.competence ?? null, note: body.note, originalName: f.filename, mime: f.mime, size: f.size,
+          storageKey: f.key, sha256: f.sha256, detected, uploadedBy: req.user!.id,
         });
       }
       docs = await db.insert(schema.accountingDocuments).values(values).returning();

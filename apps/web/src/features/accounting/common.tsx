@@ -1,10 +1,13 @@
-import { Building2, FileSignature, FileText, Landmark, ReceiptText, UsersRound, Palmtree } from 'lucide-react';
-import { ACCOUNTING_KIND_LABEL, refLabelPT, type AccountingKind } from '@nopaper/shared';
+import { BadgeDollarSign, Building2, ClipboardList, FileSignature, FileText, FolderOpen, Gift, Landmark, Palmtree, ReceiptText, TreePalm, UsersRound } from 'lucide-react';
+import { ACCOUNTING_KIND_LABEL, refLabelPT, type AccountingGroupKey, type AccountingKind } from '@nopaper/shared';
 import type { AccountingDoc } from './data';
 
 export const KIND_ICON: Record<AccountingKind, typeof FileText> = {
-  payslip: UsersRound, vacation: Palmtree, office_fee: Building2, das: Landmark, darf: Landmark, dae: Landmark, state_tax: Landmark, other: FileText, invoice: ReceiptText, term: FileSignature,
+  payslip: UsersRound, thirteenth: Gift, vacation_slip: TreePalm, payroll_report: ClipboardList, vacation: Palmtree,
+  das: Landmark, darf: Landmark, dae: Landmark, state_tax: Landmark, tax_other: Landmark, office_fee: Building2, fee_other: BadgeDollarSign,
+  other: FileText, invoice: ReceiptText, term: FileSignature,
 };
+export const GROUP_ICON: Record<AccountingGroupKey, typeof FileText> = { payroll: UsersRound, taxes: Landmark, fees: Building2, other: FolderOpen };
 export const sizeText = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 export const when = (iso: string) => { const d = new Date(iso); return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; };
 /** Texto sem acento/maiúsculas, para a busca. */

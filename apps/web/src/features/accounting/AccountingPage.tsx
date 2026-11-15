@@ -7,7 +7,8 @@ import {
   Building2, Check, CircleCheck, CircleSlash, Eye, FileText, FileUp, Landmark, MoreHorizontal, Paperclip, Receipt, RotateCcw, Search, Trash2, Upload, UsersRound, Wallet, X, Palmtree } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import {
-  ACCOUNTING_KINDS, ACCOUNTING_KIND_HINT, ACCOUNTING_KIND_LABEL, ACCOUNTING_STATUS_LABEL, accountingBillDescription, accountingIsPayable, accountingIsPayroll, addMonthsRef,
+  ACCOUNTING_GROUPS, ACCOUNTING_KINDS, ACCOUNTING_KIND_HINT, ACCOUNTING_KIND_LABEL, ACCOUNTING_STATUS_LABEL, accountingBillDescription, accountingIsPayable, accountingIsPayroll, accountingIsSlips, addMonthsRef,
+  type AccountingGroupKey,
   MONTHS_PT, formatBRL, formatDateBR, refLabelPT, todayISO, type AccountingKind, type AccountingStatus,
 } from '@nopaper/shared';
 import { Button, Card, Empty, Field, Input, PageHeader, Segmented, Select, Spinner } from '@/components/ui/base';
@@ -20,7 +21,7 @@ import type { Bill } from '@/lib/types';
 import { BillForm } from '@/features/bills/BillForm';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
 import { useAccountantOnly, useAccountingDocs, type AccountingDoc } from './data';
-import { KIND_ICON, docTitle, norm, sentMonth, sizeText, when } from './common';
+import { GROUP_ICON, KIND_ICON, docTitle, norm, sentMonth, sizeText, when } from './common';
 import { useProgressive } from '@/lib/useProgressive';
 import { ClientOutbox } from './Exchange';
 
@@ -95,6 +96,10 @@ export function AccountingPage() {
     if (!canReview || d.status !== 'new') return null;
     if (d.kind === 'payslip' && org?.kind === 'company' && can('payroll.edit')) {
       return <Button size="sm" variant="primary" icon={<UsersRound className="size-4" />} onClick={() => navigate(`/folha?holerite=${d.id}`)}>Importar na folha</Button>;
+    }
+    // recibos de 13º e de férias: só vão para a assinatura (importar na folha trocaria os valores do holerite do mês)
+    if ((d.kind === 'thirteenth' || d.kind === 'vacation_slip') && org?.kind === 'company' && can('payroll.edit')) {
+      return <Button size="sm" variant="primary" icon={<UsersRound className="size-4" />} onClick={() => navigate('/folha')} title="Na Folha, abra o mês e use o botão Assinaturas: este arquivo aparece em “Enviados pelo contador”.">Enviar para assinatura</Button>;
     }
     if (d.kind === 'vacation' && org?.kind === 'company' && can('payroll.edit')) {
       return <Button size="sm" variant="primary" icon={<Palmtree className="size-4" />} onClick={() => navigate(`/folha?aba=ferias&relatorio=${d.id}`)}>Abrir nas férias</Button>;
@@ -247,8 +252,12 @@ export function AccountingPage() {
 
 /** Envio: tipo → competência → arquivos (vários de uma vez). */
 function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: () => void; onClose?: () => void }) {
-  const kinds = ACCOUNTING_KINDS.filter((k) => company || !accountingIsPayroll(k));
+  // grupo → tipo. A folha só existe em espaço Empresa; grupo de um tipo só (Outros) já escolhe o tipo.
+  const groups = ACCOUNTING_GROUPS.filter((g) => company || g.key !== 'payroll');
+  const [group, setGroup] = useState<AccountingGroupKey | null>(null);
   const [kind, setKind] = useState<AccountingKind | null>(null);
+  const groupKinds = (groups.find((g) => g.key === group)?.kinds ?? []) as readonly AccountingKind[];
+  const pickGroup = (g: (typeof ACCOUNTING_GROUPS)[number]) => { setGroup(g.key); setKind(g.kinds.length === 1 ? g.kinds[0] : null); setSent(null); };
   const thisMonth = todayISO().slice(0, 7);
   /** Padrão: o mês atual — o do envio/pagamento (holerites e guias chegam no mês em que são pagos). */
   const [competence, setCompetence] = useState(thisMonth);
@@ -277,7 +286,7 @@ function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: ()
       if (r.storage?.near) toast.warning('Este espaço está perto do limite de armazenamento. Avise o responsável.');
       toast.success(`${plural(r.created, 'documento enviado', 'documentos enviados')}. O responsável foi avisado.`);
       setSent({ n: r.created, label: `${ACCOUNTING_KIND_LABEL[kind]}${competence ? ` – ${refLabelPT(competence)}` : ''}`, at: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) });
-      setFiles([]); setNote(''); setKind(null);
+      setFiles([]); setNote(''); setKind(null); setGroup(null);
       onSent();
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
@@ -287,26 +296,46 @@ function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: ()
         <h2 className="font-display text-lg font-semibold">Enviar documentos</h2>
         {onClose && <button type="button" aria-label="Fechar o envio" className="grid size-8 pointer-coarse:size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" onClick={onClose}><X className="size-4" /></button>}
       </div>
-      <p className="mt-0.5 text-sm text-muted">1. Escolha o tipo · 2. Confira o mês · 3. Adicione os arquivos.</p>
+      <p className="mt-0.5 text-sm text-muted">1. Escolha o grupo e o tipo · 2. Confira o mês · 3. Adicione os arquivos.</p>
       {sent && !kind && (
         <p className="mt-3 flex items-start gap-2 rounded-lg bg-ok/10 px-3 py-2.5 text-sm text-ok">
           <CircleCheck className="mt-0.5 size-4 shrink-0" />
           <span>Enviado às {sent.at}: <b className="font-medium">{sent.label}</b> ({plural(sent.n, 'arquivo', 'arquivos')}). O responsável foi avisado e o envio já está no histórico abaixo.</span>
         </p>
       )}
-      <div role="radiogroup" aria-label="Tipo do documento" className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
-        {kinds.map((k) => {
-          const Icon = KIND_ICON[k], on = kind === k;
+      <div role="radiogroup" aria-label="Grupo do documento" className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {groups.map((g) => {
+          const Icon = GROUP_ICON[g.key], on = group === g.key;
           return (
-            <button key={k} type="button" role="radio" aria-checked={on} onClick={() => { setKind(k); setSent(null); }}
-              className={cn('flex min-w-0 flex-col items-start gap-1.5 rounded-xl border p-3 text-left transition', on ? 'border-accent bg-accent-soft/50 shadow-card' : 'border-line hover:border-line-strong hover:bg-surface-2/50')}>
-              <Icon className={cn('size-5', on ? 'text-accent' : 'text-faint')} />
-              <span className="text-sm font-medium leading-tight">{ACCOUNTING_KIND_LABEL[k]}</span>
-              <span className="text-xs leading-snug text-faint">{ACCOUNTING_KIND_HINT[k]}</span>
+            <button key={g.key} type="button" role="radio" aria-checked={on} onClick={() => pickGroup(g)}
+              className={cn('flex min-w-0 items-start gap-3 rounded-xl border p-3 text-left transition sm:p-4', on ? 'border-accent bg-accent-soft/50 shadow-card' : 'border-line hover:border-line-strong hover:bg-surface-2/50')}>
+              <span className={cn('grid size-10 shrink-0 place-items-center rounded-xl', on ? 'bg-accent text-accent-ink' : 'bg-surface-2 text-muted')}><Icon className="size-5" /></span>
+              <span className="min-w-0">
+                <span className="block font-medium leading-tight">{g.label}</span>
+                <span className="mt-0.5 block text-xs leading-snug text-faint">{g.hint}</span>
+              </span>
             </button>
           );
         })}
       </div>
+      {group && groupKinds.length > 1 && (
+        <div className="mt-3 rounded-xl border border-line bg-surface-2/40 p-3">
+          <p className="mb-2 text-[13px] font-medium text-muted">Qual documento de {ACCOUNTING_GROUPS.find((g) => g.key === group)!.label.toLowerCase()}?</p>
+          <div role="radiogroup" aria-label="Tipo do documento" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            {groupKinds.map((k) => {
+              const Icon = KIND_ICON[k], on = kind === k;
+              return (
+                <button key={k} type="button" role="radio" aria-checked={on} onClick={() => { setKind(k); setSent(null); }}
+                  className={cn('flex min-w-0 flex-col items-start gap-1.5 rounded-xl border bg-surface p-3 text-left transition', on ? 'border-accent bg-accent-soft/50 shadow-card' : 'border-line hover:border-line-strong')}>
+                  <Icon className={cn('size-5', on ? 'text-accent' : 'text-faint')} />
+                  <span className="text-sm font-medium leading-tight">{ACCOUNTING_KIND_LABEL[k]}</span>
+                  <span className="text-xs leading-snug text-faint">{ACCOUNTING_KIND_HINT[k]}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {kind && (
         <div className="mt-4 flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-[220px_1fr]">
@@ -323,19 +352,27 @@ function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: ()
             className={cn('flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition', over ? 'border-accent bg-accent-soft/40' : 'border-line hover:border-accent hover:bg-accent-soft/30')}>
             <span className="grid size-11 place-items-center rounded-2xl bg-accent-soft text-accent"><Upload className="size-5" /></span>
             <span className="font-medium">{isTouch() ? 'Toque para escolher os arquivos' : 'Arraste os arquivos aqui ou clique para escolher'}</span>
-            <span className="text-xs text-faint">{kind === 'payslip' ? 'O PDF original do sistema de folha, com os holerites de todos.' : kind === 'vacation' ? 'O PDF original do relatório “Períodos Aquisitivos Abertos de Férias”.' : 'PDF de preferência (lemos valor, vencimento e código de barras). Até 20 arquivos por envio.'}</span>
+            <span className="text-xs text-faint">{accountingIsSlips(kind) ? 'O PDF original do sistema de folha, com os recibos de todos os funcionários.' : kind === 'payroll_report' ? 'O relatório de férias (“Períodos Aquisitivos Abertos”) é reconhecido sozinho e já aparece na folha da empresa.' : !accountingIsPayable(kind) ? 'PDF de preferência. Até 20 arquivos por envio.' : 'PDF de preferência (lemos valor, vencimento e código de barras). Até 20 arquivos por envio.'}</span>
           </button>
           {files.length > 0 && (
-            <ul className="divide-y divide-line/60 rounded-xl border border-line">
-              {files.map((f, i) => (
-                <li key={`${f.name}-${f.size}`} className="flex items-center gap-3 px-3 py-2">
-                  <Receipt className="size-4 shrink-0 text-faint" />
-                  <span className="min-w-0 flex-1 truncate text-sm">{f.name}</span>
-                  <span className="shrink-0 text-xs text-faint tnum">{sizeText(f.size)}</span>
-                  <button type="button" aria-label={`Tirar ${f.name}`} className="grid size-8 pointer-coarse:size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" onClick={() => setFiles(files.filter((_, j) => j !== i))}><X className="size-4" /></button>
-                </li>
-              ))}
-            </ul>
+            <div className="rounded-xl border-2 border-accent/50 bg-accent-soft/30 p-3 sm:p-4" aria-live="polite">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-2 font-medium"><Paperclip className="size-4 text-accent" />{plural(files.length, 'arquivo pronto', 'arquivos prontos')} para enviar</p>
+                <span className="text-sm text-muted tnum">{sizeText(files.reduce((n, f) => n + f.size, 0))} no total</span>
+              </div>
+              <ul className="mt-3 flex flex-col gap-2">
+                {files.map((f, i) => (
+                  <li key={`${f.name}-${f.size}`} className="flex items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2.5 shadow-card">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent"><FileText className="size-5" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block break-words text-[15px] font-medium leading-snug">{f.name}</span>
+                      <span className="block text-xs text-muted tnum">{sizeText(f.size)} · {/\.pdf$/i.test(f.name) || f.type === 'application/pdf' ? 'PDF' : 'imagem'}</span>
+                    </span>
+                    <button type="button" aria-label={`Tirar ${f.name}`} title="Tirar da lista" className="grid size-9 pointer-coarse:size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-danger/10 hover:text-danger" onClick={() => setFiles(files.filter((_, j) => j !== i))}><X className="size-4" /></button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {busy && <div className="flex items-center gap-2 text-sm text-muted"><LogoLoader size={64} label="Enviando documentos" />Enviando {files.length > 1 ? 'os arquivos' : 'o arquivo'}…</div>}
           <div className="flex flex-wrap items-center justify-end gap-3">

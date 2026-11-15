@@ -1,5 +1,5 @@
 import { FileText } from 'lucide-react';
-import { addMonthsRef, refLabelPT } from '@nopaper/shared';
+import { ACCOUNTING_KIND_LABEL, addMonthsRef, refLabelPT, type AccountingKind } from '@nopaper/shared';
 import { useCan } from '@/lib/session';
 import { cn } from '@/lib/utils';
 import { useAccountingDocs, type AccountingDoc } from '@/features/accounting/data';
@@ -9,14 +9,16 @@ import { useAccountingDocs, type AccountingDoc } from '@/features/accounting/dat
  * (importar os valores ou enviar para assinatura) sem baixar e subir o mesmo arquivo de novo.
  * Aparecem primeiro os do mês desta folha; só para quem confere os documentos do contador.
  */
-export function AccountantPayslipDocs({ enabled, folhaRef, payMonth, onPick, busy, action }: {
+export function AccountantPayslipDocs({ enabled, folhaRef, payMonth, onPick, busy, action, kinds = ['payslip'] }: {
+  /** Tipos aceitos: a importação na folha só usa holerites; a assinatura aceita também 13º e férias. */
+  kinds?: AccountingKind[];
   enabled: boolean; folhaRef: string; payMonth: 'same' | 'next'; onPick: (doc: AccountingDoc) => void; busy?: string | null; action: string;
 }) {
   const can = useCan();
   const q = useAccountingDocs('to_client', enabled && can('accounting.review'));
   // o holerite da competência C entra na folha C+1 quando a folha é contada pelo mês do pagamento
   const folhaOf = (competence: string) => (payMonth === 'same' ? addMonthsRef(competence, 1) : competence);
-  const docs = (q.data ?? []).filter((d) => d.kind === 'payslip' && d.mime === 'application/pdf' && d.status !== 'dismissed' && !d.hiddenAt)
+  const docs = (q.data ?? []).filter((d) => kinds.includes(d.kind) && d.mime === 'application/pdf' && d.status !== 'dismissed' && !d.hiddenAt)
     .map((d) => ({ d, comp: d.detected?.slipsRef ?? d.competence ?? null }))
     .map((x) => ({ ...x, here: !!x.comp && folhaOf(x.comp) === folhaRef }))
     .sort((a, b) => Number(b.here) - Number(a.here) || b.d.createdAt.localeCompare(a.d.createdAt)).slice(0, 4);
@@ -36,7 +38,7 @@ export function AccountantPayslipDocs({ enabled, folhaRef, payMonth, onPick, bus
                   {here && <span className="rounded-full bg-accent px-2 py-px text-[11px] font-semibold text-accent-ink">desta folha</span>}
                 </span>
                 <span className="block text-xs text-muted">
-                  {comp ? `Holerites de ${refLabelPT(comp)}` : 'Holerites'}{d.detected?.slips ? ` · ${d.detected.slips} funcionário(s)` : ''} · enviado em {new Date(d.createdAt).toLocaleDateString('pt-BR')}{d.uploadedByName ? ` por ${d.uploadedByName}` : ''}
+                  {comp ? `${ACCOUNTING_KIND_LABEL[d.kind]} de ${refLabelPT(comp)}` : ACCOUNTING_KIND_LABEL[d.kind]}{d.detected?.slips ? ` · ${d.detected.slips} funcionário(s)` : ''} · enviado em {new Date(d.createdAt).toLocaleDateString('pt-BR')}{d.uploadedByName ? ` por ${d.uploadedByName}` : ''}
                 </span>
               </span>
               <span className="shrink-0 text-[13px] font-medium text-accent">{busy === d.id ? 'Lendo…' : action}</span>
