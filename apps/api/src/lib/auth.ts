@@ -29,6 +29,10 @@ export interface OrgContext {
   isAdmin: boolean;
   permissions: Set<Permission>;
   can(p: Permission): boolean;
+  /** Arquivado: só leitura. */
+  archived?: boolean;
+  /** Remoção agendada (só o dono ainda entra): só leitura. */
+  deleting?: boolean;
 }
 
 declare module 'fastify' {
@@ -84,7 +88,7 @@ export async function authenticate(req: FastifyRequest) {
     if (!r.ok) { req.tokenFailure = r.reason; return; }
     const perms = new Set<Permission>(r.permissions);
     req.integration = r.integration;
-    req.org = { ...r.org, membershipId: '', isOwner: false, isAdmin: false, permissions: perms, can: (p) => perms.has(p) };
+    req.org = { ...r.org, membershipId: '', isOwner: false, isAdmin: false, permissions: perms, can: (p) => perms.has(p) }; // r.org traz `archived`
     // repasse da API pública para uma rota interna: lá o token age como uma "pessoa" (id = o do token),
     // para "criado por", "enviado por" e a auditoria funcionarem sem um usuário de verdade
     if (internal) req.user = { id: r.integration.id, email: '', name: `Integração ${r.integration.name}`.slice(0, 120), isSuperadmin: false, sessionId: '' };
@@ -124,12 +128,14 @@ export async function loadOrgContext(userId: string, orgId: string): Promise<Org
   const [m] = await db.select({
     membershipId: schema.memberships.id, isOwner: schema.memberships.isOwner, active: schema.memberships.active,
     orgId: schema.organizations.id, name: schema.organizations.name, kind: schema.organizations.kind,
-    timezone: schema.organizations.timezone,
+    timezone: schema.organizations.timezone, archivedAt: schema.organizations.archivedAt, deletionDueAt: schema.organizations.deletionDueAt,
   }).from(schema.memberships)
     .innerJoin(schema.organizations, eq(schema.organizations.id, schema.memberships.orgId))
     .where(and(eq(schema.memberships.userId, userId), eq(schema.memberships.orgId, orgId)))
     .limit(1);
   if (!m || !m.active) return null;
+  // remoção agendada: o espaço some para todos, menos para o dono (que pode cancelar)
+  if (m.deletionDueAt && !m.isOwner) return null;
   const gs = await db.select({ isAdmin: schema.groups.isAdmin, permissions: schema.groups.permissions })
     .from(schema.membershipGroups)
     .innerJoin(schema.groups, eq(schema.groups.id, schema.membershipGroups.groupId))
@@ -139,7 +145,20 @@ export async function loadOrgContext(userId: string, orgId: string): Promise<Org
   return {
     id: m.orgId, name: m.name, kind: m.kind, timezone: m.timezone, membershipId: m.membershipId,
     isOwner: m.isOwner, isAdmin, permissions: perms, can: (p) => perms.has(p),
+    archived: !!m.archivedAt, deleting: !!m.deletionDueAt,
   };
+}
+
+/** Rotas que mudam algo mas continuam valendo num espaço arquivado ou em remoção (sair desse estado; baixar o ZIP). */
+const STATE_ALLOWED = new Set(['/api/org/archive', '/api/org/deletion', '/api/export/zip']);
+/** Espaço arquivado ou em remoção: só leitura (GET), salvo as rotas acima. */
+export function assertOrgWritable(req: FastifyRequest) {
+  const o = req.org;
+  if (!o || (!o.archived && !o.deleting)) return;
+  if (req.method === 'GET' || req.method === 'HEAD' || STATE_ALLOWED.has(req.routeOptions.url ?? '')) return;
+  throw o.deleting
+    ? new HttpError(403, 'Este espaço está marcado para remoção: só dá para consultar. Para voltar a mexer, cancele a remoção em Configurações → Configuração do espaço.', 'org_deleting')
+    : new HttpError(403, 'Este espaço está arquivado: só dá para consultar. Para voltar a mexer, desarquive em Configurações → Configuração do espaço.', 'org_archived');
 }
 
 /** Com senha provisória, só dá para ver o próprio perfil, trocar a senha e sair. */
@@ -157,7 +176,7 @@ export async function requireAuth(req: FastifyRequest) {
 
 /** Exige usuário autenticado + membro da organização do header `x-org-id`. */
 export async function requireOrg(req: FastifyRequest) {
-  if (req.integration && req.org) return;
+  if (req.integration && req.org) { assertOrgWritable(req); return; }
   if (!req.user) throw unauthorized();
   assertPasswordOk(req);
   const orgId = req.headers['x-org-id'];
@@ -165,11 +184,13 @@ export async function requireOrg(req: FastifyRequest) {
   const ctx = await loadOrgContext(req.user.id, orgId);
   if (!ctx) throw forbidden('Você não pertence a esta organização');
   req.org = ctx;
+  assertOrgWritable(req);
 }
 
 export function requirePerm(...anyOf: Permission[]) {
   return async (req: FastifyRequest, _reply: FastifyReply) => {
     if (!req.org) await requireOrg(req);
+    else assertOrgWritable(req);
     if (!anyOf.some((p) => req.org!.can(p))) throw forbidden();
   };
 }
@@ -181,7 +202,8 @@ export async function requireSuperadmin(req: FastifyRequest) {
 }
 
 export async function membershipsOf(userId: string) {
-  const rows = await db.select({ orgId: schema.organizations.id, name: schema.organizations.name, kind: schema.organizations.kind, logo: schema.organizations.logo, embedVisible: schema.organizations.embedVisible })
+  const rows = await db.select({ orgId: schema.organizations.id, name: schema.organizations.name, kind: schema.organizations.kind, logo: schema.organizations.logo, embedVisible: schema.organizations.embedVisible,
+    archivedAt: schema.organizations.archivedAt, deletionDueAt: schema.organizations.deletionDueAt })
     .from(schema.memberships)
     .innerJoin(schema.organizations, eq(schema.organizations.id, schema.memberships.orgId))
     .where(and(eq(schema.memberships.userId, userId), eq(schema.memberships.active, true)))
@@ -189,7 +211,8 @@ export async function membershipsOf(userId: string) {
   const out = [];
   for (const r of rows) {
     const ctx = await loadOrgContext(userId, r.orgId);
-    if (ctx) out.push({ id: r.orgId, name: r.name, kind: r.kind, logo: r.logo, embedVisible: r.embedVisible, isOwner: ctx.isOwner, isAdmin: ctx.isAdmin, permissions: [...ctx.permissions] });
+    if (ctx) out.push({ id: r.orgId, name: r.name, kind: r.kind, logo: r.logo, embedVisible: r.embedVisible, isOwner: ctx.isOwner, isAdmin: ctx.isAdmin, permissions: [...ctx.permissions],
+      archived: !!r.archivedAt, deletionDueAt: r.deletionDueAt?.toISOString() ?? null });
   }
   return out;
 }

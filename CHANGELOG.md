@@ -8,6 +8,22 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.29.0] - 2026-11-16
+
+### Novo
+- **Arquivar ou remover um espaço** (Configurações → Configuração do espaço → "Arquivar ou remover o espaço").
+  - **Arquivar** (administradores do espaço): o espaço fica só para consulta, vai para "Arquivados" no fim da lista de
+    espaços e para de mandar avisos. Nada é apagado; dá para desarquivar quando quiser.
+  - **Remover** (só o dono): mostra antes o que será apagado e pede o nome do espaço, a sua senha e a confirmação de
+    que entendeu, e deixa escolher **quando apagar**: em **7 dias** (recomendado: o espaço sai do ar para os membros
+    e dá para cancelar até lá — o dono vê uma faixa com a data) ou **agora**. Uma remoção agendada também pode ser
+    antecipada com "Apagar agora…", pedindo de novo o nome e a senha. Os administradores recebem aviso por e-mail e
+    Telegram no pedido, na véspera e na remoção. Tokens de integração param durante o prazo.
+  - **Plataforma → Segurança → Espaços sem dono**: o administrador da plataforma pode remover (com o mesmo prazo e a
+    mesma confirmação, em 7 dias ou agora) um espaço cujo dono teve a conta desativada ou removida. Espaço privado, nunca.
+  - O registro fica na auditoria da plataforma. Os backups feitos antes da remoção ainda guardam os dados até saírem
+    do rodízio.
+
 ## [1.28.3] - 2026-11-16
 
 ### Corrigido

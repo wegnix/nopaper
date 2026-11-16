@@ -349,7 +349,11 @@ export async function extendIndefinite(conn: DBOrTx, head: BillRow, todayStr: st
 }
 
 export async function extendAllIndefinite() {
-  const heads = await db.select().from(schema.bills).where(and(eq(schema.bills.isIndefinite, true), isNull(schema.bills.parentId)));
+  // espaço arquivado ou em remoção fica parado (o job completa a janela quando ele volta)
+  const heads = (await db.select({ b: schema.bills }).from(schema.bills)
+    .innerJoin(schema.organizations, eq(schema.organizations.id, schema.bills.orgId))
+    .where(and(eq(schema.bills.isIndefinite, true), isNull(schema.bills.parentId), isNull(schema.organizations.archivedAt), isNull(schema.organizations.deletionRequestedAt))))
+    .map((r) => r.b);
   let created = 0, failed = 0;
   const tzByOrg = new Map<string, string>();
   for (const h of heads) {

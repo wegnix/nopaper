@@ -6,6 +6,7 @@ import { runAlertsTick } from '../services/alerts.js';
 import { runBackupTick } from '../services/backup.js';
 import { deliverWebhooks } from '../services/webhooks.js';
 import { cleanIdempotencyKeys } from '../services/integrations.js';
+import { runOrgPurgeTick } from '../services/orgRemoval.js';
 
 let boss: PgBoss | null = null;
 
@@ -19,6 +20,8 @@ const handlers: Record<string, { cron: string; run: Handler }> = {
   'webhooks.tick': { cron: '* * * * *', run: deliverWebhooks },
   'api.cleanup': { cron: '50 3 * * *', run: cleanIdempotencyKeys },
   'backup.tick': { cron: '7,22,37,52 * * * *', run: runBackupTick },
+  // espaços com remoção pedida: aviso de 1 dia antes e remoção quando o prazo vence (fora dos minutos do backup)
+  'orgs.purge': { cron: '12,42 * * * *', run: runOrgPurgeTick },
 };
 
 /** Registra handlers extras (alertas, backups) — chamado pelos módulos antes do start. */

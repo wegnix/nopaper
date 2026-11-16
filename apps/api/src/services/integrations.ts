@@ -75,15 +75,17 @@ export function ipAllowed(allowed: string[], ip: string) {
  * gravadas no token, cortadas pelo que um token pode ter (o catálogo pode ter mudado desde a criação).
  */
 export async function resolveApiToken(req: FastifyRequest, token: string): Promise<
-  { ok: true; integration: Integration; org: { id: string; name: string; kind: string; timezone: string }; permissions: Permission[] } | { ok: false; reason: TokenFailure }
+  { ok: true; integration: Integration; org: { id: string; name: string; kind: string; timezone: string; archived: boolean }; permissions: Permission[] } | { ok: false; reason: TokenFailure }
 > {
   const [t] = await db.select({
     id: schema.apiTokens.id, name: schema.apiTokens.name, orgId: schema.apiTokens.orgId, permissions: schema.apiTokens.permissions,
     allowedIps: schema.apiTokens.allowedIps, expiresAt: schema.apiTokens.expiresAt,
     orgName: schema.organizations.name, kind: schema.organizations.kind, timezone: schema.organizations.timezone,
+    archivedAt: schema.organizations.archivedAt,
   }).from(schema.apiTokens)
     .innerJoin(schema.organizations, eq(schema.organizations.id, schema.apiTokens.orgId))
-    .where(eq(schema.apiTokens.tokenHash, sha256(token))).limit(1);
+    // espaço com remoção agendada: os tokens param de valer na hora (voltam se a remoção for cancelada)
+    .where(and(eq(schema.apiTokens.tokenHash, sha256(token)), isNull(schema.organizations.deletionRequestedAt))).limit(1);
   if (!t) return { ok: false, reason: 'invalid' };
   if (t.expiresAt && t.expiresAt < todayISO(t.timezone)) return { ok: false, reason: 'expired' };
   if (!ipAllowed(t.allowedIps, req.ip)) return { ok: false, reason: 'ip' };
@@ -94,7 +96,7 @@ export async function resolveApiToken(req: FastifyRequest, token: string): Promi
   return {
     ok: true, permissions,
     integration: { id: t.id, name: t.name, orgId: t.orgId, expiresAt: t.expiresAt },
-    org: { id: t.orgId, name: t.orgName, kind: t.kind, timezone: t.timezone },
+    org: { id: t.orgId, name: t.orgName, kind: t.kind, timezone: t.timezone, archived: !!t.archivedAt },
   };
 }
 

@@ -15,6 +15,10 @@ export interface SessionOrg {
   id: string; name: string; kind: 'personal' | 'company'; /** Logo do espaço (data URL) ou null: mostra a inicial do nome. */ logo?: string | null; isOwner: boolean; isAdmin: boolean; permissions: Permission[];
   /** Liberado para aparecer quando o NoPaper está dentro de outro sistema. */
   embedVisible?: boolean;
+  /** Arquivado: só consulta, fica no fim da lista de espaços. */
+  archived?: boolean;
+  /** Remoção agendada (só o dono ainda recebe o espaço na sessão): só consulta. */
+  deletionDueAt?: string | null;
 }
 export interface SessionPayload { accessToken?: string; user: SessionUser; orgs: SessionOrg[]; app?: { version: string; embed?: boolean }; security?: { idleTimeoutMinutes: number } }
 /** Por que a sessão terminou (mensagem na tela de login). */
@@ -63,7 +67,8 @@ export const useSession = create<SessionState>((set, get) => ({
     // dentro de outro sistema só entram os espaços liberados para isso (Dados do espaço)
     const orgs = EMBEDDED ? p.orgs.filter((o) => o.embedVisible) : p.orgs;
     const saved = get().orgId ?? readOrg();
-    const orgId = orgs.find((o) => o.id === saved)?.id ?? orgs[0]?.id ?? null;
+    // sem espaço salvo: o primeiro que está em uso (arquivado ou em remoção só se não houver outro)
+    const orgId = orgs.find((o) => o.id === saved)?.id ?? orgs.find((o) => !o.archived && !o.deletionDueAt)?.id ?? orgs[0]?.id ?? null;
     set({ status: 'authed', accessToken: p.accessToken ?? get().accessToken, user: p.user, orgs, orgId,
       embedEnabled: p.app?.embed ?? get().embedEnabled, embedBlocked: EMBEDDED && p.orgs.length > 0 && orgs.length === 0, serverVersion: p.app?.version ?? get().serverVersion,
       idleTimeoutMinutes: p.security?.idleTimeoutMinutes ?? get().idleTimeoutMinutes, endReason: null });

@@ -17,7 +17,8 @@ export interface AuditEntry {
 export async function audit(req: FastifyRequest | null, e: AuditEntry, conn: DBOrTx = db) {
   try {
     await conn.insert(schema.auditLogs).values({
-      orgId: e.orgId ?? req?.org?.id ?? null,
+      // `orgId: null` explícito = auditoria da plataforma, mesmo com um espaço na requisição
+      orgId: e.orgId !== undefined ? e.orgId : req?.org?.id ?? null,
       userId: req?.user?.id ?? req?.integration?.id ?? null,
       userName: req?.user?.name ?? (req?.integration ? `Integração ${req.integration.name}`.slice(0, 120) : null),
       action: e.action,
@@ -28,7 +29,7 @@ export async function audit(req: FastifyRequest | null, e: AuditEntry, conn: DBO
       ip: req?.ip ?? null,
       userAgent: req?.headers['user-agent']?.slice(0, 255) ?? null,
     });
-    if (e.orgId ?? req?.org?.id) kickWebhooks();
+    if (e.orgId !== undefined ? e.orgId : req?.org?.id) kickWebhooks();
   } catch (err) {
     req?.log.error({ err }, 'falha ao gravar auditoria');
   }

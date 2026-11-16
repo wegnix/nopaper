@@ -37,7 +37,7 @@ async function startSession(req: FastifyRequest, reply: FastifyReply, userId: st
  * Confere a senha atual em ações da conta logada (trocar e-mail, trocar senha), com os mesmos
  * contadores do login: um token de acesso roubado não vira tentativa ilimitada de senha.
  */
-async function assertCurrentPassword(req: FastifyRequest, u: { id: string; passwordHash: string }, password: string | null | undefined, message: string, code?: string) {
+export async function assertCurrentPassword(req: FastifyRequest, u: { id: string; passwordHash: string }, password: string | null | undefined, message: string, code?: string) {
   const locked = loginLockedFor(u.id, req.ip);
   if (locked) throw new HttpError(429, `Muitas tentativas. Tente de novo em ${Math.ceil(locked / 60)} min.`, 'login_locked');
   if (password && (await verifyPassword(u.passwordHash, password))) { clearLoginFailures(u.id, req.ip); return; }

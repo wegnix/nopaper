@@ -125,7 +125,9 @@ export default async function platformRoutes(app: FastifyInstance) {
   app.get('/api/system/orgs', guard, async (req) => {
     const view = await privacyFor(req.user!.id);
     // espaço privado que quem olha não administra não entra na lista: não dá para associar ninguém a ele
-    const orgs = (await db.select({ id: schema.organizations.id, name: schema.organizations.name, kind: schema.organizations.kind }).from(schema.organizations).orderBy(schema.organizations.name))
+    // espaço com remoção pedida também fica de fora: não faz sentido pôr ninguém nele
+    const orgs = (await db.select({ id: schema.organizations.id, name: schema.organizations.name, kind: schema.organizations.kind }).from(schema.organizations)
+      .where(isNull(schema.organizations.deletionDueAt)).orderBy(schema.organizations.name))
       .filter((o) => !view.locked.has(o.id));
     const groups = await db.select({ id: schema.groups.id, orgId: schema.groups.orgId, name: schema.groups.name, isAdmin: schema.groups.isAdmin }).from(schema.groups).orderBy(schema.groups.name);
     return { items: orgs.map((o) => ({ ...o, groups: groups.filter((g) => g.orgId === o.id).map(({ orgId: _o, ...g }) => g) })) };
@@ -159,6 +161,7 @@ export default async function platformRoutes(app: FastifyInstance) {
     const [org] = await db.select().from(schema.organizations).where(eq(schema.organizations.id, req.params.orgId));
     if (!org) throw notFound('Espaço não encontrado');
     assertOrgOpenToPlatform(await privacyFor(req.user!.id), org.id);
+    if (org.deletionDueAt) throw conflict('Este espaço está marcado para remoção.');
     const groups = body.groupIds.length ? await db.select().from(schema.groups).where(and(eq(schema.groups.orgId, org.id), inArray(schema.groups.id, body.groupIds))) : [];
     if (groups.length !== new Set(body.groupIds).size) throw badRequest('Grupo inválido para este espaço');
     const out = await db.transaction(async (tx) => {

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import { OrgStateBanner, untilText } from '@/features/settings/OrgRemoval';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { DropdownMenu } from 'radix-ui';
-import { Check, ChevronsUpDown, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, User, X } from 'lucide-react';
+import { Archive, Check, ChevronsUpDown, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, User, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useSession, useOrg, useCan } from '@/lib/session';
@@ -83,17 +84,38 @@ function OrgSwitcher({ onNew, collapsed, slim }: { onNew: () => void; collapsed?
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="start" side={collapsed ? 'right' : 'bottom'} sideOffset={6} className="z-[6000] w-[260px] rounded-xl border border-line bg-raised p-1.5 shadow-2xl">
           <DropdownMenu.Label className="px-2 py-1.5 text-xs text-faint">Seus espaços</DropdownMenu.Label>
-          {orgs.map((o) => (
+          {orgs.filter((o) => !o.archived).map((o) => (
             <DropdownMenu.Item
               key={o.id}
               onSelect={() => { setOrg(o.id); qc.clear(); nav('/'); }}
               className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm outline-none data-[highlighted]:bg-surface-2 cursor-pointer"
             >
               <OrgAvatar name={o.name} logo={o.logo} className="size-6 rounded-md text-xs" />
-              <span className="flex-1 truncate">{o.name}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{o.name}</span>
+                {o.deletionDueAt && <span className="block text-[11px] text-danger">Remoção {untilText(o.deletionDueAt)}</span>}
+              </span>
               {o.id === org?.id && <Check className="size-4 text-accent" />}
             </DropdownMenu.Item>
           ))}
+          {orgs.some((o) => o.archived) && <>
+            <DropdownMenu.Separator className="my-1 h-px bg-line" />
+            <DropdownMenu.Label className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-faint"><Archive className="size-3.5" />Arquivados</DropdownMenu.Label>
+            {orgs.filter((o) => o.archived).map((o) => (
+              <DropdownMenu.Item
+                key={o.id}
+                onSelect={() => { setOrg(o.id); qc.clear(); nav('/'); }}
+                className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted outline-none data-[highlighted]:bg-surface-2 cursor-pointer"
+              >
+                <OrgAvatar name={o.name} logo={o.logo} className="size-6 rounded-md text-xs opacity-60 grayscale" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{o.name}</span>
+                  {o.deletionDueAt && <span className="block text-[11px] text-danger">Remoção {untilText(o.deletionDueAt)}</span>}
+                </span>
+                {o.id === org?.id && <Check className="size-4 text-accent" />}
+              </DropdownMenu.Item>
+            ))}
+          </>}
           {canCreate && <>
             <DropdownMenu.Separator className="my-1 h-px bg-line" />
             <DropdownMenu.Item onSelect={onNew} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm outline-none data-[highlighted]:bg-surface-2 cursor-pointer">
@@ -195,6 +217,7 @@ export function AppShell() {
             {accountMenu(true)}
           </div>
         </div>
+        <OrgStateBanner />
         <main className="flex-1 overflow-y-auto overscroll-contain">
           <motion.div key={loc.pathname.split('/')[1]} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: 'easeOut' }} className="w-full px-3 py-4 sm:px-4 md:px-5 md:py-5">
             {noSpace ? (
@@ -276,6 +299,7 @@ export function AppShell() {
           </div>
          </div>
         </header>
+        <OrgStateBanner />
         <main className="safe-bottom flex-1 overflow-y-auto overscroll-contain">
           <motion.div key={loc.pathname.split('/')[1]} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: 'easeOut' }} className="w-full px-3 py-4 sm:px-4 md:px-5 md:py-5 lg:px-6 lg:py-6">
             <Outlet />

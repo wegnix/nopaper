@@ -63,3 +63,22 @@ export function orgRegistrationsLine(o: OrgIdentity | null | undefined): string 
   const ie = filled(o.stateRegistration), im = filled(o.cityRegistration);
   return [ie && `IE ${ie}`, im && `IM ${im}`].filter(Boolean).join(' · ') || null;
 }
+
+// ------------------------------------------------------------------ arquivar / remover espaço
+/** Prazo entre o pedido de remoção e a remoção de fato (dá para cancelar até lá). */
+export const ORG_REMOVAL_DAYS = 7;
+
+/** Confirmação da remoção: nome do espaço digitado, a própria senha e a caixa "entendo". */
+export const orgDeletionSchema = z.object({
+  confirmName: z.string().max(200),
+  password: z.string().min(1, 'Digite a sua senha').max(200),
+  understood: z.literal(true, { error: 'Marque a caixa confirmando que entendeu' }),
+  /** Apagar na hora, sem o prazo para cancelar (também serve para antecipar uma remoção já agendada). */
+  now: z.boolean().default(false),
+});
+export type OrgDeletionInput = z.infer<typeof orgDeletionSchema>;
+
+/** O nome digitado confere com o do espaço? (ignora espaços nas pontas e repetidos; maiúsculas contam) */
+export const orgNameMatches = (typed: string, name: string) => typed.trim().replace(/\s+/g, ' ') === name.trim().replace(/\s+/g, ' ');
+
+export const orgArchiveSchema = z.object({ archived: z.boolean() });

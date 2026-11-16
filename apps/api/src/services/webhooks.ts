@@ -131,7 +131,7 @@ export async function deliverWebhooks() {
     const t = schema.apiTokens;
     const hooks = await db.select({ token: t, timezone: schema.organizations.timezone }).from(t)
       .innerJoin(schema.organizations, eq(schema.organizations.id, t.orgId))
-      .where(and(isNotNull(t.webhookUrl), or(isNull(t.webhookStatus), ne(t.webhookStatus, 'stopped')), or(isNull(t.webhookNextAt), lte(t.webhookNextAt, new Date()))));
+      .where(and(isNotNull(t.webhookUrl), isNull(schema.organizations.archivedAt), isNull(schema.organizations.deletionRequestedAt), or(isNull(t.webhookStatus), ne(t.webhookStatus, 'stopped')), or(isNull(t.webhookNextAt), lte(t.webhookNextAt, new Date()))));
     for (const { token: h, timezone } of hooks) {
       const secret = decryptSecret(h.webhookSecret);
       if (!secret || (h.expiresAt && h.expiresAt < todayISO(timezone))) continue;

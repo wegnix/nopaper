@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, lt, lte, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, lte, notInArray, sql } from 'drizzle-orm';
 import { vacationDigest } from './vacations.js';
 import {
   COLOR_PRESETS, addDaysISO, alertConfigSchema, billNames, isColorKey, formatBRL, formatDateBR, sumMoney, todayISO, diffDaysISO, type AlertConfig, type BillType,
@@ -244,7 +244,8 @@ export async function deliver(orgId: string, cfg: AlertConfig, d: Digest, test =
 export async function runAlertsTick() {
   const rows = await db.select({ orgId: schema.orgSettings.orgId, tz: schema.organizations.timezone })
     .from(schema.orgSettings).innerJoin(schema.organizations, eq(schema.organizations.id, schema.orgSettings.orgId))
-    .where(eq(schema.orgSettings.key, 'alerts'));
+    // arquivado ou com remoção agendada: sem resumo diário
+    .where(and(eq(schema.orgSettings.key, 'alerts'), isNull(schema.organizations.archivedAt), isNull(schema.organizations.deletionRequestedAt)));
   let sent = 0, skipped = 0, failed = 0;
   for (const r of rows) {
     // um espaço com problema (fuso gravado errado, destino fora do ar) não pode parar os outros

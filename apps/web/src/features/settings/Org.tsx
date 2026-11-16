@@ -10,6 +10,7 @@ import { OrgAvatar } from '@/components/ui/org-avatar';
 import { useConfirm, useFormState } from '@/components/ui/dialog';
 import { useCan, useOrg, useSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
+import { RemovalCard } from './OrgRemoval';
 
 const DETAILS = ['stateRegistration', 'cityRegistration', 'phone', 'whatsapp', 'email', 'website', 'zipCode', 'street', 'streetNumber', 'complement', 'district', 'city', 'state'] as const;
 type Detail = (typeof DETAILS)[number];
@@ -417,6 +418,7 @@ export function OrgPage() {
         <PdfPasswordsCard canEdit={canEdit} />
         <EmbedCard org={org} canEdit={canEdit} onChange={(embedVisible) => { setOrg({ ...org, embedVisible }); patchSession({ embedVisible }); }} />
         <PrivateCard org={org} onChange={(isPrivate) => setOrg({ ...org, isPrivate })} />
+        <RemovalCard />
       </div>
     </fieldset>
   );

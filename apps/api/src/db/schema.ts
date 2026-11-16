@@ -86,6 +86,20 @@ export const organizations = pgTable('organizations', {
   /** Cota de armazenamento deste espaço em MB (null = a padrão da instalação). */
   storageQuotaMb: integer('storage_quota_mb'),
   timezone: varchar('timezone', { length: 64 }).notNull().default('America/Sao_Paulo'),
+  /** Arquivado: só leitura e fora da lista principal de espaços (`services/orgRemoval.ts`). */
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  archivedBy: uuid('archived_by'),
+  /**
+   * Remoção agendada: 7 dias de prazo para cancelar; nesse tempo o espaço some para os membros (só o dono vê,
+   * em modo leitura) e as integrações param. No fim do prazo o job `orgs.purge` apaga tudo.
+   */
+  deletionRequestedAt: timestamp('deletion_requested_at', { withTimezone: true }),
+  deletionRequestedBy: uuid('deletion_requested_by'),
+  deletionRequestedByName: varchar('deletion_requested_by_name', { length: 120 }),
+  /** Pedido pela plataforma (espaço sem dono ativo). */
+  deletionByPlatform: boolean('deletion_by_platform').notNull().default(false),
+  deletionDueAt: timestamp('deletion_due_at', { withTimezone: true }),
+  deletionReminderAt: timestamp('deletion_reminder_at', { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

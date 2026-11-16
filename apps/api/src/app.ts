@@ -11,6 +11,7 @@ import { isMaintenance, registerMaintenance } from './lib/maintenance.js';
 import { pool } from './db/client.js';
 import authRoutes from './routes/auth.js';
 import orgRoutes from './routes/org.js';
+import orgRemovalRoutes from './routes/orgRemoval.js';
 import catalogRoutes from './routes/catalog.js';
 import billRoutes from './routes/bills.js';
 import attachmentRoutes from './routes/attachments.js';
@@ -92,6 +93,7 @@ export async function buildApp() {
 
   await app.register(authRoutes);
   await app.register(orgRoutes);
+  await app.register(orgRemovalRoutes);
   await app.register(catalogRoutes);
   await app.register(billRoutes);
   await app.register(attachmentRoutes);

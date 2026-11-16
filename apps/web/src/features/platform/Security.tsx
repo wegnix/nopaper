@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { OwnerlessSpacesCard } from '@/features/settings/OrgRemoval';
 import { Navigate } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -91,6 +92,7 @@ export function SecurityPage() {
         </ul>
       </Card>
       <StorageCard />
+      <OwnerlessSpacesCard />
     </div>
   );
 }
