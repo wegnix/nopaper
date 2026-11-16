@@ -8,6 +8,14 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.28.3] - 2026-11-16
+
+### Corrigido
+- **Envio do contador com arquivos de tipos diferentes.** Ao juntar, no mesmo envio, arquivos de tipos diferentes
+  (ex.: o holerite e depois o relatório de férias), todos chegavam com o último tipo escolhido. Agora cada arquivo
+  guarda o tipo que estava escolhido quando entrou na lista, mostra esse tipo ao lado (dá para trocar ali mesmo) e o
+  envio sai separado por tipo. A lista continua visível ao trocar de grupo ou de tipo.
+
 ## [1.28.2] - 2026-11-16
 
 ### Corrigido

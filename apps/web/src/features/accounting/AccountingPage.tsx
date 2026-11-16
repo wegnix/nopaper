@@ -250,7 +250,10 @@ export function AccountingPage() {
   );
 }
 
-/** Envio: tipo → competência → arquivos (vários de uma vez). */
+/** Arquivo na lista de envio: cada um guarda o tipo escolhido quando entrou (dá para trocar na lista). */
+type Pending = { file: File; kind: AccountingKind };
+
+/** Envio: tipo → arquivos (vários, de tipos diferentes) → um pedido por tipo. */
 function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: () => void; onClose?: () => void }) {
   // grupo → tipo. A folha só existe em espaço Empresa; grupo de um tipo só (Outros) já escolhe o tipo.
   const groups = ACCOUNTING_GROUPS.filter((g) => company || g.key !== 'payroll');
@@ -263,32 +266,64 @@ function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: ()
   const [competence, setCompetence] = useState(thisMonth);
   /** Último envio feito nesta tela (confirmação visível). */
   const [sent, setSent] = useState<{ n: number; label: string; at: string } | null>(null);
+  const allKinds = groups.flatMap((g) => g.kinds as readonly AccountingKind[]);
   const [note, setNote] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<Pending[]>([]);
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const months = useMemo(() => Array.from({ length: 15 }, (_, i) => addMonthsRef(thisMonth, 1 - i)), [thisMonth]);
+  const isPdf = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
   const add = (list: FileList | File[] | null) => {
-    const ok = [...(list ?? [])].filter((f) => /pdf|png|jpe?g|webp/i.test(f.type) || /\.(pdf|png|jpe?g|webp)$/i.test(f.name));
-    if (ok.length < (list?.length ?? 0)) toast.warning('Só PDF (ou imagem PNG/JPG) é aceito.');
-    setFiles((p) => [...p, ...ok.filter((f) => !p.some((x) => x.name === f.name && x.size === f.size))].slice(0, 20));
+    if (!kind) return;
+    const all = [...(list ?? [])];
+    const pdfOnly = accountingIsSlips(kind);
+    const ok = all.filter((f) => pdfOnly ? isPdf(f) : (/pdf|png|jpe?g|webp/i.test(f.type) || /\.(pdf|png|jpe?g|webp)$/i.test(f.name)));
+    if (ok.length < all.length) toast.warning(pdfOnly ? `${ACCOUNTING_KIND_LABEL[kind]}: só PDF é aceito.` : 'Só PDF (ou imagem PNG/JPG) é aceito.');
+    const fresh = ok.filter((f) => !files.some((x) => x.file.name === f.name && x.file.size === f.size));
+    if (fresh.length < ok.length) toast.info('Arquivo que já estava na lista ficou com o tipo de antes (dá para trocar na lista).');
+    if (files.length + fresh.length > 20) toast.warning('Até 20 arquivos por envio.');
+    setFiles((p) => [...p, ...fresh.map((file) => ({ file, kind }))].slice(0, 20));
   };
+  /** Troca o tipo de um arquivo da lista (recibos e holerites só aceitam PDF). */
+  const changeKind = (i: number, k: AccountingKind) => {
+    if (accountingIsSlips(k) && !isPdf(files[i].file)) { toast.warning(`${ACCOUNTING_KIND_LABEL[k]}: só PDF é aceito.`); return; }
+    setFiles((p) => p.map((x, j) => (j === i ? { ...x, kind: k } : x)));
+  };
+  /** Tipos na ordem em que aparecem na lista, com a contagem. */
+  const byKind = useMemo(() => {
+    const m = new Map<AccountingKind, File[]>();
+    for (const x of files) m.set(x.kind, [...(m.get(x.kind) ?? []), x.file]);
+    return [...m.entries()];
+  }, [files]);
+  const kindsText = byKind.map(([k, fs]) => `${ACCOUNTING_KIND_LABEL[k]}${byKind.length > 1 || fs.length > 1 ? ` (${fs.length})` : ''}`).join(' · ');
   const drop = (e: DragEvent) => { e.preventDefault(); setOver(false); add(e.dataTransfer.files); };
   const send = async () => {
-    if (!kind || !files.length) return;
+    if (!files.length) return;
     setBusy(true);
+    // um pedido por tipo: o tipo vale para todos os arquivos do pedido
+    let created = 0, near = false;
+    const done: AccountingKind[] = [];
     try {
-      const fd = new FormData();
-      fd.append('kind', kind); fd.append('competence', competence); fd.append('note', note);
-      for (const f of files) fd.append('file', f);
-      const r = await api<{ created: number; storage?: { near: boolean } }>('POST', '/api/accounting/documents', fd);
-      if (r.storage?.near) toast.warning('Este espaço está perto do limite de armazenamento. Avise o responsável.');
-      toast.success(`${plural(r.created, 'documento enviado', 'documentos enviados')}. O responsável foi avisado.`);
-      setSent({ n: r.created, label: `${ACCOUNTING_KIND_LABEL[kind]}${competence ? ` – ${refLabelPT(competence)}` : ''}`, at: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) });
-      setFiles([]); setNote(''); setKind(null); setGroup(null);
-      onSent();
-    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+      for (const [k, fs] of byKind) {
+        const fd = new FormData();
+        fd.append('kind', k); fd.append('competence', competence); fd.append('note', note);
+        for (const f of fs) fd.append('file', f);
+        const r = await api<{ created: number; storage?: { near: boolean } }>('POST', '/api/accounting/documents', fd);
+        created += r.created; near ||= !!r.storage?.near; done.push(k);
+      }
+    } catch (e) {
+      toast.error(done.length ? `${errMsg(e)} Os arquivos que já foram saíram da lista; os que ficaram não foram enviados.` : errMsg(e));
+    } finally { setBusy(false); }
+    if (!done.length) return;
+    if (near) toast.warning('Este espaço está perto do limite de armazenamento. Avise o responsável.');
+    toast.success(`${plural(created, 'documento enviado', 'documentos enviados')}. O responsável foi avisado.`);
+    const label = byKind.filter(([k]) => done.includes(k)).map(([k]) => ACCOUNTING_KIND_LABEL[k]).join(', ');
+    setSent({ n: created, label: `${label}${competence ? ` – ${refLabelPT(competence)}` : ''}`, at: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) });
+    const left = files.filter((x) => !done.includes(x.kind));
+    setFiles(left);
+    if (!left.length) { setNote(''); setKind(null); setGroup(null); }
+    onSent();
   };
   return (
     <Card className="p-3 sm:p-4 md:p-5">
@@ -297,7 +332,7 @@ function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: ()
         {onClose && <button type="button" aria-label="Fechar o envio" className="grid size-8 pointer-coarse:size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-2 hover:text-ink" onClick={onClose}><X className="size-4" /></button>}
       </div>
       <p className="mt-0.5 text-sm text-muted">1. Escolha o grupo e o tipo · 2. Confira o mês · 3. Adicione os arquivos.</p>
-      {sent && !kind && (
+      {sent && !kind && !files.length && (
         <p className="mt-3 flex items-start gap-2 rounded-lg bg-ok/10 px-3 py-2.5 text-sm text-ok">
           <CircleCheck className="mt-0.5 size-4 shrink-0" />
           <span>Enviado às {sent.at}: <b className="font-medium">{sent.label}</b> ({plural(sent.n, 'arquivo', 'arquivos')}). O responsável foi avisado e o envio já está no histórico abaixo.</span>
@@ -336,7 +371,7 @@ function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: ()
           </div>
         </div>
       )}
-      {kind && (
+      {(kind || files.length > 0) && (
         <div className="mt-4 flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-[220px_1fr]">
             <Field label="Mês" hint="O mês em que o documento está sendo enviado e será pago — não a competência.">
@@ -347,36 +382,51 @@ function UploadCard({ company, onSent, onClose }: { company: boolean; onSent: ()
             </Field>
             <Field label="Observação (opcional)"><Input maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex.: vence dia 20; guia recalculada…" /></Field>
           </div>
+          {kind ? <>
           <input ref={inputRef} type="file" multiple accept="application/pdf,.pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { add(e.target.files); e.target.value = ''; }} />
           <button type="button" onClick={() => inputRef.current?.click()} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={drop}
             className={cn('flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition', over ? 'border-accent bg-accent-soft/40' : 'border-line hover:border-accent hover:bg-accent-soft/30')}>
             <span className="grid size-11 place-items-center rounded-2xl bg-accent-soft text-accent"><Upload className="size-5" /></span>
             <span className="font-medium">{isTouch() ? 'Toque para escolher os arquivos' : 'Arraste os arquivos aqui ou clique para escolher'}</span>
             <span className="text-xs text-faint">{accountingIsSlips(kind) ? 'O PDF original do sistema de folha, com os recibos de todos os funcionários.' : kind === 'payroll_report' ? 'O relatório de férias (“Períodos Aquisitivos Abertos”) é reconhecido sozinho e já aparece na folha da empresa.' : !accountingIsPayable(kind) ? 'PDF de preferência. Até 20 arquivos por envio.' : 'PDF de preferência (lemos valor, vencimento e código de barras). Até 20 arquivos por envio.'}</span>
+            <span className="text-xs font-medium text-accent">Os arquivos adicionados agora entram como “{ACCOUNTING_KIND_LABEL[kind]}”.</span>
           </button>
+          </> : <p className="rounded-lg bg-surface-2/60 px-3 py-2.5 text-sm text-muted">Para juntar arquivos de outro tipo, escolha o grupo e o tipo acima. Os que já estão na lista mantêm o tipo de cada um.</p>}
           {files.length > 0 && (
             <div className="rounded-xl border-2 border-accent/50 bg-accent-soft/30 p-3 sm:p-4" aria-live="polite">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="flex items-center gap-2 font-medium"><Paperclip className="size-4 text-accent" />{plural(files.length, 'arquivo pronto', 'arquivos prontos')} para enviar</p>
-                <span className="text-sm text-muted tnum">{sizeText(files.reduce((n, f) => n + f.size, 0))} no total</span>
+                <span className="text-sm text-muted tnum">{sizeText(files.reduce((n, x) => n + x.file.size, 0))} no total</span>
               </div>
               <ul className="mt-3 flex flex-col gap-2">
-                {files.map((f, i) => (
-                  <li key={`${f.name}-${f.size}`} className="flex items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2.5 shadow-card">
-                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent"><FileText className="size-5" /></span>
+                {files.map(({ file: f, kind: k }, i) => {
+                  const Icon = KIND_ICON[k];
+                  return (
+                  <li key={`${f.name}-${f.size}`} className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2.5 shadow-card sm:flex-nowrap">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent"><Icon className="size-5" /></span>
                     <span className="min-w-0 flex-1">
                       <span className="block break-words text-[15px] font-medium leading-snug">{f.name}</span>
-                      <span className="block text-xs text-muted tnum">{sizeText(f.size)} · {/\.pdf$/i.test(f.name) || f.type === 'application/pdf' ? 'PDF' : 'imagem'}</span>
+                      <span className="block text-xs text-muted tnum">{sizeText(f.size)} · {isPdf(f) ? 'PDF' : 'imagem'}</span>
                     </span>
+                    <div className="order-last w-full sm:order-none sm:w-56 sm:shrink-0">
+                      <Select aria-label={`Tipo de ${f.name}`} value={k} onChange={(e) => changeKind(i, e.target.value as AccountingKind)}>
+                        {groups.map((g) => (
+                          <optgroup key={g.key} label={g.label}>
+                            {(g.kinds as readonly AccountingKind[]).filter((x) => allKinds.includes(x)).map((x) => <option key={x} value={x}>{ACCOUNTING_KIND_LABEL[x]}</option>)}
+                          </optgroup>
+                        ))}
+                      </Select>
+                    </div>
                     <button type="button" aria-label={`Tirar ${f.name}`} title="Tirar da lista" className="grid size-9 pointer-coarse:size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-danger/10 hover:text-danger" onClick={() => setFiles(files.filter((_, j) => j !== i))}><X className="size-4" /></button>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </div>
           )}
           {busy && <div className="flex items-center gap-2 text-sm text-muted"><LogoLoader size={64} label="Enviando documentos" />Enviando {files.length > 1 ? 'os arquivos' : 'o arquivo'}…</div>}
           <div className="flex flex-wrap items-center justify-end gap-3">
-            <span className="mr-auto text-xs text-faint">{files.length ? `${ACCOUNTING_KIND_LABEL[kind]}${competence ? ` – ${refLabelPT(competence)}` : ''} · ${plural(files.length, 'arquivo', 'arquivos')}` : 'Nenhum arquivo escolhido ainda.'}</span>
+            <span className="mr-auto text-xs text-faint">{files.length ? `${kindsText}${competence ? ` – ${refLabelPT(competence)}` : ''} · ${plural(files.length, 'arquivo', 'arquivos')}` : 'Nenhum arquivo escolhido ainda.'}</span>
             <Button variant="primary" className="max-sm:w-full" loading={busy} disabled={!files.length} icon={<FileUp className="size-4" />} onClick={send}>Enviar {files.length > 1 ? `${files.length} arquivos` : 'documento'}</Button>
           </div>
         </div>
