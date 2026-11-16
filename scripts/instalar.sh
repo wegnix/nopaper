@@ -134,20 +134,44 @@ command -v openssl >/dev/null 2>&1 || fail "falta o comando openssl (usado para 
 [ -n "$(get_env JWT_SECRET)" ] || set_env JWT_SECRET "$(openssl rand -hex 48)"
 
 # ---- Pasta dos dados -------------------------------------------------------------
+# pergunta sempre; a sugestão é a pasta que o banco já usa (container existente), senão a do .env
 DATA=$(get_env DATA_PATH)
-if [ -n "$NEW_ENV" ] || [ -z "$DATA" ]; then
-  if [ "$MODE" = local ]; then DEFAULT_DATA="$HOME_DIR/nopaper-dados"; else DEFAULT_DATA="${DATA:-/storage/nopaper}"; fi
-  say ""
-  say "Onde guardar os dados (banco, anexos e backups)? Use uma pasta fora de pastas sincronizadas"
-  say "(Nextcloud, Dropbox…): o banco não pode ser copiado enquanto está em uso."
-  DATA=$(ask 'Pasta dos dados' "$DEFAULT_DATA")
-  case "$DATA" in /*) ;; *) fail "informe o caminho completo da pasta (começando com /)." ;; esac
-  set_env DATA_PATH "$DATA"
+IN_USE=""
+DB_ID=$(docker compose ps -aq db 2>/dev/null | head -n 1 || true)
+if [ -n "$DB_ID" ]; then
+  IN_USE=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Source}}{{end}}{{end}}' "$DB_ID" 2>/dev/null | sed 's#/banco/*$##')
 fi
+if [ -n "$IN_USE" ]; then
+  DEFAULT_DATA="$IN_USE"
+elif [ -n "$DATA" ] && { [ -z "$NEW_ENV" ] || [ "$MODE" != local ]; }; then
+  DEFAULT_DATA="$DATA"
+elif [ "$MODE" = local ]; then
+  DEFAULT_DATA="$HOME_DIR/nopaper-dados"
+else
+  DEFAULT_DATA=/storage/nopaper
+fi
+say ""
+say "Onde guardar os dados (banco, anexos e backups)? Use uma pasta fora de pastas sincronizadas"
+say "(Nextcloud, Dropbox…): o banco não pode ser copiado enquanto está em uso."
+[ -z "$IN_USE" ] || say "O NoPaper desta máquina está usando: $IN_USE"
+DATA=$(ask 'Pasta dos dados' "$DEFAULT_DATA")
+DATA=$(printf '%s' "$DATA" | sed 's#/*$##')
+case "$DATA" in /?*) ;; *) fail "informe o caminho completo da pasta (começando com /)." ;; esac
+if [ -n "$IN_USE" ] && [ "$DATA" != "$IN_USE" ]; then
+  say "Atenção: a pasta escolhida não é a que o NoPaper usa hoje ($IN_USE). Os dados de lá NÃO são levados junto."
+  case "$(ask 'Continuar com a pasta nova? (s/n)' 'n')" in s|S|sim|Sim) ;; *) fail "nada foi mudado. Rode de novo e use $IN_USE." ;; esac
+fi
+# cria agora, com mensagem clara se não houver permissão (sem isso o Docker falha no meio da subida)
+if ! mkdir -p "$DATA/banco" "$DATA/anexos" "$DATA/backups" "$DATA/atualizador" 2>/dev/null; then
+  fail "sem permissão para criar $DATA. Escolha uma pasta sua (ex.: $HOME_DIR/nopaper-dados) ou crie antes:
+  sudo mkdir -p $DATA && sudo chown \$USER $DATA"
+fi
+[ -z "$OWNER" ] || chown "$OWNER" "$DATA" 2>/dev/null || true
+set_env DATA_PATH "$DATA"
 
 FIRST_BOOT=""
-[ -d "$DATA/banco" ] || FIRST_BOOT=1
-if [ -n "$NEW_ENV" ] && [ -z "$FIRST_BOOT" ] && [ -n "$(ls -A "$DATA/banco" 2>/dev/null)" ]; then
+[ -n "$(ls -A "$DATA/banco" 2>/dev/null)" ] || FIRST_BOOT=1
+if [ -n "$NEW_ENV" ] && [ -z "$FIRST_BOOT" ]; then
   rm -f .env
   fail "já existe um banco em $DATA/banco, mas o .env é novo: as senhas geradas agora não abririam esse banco.
   - Recupere o .env da instalação anterior e rode de novo, ou

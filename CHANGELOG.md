@@ -8,6 +8,14 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.28.2] - 2026-11-16
+
+### Corrigido
+- **Instalador pergunta sempre a pasta dos dados.** Ao rodar de novo, ele usava o `DATA_PATH` do `.env` sem perguntar
+  (às vezes o padrão `/storage/nopaper`, que pede root). Agora pergunta toda vez, sugerindo a pasta que o NoPaper
+  da máquina já está usando, avisa se a escolhida for outra (os dados não vão junto) e cria a pasta antes de construir,
+  com uma mensagem clara se faltar permissão.
+
 ## [1.28.1] - 2026-11-16
 
 ### Corrigido
