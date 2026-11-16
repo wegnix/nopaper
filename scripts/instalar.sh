@@ -55,6 +55,37 @@ unset_env() {
   cat .env.tmp > .env && rm -f .env.tmp
 }
 
+# a porta está aberta por algum programa ou container? (ss, senão a lista de portas publicadas do Docker)
+port_busy() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnH 2>/dev/null | awk -v p=":$1" '{ a = $4; if (substr(a, length(a) - length(p) + 1) == p) f = 1 } END { exit !f }' && return 0
+  fi
+  docker ps --format '{{.Ports}}' 2>/dev/null | tr ',' '\n' | grep -q ":$1->" && return 0
+  return 1
+}
+
+# mostra como entrar: consulta o banco; sem resposta do banco, usa o .env
+show_login() {
+  PW=$(get_env ADMIN_PASSWORD)
+  ROW=$(docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select username || chr(9) || email || chr(9) || must_change_password::text from users where is_superadmin and deleted_at is null order by created_at limit 1"' </dev/null 2>/dev/null || true)
+  if [ -n "$ROW" ]; then
+    U=$(printf '%s' "$ROW" | cut -f1); E=$(printf '%s' "$ROW" | cut -f2); PENDING=$(printf '%s' "$ROW" | cut -f3)
+    say "  Entrar com: $U  (ou $E)"
+    if [ "$PENDING" = true ] && [ -n "$PW" ]; then
+      say "  Senha provisória: $PW  (o sistema pede uma nova no primeiro acesso)"
+    elif [ "$PENDING" = true ]; then
+      say "  Senha provisória: a que estava em ADMIN_PASSWORD no .env quando o banco foi criado"
+      say "  Esqueceu? docker compose exec api node dist/scripts/reset-password.js $U"
+    else
+      say "  Senha: a que você definiu no primeiro acesso"
+    fi
+  elif [ -n "$PW" ]; then
+    U=$(get_env ADMIN_USERNAME); U="${U:-admin}"
+    say "  Entrar com: $U  (ou $(get_env ADMIN_EMAIL))"
+    say "  Senha provisória: $PW  (o sistema pede uma nova no primeiro acesso)"
+  fi
+}
+
 # ---- Docker ------------------------------------------------------------------
 command -v docker >/dev/null 2>&1 || fail "o Docker não está instalado. Instale e rode de novo (guia: docs/publicacao-com-traefik.md, seção 3)."
 docker compose version >/dev/null 2>&1 || fail "falta o Docker Compose (plugin 'docker compose'), versão 2.24 ou mais nova."
@@ -116,7 +147,12 @@ fi
 
 FIRST_BOOT=""
 [ -d "$DATA/banco" ] || FIRST_BOOT=1
-SHOW_PASSWORD=""
+if [ -n "$NEW_ENV" ] && [ -z "$FIRST_BOOT" ] && [ -n "$(ls -A "$DATA/banco" 2>/dev/null)" ]; then
+  rm -f .env
+  fail "já existe um banco em $DATA/banco, mas o .env é novo: as senhas geradas agora não abririam esse banco.
+  - Recupere o .env da instalação anterior e rode de novo, ou
+  - para começar do zero (apaga TUDO o que estava lá): pare o NoPaper e apague a pasta $DATA"
+fi
 if [ -n "$FIRST_BOOT" ]; then
   # só em instalação nova: num banco que já existe, uma chave nova deixaria de abrir os segredos guardados
   [ -n "$(get_env SECRETS_KEY)" ] || set_env SECRETS_KEY "$(openssl rand -hex 48)"
@@ -127,22 +163,28 @@ if [ -n "$FIRST_BOOT" ]; then
     case "$EMAIL" in *@*.*) ;; *) fail "e-mail inválido: $EMAIL" ;; esac
     set_env ADMIN_EMAIL "$EMAIL"
   fi
-  if [ -z "$(get_env ADMIN_PASSWORD)" ]; then
-    SHOW_PASSWORD=$(openssl rand -hex 6)
-    set_env ADMIN_PASSWORD "$SHOW_PASSWORD"
-  fi
+  [ -n "$(get_env ADMIN_PASSWORD)" ] || set_env ADMIN_PASSWORD "$(openssl rand -hex 6)"
 fi
 
 # ---- Configuração de cada modo ---------------------------------------------------
 if [ "$MODE" = local ]; then
   PORT=$(get_env WEB_PORT); PORT="${PORT:-8080}"
-  RUNNING=$(docker compose ps -q web 2>/dev/null || true)
+  # a porta que o próprio NoPaper já está usando não conta como ocupada
+  OWN_PORT=""
+  [ -z "$(docker compose ps -q web 2>/dev/null || true)" ] || OWN_PORT="$PORT"
+  ROOTLESS=""
+  case "$(docker info -f '{{.SecurityOptions}}' 2>/dev/null)" in *rootless*) ROOTLESS=1 ;; esac
   while :; do
     say ""
     PORT=$(ask 'Porta para abrir o NoPaper' "$PORT")
     case "$PORT" in ''|*[!0-9]*) say "Porta inválida."; PORT=8080; continue ;; esac
-    if [ -z "$RUNNING" ] && command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -q ":$PORT "; then
-      say "A porta $PORT já está em uso nesta máquina. Escolha outra."
+    if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then say "Porta inválida (1 a 65535)."; PORT=8080; continue; fi
+    if [ -n "$ROOTLESS" ] && [ "$PORT" -lt 1024 ]; then
+      say "O Docker desta máquina roda sem root e não pode abrir portas abaixo de 1024. Use 8080, por exemplo."
+      PORT=8080; continue
+    fi
+    if [ "$PORT" != "$OWN_PORT" ] && port_busy "$PORT"; then
+      say "A porta $PORT já está em uso nesta máquina (outro programa ou container). Escolha outra."
       PORT=$((PORT + 1)); continue
     fi
     break
@@ -197,7 +239,23 @@ unset COMPOSE_FILE
 docker compose config -q || fail "a configuração não fechou (mensagem acima). Confira o .env."
 say ""
 say "Construindo e subindo o NoPaper (a primeira vez leva alguns minutos)…"
-docker compose up -d --build --remove-orphans
+UPLOG=$(mktemp)
+RCF=$(mktemp)
+{ docker compose up -d --build --remove-orphans 2>&1; echo $? > "$RCF"; } | tee "$UPLOG"
+RC=$(cat "$RCF"); rm -f "$RCF"
+if [ "$RC" != 0 ]; then
+  say ""
+  if grep -qiE 'port is already allocated|address already in use|bind for' "$UPLOG"; then
+    say "A porta ${PORT:-escolhida} já está em uso nesta máquina. Rode de novo e escolha outra: sh scripts/instalar.sh --local"
+  elif grep -qiE 'privileged port|permission denied.*bind' "$UPLOG"; then
+    say "Sem permissão para abrir a porta ${PORT:-escolhida} (abaixo de 1024). Rode de novo e escolha 8080, por exemplo."
+  fi
+  rm -f "$UPLOG"
+  say "Os dados de acesso ficam guardados (não mudam ao rodar de novo):"
+  show_login
+  fail "o NoPaper não subiu (mensagem acima)."
+fi
+rm -f "$UPLOG"
 
 UP=1
 if [ "$MODE" = local ] && command -v curl >/dev/null 2>&1; then
@@ -218,14 +276,7 @@ else
   say "Os containers subiram, mas o NoPaper ainda não respondeu em $ADDRESS."
   say "Veja o que houve com: docker compose ps  e  docker compose logs --tail 100 api web"
 fi
-if [ -n "$FIRST_BOOT" ]; then
-  say "  Entrar com: $(get_env ADMIN_EMAIL)"
-  if [ -n "$SHOW_PASSWORD" ]; then
-    say "  Senha provisória: $SHOW_PASSWORD  (o sistema pede uma nova no primeiro acesso)"
-  else
-    say "  Senha provisória: a que está em ADMIN_PASSWORD no .env"
-  fi
-fi
+show_login
 say "  Dados em: $DATA"
 [ "$MODE" != local ] || say "  Sem HTTPS: instalar como aplicativo (PWA) e \"Copiar\" só funcionam em http://localhost, não pelo IP."
 say "  Estado: docker compose ps   ·   Logs: docker compose logs -f api   ·   Parar: docker compose down"

@@ -8,6 +8,17 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.28.1] - 2026-11-16
+
+### Corrigido
+- **Instalador mostra sempre como entrar.** Se a primeira tentativa falhasse (por exemplo, porta já em uso) e o
+  instalador fosse rodado de novo, o usuário e a senha provisória não apareciam mais. Agora o resumo consulta o banco:
+  mostra a senha enquanto ela não foi trocada no primeiro acesso, inclusive quando a subida falha.
+- **Instalador confere melhor a porta.** Avisa antes de construir quando a porta está ocupada (por outro programa ou
+  container) ou quando o Docker roda sem root e a porta é menor que 1024; se a subida falhar por causa da porta, diz
+  para rodar de novo escolhendo outra. Um `.env` novo sobre um banco que já existe é recusado com instruções, em vez de
+  subir com senhas que não abrem o banco.
+
 ## [1.28.0] - 2026-11-16
 
 ### Novo
