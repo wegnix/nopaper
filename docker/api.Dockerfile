@@ -26,7 +26,7 @@ COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/apps/api/package.json apps/api/package.json
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY --from=build /app/apps/api/drizzle apps/api/drizzle
-COPY docker/api-entrypoint.sh /usr/local/bin/api-entrypoint.sh
+COPY --chmod=755 docker/api-entrypoint.sh /usr/local/bin/api-entrypoint.sh
 RUN mkdir -p /data/uploads /data/backups && chown -R node:node /data
 # sem USER: o entrypoint corrige o dono das pastas montadas e então roda como "node"
 WORKDIR /app/apps/api

@@ -8,6 +8,20 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.27.0] - 2026-11-16
+
+### Novo
+- **Rodar o NoPaper local, sem domínio e sem Traefik.** `sh scripts/instalar.sh` pergunta como o sistema vai rodar
+  — **Local** (neste computador ou na rede interna, em `http://localhost:8080`) ou **Traefik** (servidor com domínio) —,
+  cria o `.env` com senhas geradas na hora, sobe tudo e mostra o endereço e a senha provisória. Rodar de novo troca
+  de modo sem mexer nos dados. Com o endereço em `http://` (`APP_URL`), a sessão passa a funcionar sem HTTPS.
+  Guia: seção 5c do manual de instalação.
+
+### Corrigido
+- **Instalação a partir de uma pasta copiada (sem `git clone`)**: a API não subia quando o arquivo de partida
+  perdia a permissão de execução na cópia.
+- No modo Traefik, o instalador avisa antes de construir quando a rede do Traefik não existe na máquina.
+
 ## [1.26.0] - 2026-11-15
 
 ### Novo

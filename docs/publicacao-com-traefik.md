@@ -4,6 +4,9 @@ Este guia leva um servidor Linux vazio até o NoPaper no ar em `https://seu-domi
 HTTPS automático (Let's Encrypt), backups e atualizações. Os comandos são para Debian/Ubuntu; em
 outras distribuições só muda a instalação do Docker.
 
+> **Só quer rodar no seu computador ou na rede interna, sem domínio?** Não precisa de Traefik: vá
+> direto para a [seção 5c](#5c-rodar-local-sem-domínio-e-sem-traefik) (`sh scripts/instalar.sh`).
+
 - [1. O que você precisa](#1-o-que-você-precisa)
 - [2. Apontar o domínio](#2-apontar-o-domínio)
 - [3. Instalar o Docker](#3-instalar-o-docker)
@@ -96,6 +99,7 @@ Escolha o caso que combina com o seu servidor:
 | 80 e 443 livres | Siga o [passo 6a](#6a-o-servidor-ainda-não-tem-traefik) (Traefik pronto do repositório). |
 | Já existe um **Traefik** usando 80/443 | Use o Traefik que já está lá: [passo 6b](#6b-o-servidor-já-tem-um-traefik). Não suba outro. |
 | Outro proxy (**nginx, Caddy, Apache, Nginx Proxy Manager**…) usa 80/443 | Não use Traefik: publique o NoPaper numa porta livre e aponte o seu proxy para ela ([5a](#5a-sem-traefik-atrás-de-outro-proxy)). |
+| Sem domínio: só neste computador ou na rede interna | Não use Traefik: [5c](#5c-rodar-local-sem-domínio-e-sem-traefik). |
 | 80/443 ocupadas por algo que não é proxy | Libere as portas ou troque as do Traefik ([5b](#5b-trocar-as-portas-do-traefik)) — com cuidado. |
 
 ### 5a. Sem Traefik, atrás de outro proxy
@@ -139,8 +143,9 @@ financeiro.suaempresa.com.br {
 }
 ```
 
-> Use sempre pelo domínio com **HTTPS**: o cookie da sessão é marcado como seguro. Acessando
-> `http://IP:8080` direto, sem o proxy, o login até entra, mas cai ao recarregar a página.
+> Com `APP_URL=https://…` o cookie da sessão é marcado como seguro: use sempre pelo domínio com
+> **HTTPS**. Acessando `http://IP:8080` direto, sem o proxy, o login até entra, mas cai ao recarregar
+> a página. (Para usar sem HTTPS de propósito, veja a seção 5c.)
 
 > **O endereço IP de quem acessa precisa chegar ao NoPaper.** O bloqueio por senhas erradas, o limite
 > de tentativas e o IP gravado na auditoria e nos comprovantes de assinatura usam o cabeçalho
@@ -150,6 +155,41 @@ financeiro.suaempresa.com.br {
 > Plataforma → Auditoria da plataforma** o IP do seu login — tem de ser o seu endereço público, não um
 > `172.x`/`10.x` interno. Se aparecer um IP interno, todos os visitantes estão sendo vistos como um só:
 > cinco senhas erradas de qualquer pessoa bloqueariam o login de todos por 15 minutos.
+
+### 5c. Rodar local, sem domínio e sem Traefik
+
+Para usar o NoPaper no próprio computador (ou num servidor da rede interna), sem domínio e sem
+certificado. Na pasta do NoPaper:
+
+```sh
+sh scripts/instalar.sh          # escolha "Local"  (ou direto: sh scripts/instalar.sh --local)
+```
+
+O instalador cria o `.env` com senhas e segredos gerados na hora, pergunta a pasta dos dados, a
+porta (padrão 8080) e se o acesso é só deste computador (`http://localhost:8080`) ou também de
+outros aparelhos da rede (`http://IP-da-máquina:8080`), sobe os containers e mostra o endereço e a
+senha provisória do administrador. Rodar de novo troca de modo (Local ↔ Traefik) ou de porta sem
+mexer nos dados.
+
+À mão, é o mesmo `deploy/porta-direta.yml` da seção 5a, com o endereço em `http://`:
+
+```sh
+COMPOSE_FILE=docker-compose.yml:deploy/porta-direta.yml
+APP_DOMAIN=localhost
+APP_URL=http://localhost:8080   # o endereço que você abre no navegador; na rede: http://192.168.x.y:8080
+WEB_PORT=8080
+WEB_BIND=127.0.0.1              # 0.0.0.0 para a rede toda
+DATA_PATH=/home/voce/nopaper-dados
+```
+
+O que muda sem HTTPS:
+
+- É o `APP_URL` começando com `http://` que libera a sessão sem HTTPS. Não use assim num endereço
+  aberto para a internet: a senha trafegaria sem proteção.
+- Pelo IP (`http://192.168.x.y:8080`) o navegador não deixa instalar como aplicativo (PWA) nem usar
+  os botões "Copiar"; em `http://localhost` tudo funciona.
+- Ponha o `DATA_PATH` fora de pastas sincronizadas (Nextcloud, Dropbox, Syncthing…).
+- A atualização pela interface precisa que a pasta tenha vindo de um `git clone` (seção 7).
 
 ### 5b. Trocar as portas do Traefik
 
@@ -208,13 +248,17 @@ atualização pela interface baixa as versões novas):
 ```sh
 git clone https://github.com/wegnix/nopaper.git
 cd nopaper
-git checkout v1.0.0          # a versão mais recente está em Releases / CHANGELOG.md
+git checkout "$(git describe --tags --abbrev=0)"   # a versão publicada mais recente (Releases / CHANGELOG.md)
 ```
 
 A pasta do código pode ficar onde você preferir (ex.: `/opt/nopaper`); os dados vão para
 `/storage/nopaper` de qualquer forma (seção 4).
 
 ## 8. Configurar o `.env`
+
+> **Atalho:** `sh scripts/instalar.sh --traefik` faz esta seção e a 9 por você — cria o `.env` com os
+> segredos gerados, pergunta o domínio e a pasta dos dados, confere se a rede do Traefik existe e
+> sobe tudo. O que vem abaixo é o mesmo caminho feito à mão (e serve para ajustar depois).
 
 ```sh
 cp .env.example .env
@@ -251,7 +295,7 @@ Preencha no mínimo:
 ## 9. Subir
 
 ```sh
-docker compose up -d --build
+docker compose up -d --build   # ou: sh scripts/instalar.sh --traefik (confere a rede do Traefik antes)
 docker compose ps            # db, api, web e updater devem ficar "healthy" (1–2 minutos)
 docker compose logs -f api   # Ctrl+C para sair
 ls /storage/nopaper          # banco  anexos  backups  atualizador
@@ -397,9 +441,11 @@ Um backup só pode ser restaurado numa versão do NoPaper **igual ou mais nova**
 | `Bind for 0.0.0.0:80 failed: port is already allocated` ou `address already in use` | Outro serviço usa a porta: `sudo ss -ltnp \| grep -E ':(80\|443) '`. Veja a [seção 5](#5-portas) (usar o proxy existente ou a porta direta). |
 | `404 page not found` | O Traefik não encontrou o NoPaper: `TRAEFIK_NETWORK` errado ou o container `web` fora da rede (`docker network inspect traefik`). Veja `docker logs traefik`. |
 | Certificado inválido / "TRAEFIK DEFAULT CERT" | DNS ainda não aponta para o servidor, porta 80 fechada ou `TRAEFIK_CERTRESOLVER` errado. O log do Traefik mostra o erro da Let's Encrypt. |
+| `network traefik declared as external, but could not be found` | Não há Traefik nesta máquina (ou a rede dele tem outro nome: `TRAEFIK_NETWORK`). Suba o Traefik ([6a](#6a-o-servidor-ainda-não-tem-traefik)) ou rode sem ele: `sh scripts/instalar.sh --local` ([5c](#5c-rodar-local-sem-domínio-e-sem-traefik)). |
+| `permission denied while trying to connect to the docker API` | O seu usuário não está no grupo `docker`: use `sudo` ou `sudo usermod -aG docker $USER` e abra a sessão de novo. |
 | `required variable APP_DOMAIN is missing` (ou `POSTGRES_PASSWORD`, `JWT_SECRET`) | Falta a variável no `.env` (na mesma pasta do `docker-compose.yml`). |
 | `!override`/`!reset` desconhecido ao usar `deploy/porta-direta.yml` | Docker Compose antigo: atualize para 2.24 ou mais novo. |
-| Pela porta direta o login entra mas cai ao recarregar | Está acessando por `http://`: a sessão exige HTTPS — acesse pelo domínio, através do seu proxy (seção 5a). |
+| Pela porta direta o login entra mas cai ao recarregar | Está acessando por `http://` com `APP_URL` em `https://`: acesse pelo domínio, através do seu proxy (seção 5a) — ou, se a ideia é rodar sem HTTPS, ponha o endereço `http://…` no `APP_URL` (seção 5c) e rode `docker compose up -d`. |
 | `api` reiniciando | `docker compose logs api` — normalmente variável inválida (ex.: `JWT_SECRET` com menos de 32 caracteres). |
 | `Permission denied` em `/storage/nopaper/...` | A pasta foi criada/copiada por outro usuário com permissões restritas. Reinicie (`docker compose restart api`): a API corrige o dono de `anexos/` e `backups/` ao subir. Para o banco: `docker compose restart db`. |
 | "ninguém consegue entrar" no log | Primeira subida sem `ADMIN_EMAIL`/`ADMIN_PASSWORD`. Preencha e rode `docker compose up -d`. |

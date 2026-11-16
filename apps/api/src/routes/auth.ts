@@ -15,8 +15,10 @@ import { APP_VERSION } from '../lib/version.js';
 import { clearLoginFailures, isSessionIdle, loginLockedFor, registerLoginFailure, securitySettings } from '../lib/security.js';
 
 const COOKIE = 'np_refresh';
+// Sem HTTPS (NoPaper rodando local, APP_URL http://…) o cookie não pode ser "Secure": o navegador
+// não o devolveria e a sessão cairia ao recarregar a página.
 const cookieOpts = {
-  httpOnly: true, secure: isProd, sameSite: 'strict' as const, path: '/api/auth',
+  httpOnly: true, secure: isProd && env.APP_URL.startsWith('https://'), sameSite: 'strict' as const, path: '/api/auth',
   maxAge: REFRESH_TTL_DAYS * 86400,
 };
 

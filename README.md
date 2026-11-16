@@ -52,28 +52,37 @@ sistema web multiusuário que você hospeda no seu próprio servidor.
 | API (`apps/api`) | Node.js 22, Fastify 5, Drizzle ORM, pg-boss (tarefas agendadas) |
 | Banco | PostgreSQL 17 |
 | Compartilhado (`packages/shared`) | TypeScript + Zod: validação, permissões, dinheiro, datas, boleto e PIX |
-| Produção | Docker Compose atrás do [Traefik](https://traefik.io) (HTTPS automático) |
+| Produção | Docker Compose: atrás do [Traefik](https://traefik.io) (HTTPS automático), de outro proxy, ou local numa porta |
 
 ## Instalação
 
-Você precisa de um servidor Linux com Docker e de um domínio apontando para ele. O passo a passo
-completo — DNS, onde ficam os dados (`/storage/nopaper`), portas e conflitos, Traefik (inclusive se
-você ainda não tem um, ou se usa outro proxy), configuração, primeiro acesso, backups, atualização e
-solução de problemas — está em
-**[docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md)**.
-
-Resumo, para quem já tem Docker e Traefik:
+Você precisa de uma máquina Linux com [Docker](https://docs.docker.com/engine/install/) (com o
+plugin Compose 2.24 ou mais novo) e `git`. O instalador pergunta como o NoPaper vai rodar, cria o
+`.env` com senhas e segredos gerados na hora, sobe tudo e mostra o endereço e a senha provisória
+do administrador:
 
 ```sh
 git clone https://github.com/wegnix/nopaper.git && cd nopaper
-git checkout v1.0.0
-cp .env.example .env && chmod 600 .env
-nano .env                         # domínio, senhas/segredos e o administrador inicial
-docker compose up -d --build
+git checkout "$(git describe --tags --abbrev=0)"    # a versão publicada mais recente
+sh scripts/instalar.sh
 ```
 
-Abra `https://seu-dominio`, entre com o administrador do `.env` e siga a tela de primeiro acesso
-(nova senha + nome e perfil do primeiro espaço).
+| Modo | Para quem | Endereço |
+|---|---|---|
+| **Local** (`--local`) | Usar no próprio computador ou na rede interna, sem domínio e sem Traefik | `http://localhost:8080` (ou `http://IP-da-máquina:8080`) |
+| **Traefik** (`--traefik`) | Servidor com domínio, atrás de um [Traefik](https://traefik.io) já rodando (HTTPS automático) | `https://seu-dominio` |
+
+- Se o seu usuário não está no grupo `docker`, rode com `sudo`.
+- Rodar o instalador de novo troca de modo ou de porta sem mexer nos dados.
+- No primeiro acesso, entre com o administrador mostrado no fim da instalação e siga a tela (nova
+  senha + nome e perfil do primeiro espaço).
+
+Prefere fazer à mão? `cp .env.example .env`, preencha e rode `docker compose up -d --build`.
+
+O passo a passo completo — DNS, onde ficam os dados, portas e conflitos, Traefik (inclusive se você
+ainda não tem um, ou se usa outro proxy como nginx ou Caddy), uso local, primeiro acesso, backups,
+atualização e solução de problemas — está em
+**[docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md)**.
 
 ## Configuração
 
@@ -88,9 +97,9 @@ Tudo pelo arquivo `.env` (modelo comentado em [.env.example](.env.example)):
 | `SECRETS_KEY` | recomendada | Cifra os segredos guardados no banco (SMTP, Telegram, backup remoto) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | na 1ª subida | Administrador inicial; a senha é provisória |
 | `ADMIN_USERNAME`, `ADMIN_NAME`, `ADMIN_ORG_NAME` | não | Usuário, nome e sugestão de nome do 1º espaço |
-| `APP_URL` | não | URL dos links em e-mails/Telegram (padrão: `https://APP_DOMAIN`) |
+| `APP_URL` | não | URL dos links em e-mails/Telegram (padrão: `https://APP_DOMAIN`); com `http://` a sessão funciona sem HTTPS (uso local) |
 | `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, `TRAEFIK_CERTRESOLVER` | não | Para usar um Traefik já existente com outros nomes |
-| `COMPOSE_FILE`, `WEB_PORT`, `WEB_BIND` | não | Sem Traefik: publica a interface numa porta para outro proxy (nginx, Caddy…) |
+| `COMPOSE_FILE`, `WEB_PORT`, `WEB_BIND` | não | Sem Traefik: publica a interface numa porta — uso local ou atrás de outro proxy (nginx, Caddy…) |
 | `TZ`, `MAX_UPLOAD_MB`, `LOG_LEVEL` | não | Fuso padrão, tamanho máximo de anexo, nível de log |
 | `STORAGE_QUOTA_MB` | não | Cota padrão de arquivos por espaço (5120 = 5 GB); ajustável por espaço em Plataforma → Segurança |
 | `UPDATE_REPO` | não | Repositório das atualizações (padrão `wegnix/nopaper`; troque se usar um fork) |

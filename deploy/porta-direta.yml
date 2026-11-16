@@ -1,10 +1,21 @@
-# NoPaper SEM Traefik: publica a interface numa porta do servidor, para outro proxy reverso
-# (nginx, Caddy, Apache, Nginx Proxy Manager…) que já cuida do HTTPS encaminhar para ela.
-# Ative no .env do NoPaper:
-#   COMPOSE_FILE=docker-compose.yml:deploy/porta-direta.yml
-#   WEB_PORT=8080          # porta livre no servidor
-#   WEB_BIND=127.0.0.1     # só o próprio servidor acessa (o proxy roda nele); 0.0.0.0 = rede toda
-# Guia: docs/publicacao-com-traefik.md, seção "Portas".
+# NoPaper SEM Traefik: publica a interface numa porta desta máquina. Serve para dois casos:
+#
+# 1) Rodar local (no seu computador ou na rede interna), sem domínio e sem HTTPS.
+#    O jeito mais fácil é `sh scripts/instalar.sh` e escolher "Local". À mão, no .env:
+#      COMPOSE_FILE=docker-compose.yml:deploy/porta-direta.yml
+#      APP_DOMAIN=localhost
+#      APP_URL=http://localhost:8080     # o endereço que você vai abrir (http:// = sessão sem HTTPS)
+#      WEB_PORT=8080
+#      WEB_BIND=127.0.0.1                # só este computador; 0.0.0.0 = toda a rede (use o IP no APP_URL)
+#      DATA_PATH=/caminho/dos/dados
+#
+# 2) Atrás de outro proxy reverso (nginx, Caddy, Apache, Nginx Proxy Manager…) que já cuida do HTTPS:
+#      COMPOSE_FILE=docker-compose.yml:deploy/porta-direta.yml
+#      WEB_PORT=8080          # porta livre no servidor
+#      WEB_BIND=127.0.0.1     # só o próprio servidor acessa (o proxy roda nele)
+#      APP_URL=https://seu-dominio
+#
+# Guia: docs/publicacao-com-traefik.md, seções 5a (outro proxy) e 5c (local).
 services:
   web:
     ports:
