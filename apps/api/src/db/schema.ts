@@ -341,6 +341,9 @@ export const cardTransactions = pgTable('card_transactions', {
   installmentNumber: smallint('installment_number').notNull().default(1),
   totalInstallments: smallint('total_installments').notNull().default(1),
   notes: text('notes'),
+  /** Cartão que fez a compra, quando a fatura junta vários (titular, virtual, adicionais): últimos 4 dígitos e portador. */
+  cardFinal: varchar('card_final', { length: 4 }),
+  cardHolder: varchar('card_holder', { length: 64 }),
   importBatchId: uuid('import_batch_id'),
   createdBy: uuid('created_by'),
   createdAt: createdAt(),

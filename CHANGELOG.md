@@ -8,6 +8,22 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.28.0] - 2026-11-16
+
+### Novo
+- **Fatura do cartão em PDF ou planilha.** Em Cartões → Importar fatura, além do OFX agora entram o **PDF** e a
+  **planilha (.xlsx ou .csv)** que o app do banco exporta. Não é preciso escolher o banco: o NoPaper acha os
+  lançamentos pela forma (data, descrição e valor) e **confere a soma com o total impresso na fatura** — se fecha,
+  aparece "Leitura conferida"; se não fecha, mostra a diferença para você revisar antes de importar.
+  O resto é igual ao OFX: categorias sugeridas, parcelas futuras, o que já está lançado é reconhecido, dá para desfazer.
+- **Arquivo com senha**: PDF e planilha protegidos abrem com as regras de senha do espaço (Configuração do espaço →
+  Senhas de PDF) ou com a senha digitada na hora, que pode ser lembrada para as próximas faturas.
+- **Fatura com vários cartões** (titular, virtual, adicionais): cada compra guarda o final do cartão e a pessoa.
+  Na fatura aparecem o total de cada cartão e um toque filtra os lançamentos dele.
+
+### Para quem instala
+- A API ganhou a dependência `officecrypto-tool` (abre planilhas protegidas); a atualização pela interface já a instala.
+
 ## [1.27.0] - 2026-11-16
 
 ### Novo

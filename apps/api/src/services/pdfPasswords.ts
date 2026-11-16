@@ -70,6 +70,11 @@ async function candidates(orgId: string): Promise<Array<{ name: string; password
   return out;
 }
 
+/** A senha digitada na hora (se houver) e depois as das regras do espaço — também para planilhas protegidas. */
+export async function passwordCandidates(orgId: string, typed?: string | null) {
+  return [...(typed ? [{ name: 'senha informada', password: typed }] : []), ...(await candidates(orgId))];
+}
+
 /** Código de saída do qpdf (null = não rodou). 0 = ok; 3 = ok com avisos. */
 const qpdf = (args: string[]) => new Promise<number | null>((resolve) => {
   execFile('qpdf', args, { timeout: 20_000, maxBuffer: 1024 * 1024, killSignal: 'SIGKILL' }, (err) => {
@@ -100,7 +105,7 @@ export async function unlockPdf(orgId: string, buf: Buffer, typed?: string | nul
     await writeFile(src, buf, { mode: 0o600 });
     // 0 = precisa de senha; 2 = não é protegido; 3 = protegido, mas abre sem senha
     if ((await qpdf(['--requires-password', src])) !== 0) return same;
-    const list = [...(typed ? [{ name: 'senha informada', password: typed }] : []), ...(await candidates(orgId))];
+    const list = await passwordCandidates(orgId, typed);
     for (const c of list) {
       // a senha vai por arquivo (não aparece na lista de processos)
       await writeFile(pw, c.password, { mode: 0o600 });

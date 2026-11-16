@@ -48,6 +48,7 @@ export const V1_AREA_ROUTES: V1Route[] = [
   r('PUT', '/card-categories/:id', CARDS, 'Altera categoria de gasto', 'cards.manage', { body: cardCategorySchema }),
   r('DELETE', '/card-categories/:id', CARDS, 'Apaga categoria de gasto', 'cards.manage', { query: 'moveTo = categoria que recebe as compras, quando há compras' }),
   r('POST', '/cards/ofx/read', CARDS, 'Lê uma fatura em OFX, sem gravar', 'cards.edit', { upload: 'file = arquivo .ofx' }),
+  r('POST', '/cards/statement/read', CARDS, 'Lê uma fatura em OFX, PDF ou planilha (xlsx/csv), sem gravar', 'cards.edit', { upload: 'password (opcional, antes do arquivo) + file = a fatura' }),
   r('POST', '/cards/:id/ofx/import', CARDS, 'Importa os lançamentos lidos da fatura', 'cards.edit', { body: cardOfxImportSchema }),
   r('GET', '/cards/:id/imports', CARDS, 'Importações de fatura do cartão', 'cards.view'),
   r('DELETE', '/cards/imports/:id', CARDS, 'Desfaz uma importação de fatura', 'cards.edit'),

@@ -16,6 +16,7 @@ export * from './payslips.js';
 export * from './accounting.js';
 export * from './bank.js';
 export * from './cardOfx.js';
+export * from './cardStatement.js';
 export * from './spending.js';
 export * from './esign.js';
 export * from './org.js';

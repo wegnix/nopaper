@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DropdownMenu } from 'radix-ui';
 import { toast } from 'sonner';
 import { ArrowLeftRight, Check, ChevronLeft, ChevronRight, CreditCard, FileUp, Tags, X, MoreHorizontal, Pencil, Plus, Receipt, RotateCcw, Trash2, Wallet } from 'lucide-react';
-import { COLOR_PRESETS, MONTHS_PT, addMonthsRef, formatBRL, formatDateBR, isColorKey, toCents, type AttachmentSlot } from '@nopaper/shared';
+import { COLOR_PRESETS, MONTHS_PT, addMonthsRef, formatBRL, formatDateBR, fromCents, isColorKey, toCents, type AttachmentSlot } from '@nopaper/shared';
 import { Button, Card, Empty, PageHeader, Spinner } from '@/components/ui/base';
 import { CategoryChip, StatusChip } from '@/components/ui/chips';
 import { useConfirm } from '@/components/ui/dialog';
@@ -57,8 +57,21 @@ export function CardsPage() {
 
   const [catsOpen, setCatsOpen] = useState(false);
   const [catFilter, setCatFilter] = useState<string | null>(null);
-  useEffect(() => { setCatFilter(null); }, [card?.id, ref]);
-  const shownItems = useMemo(() => (catFilter ? (st?.items ?? []).filter((t) => t.categoryId === catFilter) : st?.items ?? []), [st, catFilter]);
+  // fatura com vários cartões (titular, virtual, adicionais): total e filtro por cartão/pessoa
+  const [whoFilter, setWhoFilter] = useState<string | null>(null);
+  useEffect(() => { setCatFilter(null); setWhoFilter(null); }, [card?.id, ref]);
+  const byWho = useMemo(() => {
+    const m = new Map<string, { final: string; holder: string | null; cents: number; count: number }>();
+    for (const t of st?.items ?? []) {
+      const k = t.cardFinal ?? '';
+      const g = m.get(k) ?? { final: k, holder: t.cardHolder, cents: 0, count: 0 };
+      g.cents += toCents(t.amount); g.count++; g.holder ??= t.cardHolder;
+      m.set(k, g);
+    }
+    const rows = [...m.values()].sort((a, b) => b.cents - a.cents);
+    return rows.some((r) => r.final) && rows.length > 1 ? rows : [];
+  }, [st]);
+  const shownItems = useMemo(() => (st?.items ?? []).filter((t) => (!catFilter || t.categoryId === catFilter) && (whoFilter === null || (t.cardFinal ?? '') === whoFilter)), [st, catFilter, whoFilter]);
   // gasto por categoria do cartão: estorno abate na própria categoria; % sobre as categorias com saldo positivo
   const byCat = useMemo(() => {
     const m = new Map<string, number>();
@@ -147,6 +160,17 @@ export function CardsPage() {
                       ) : <span>A {payName.one} desta fatura é criada no primeiro lançamento e entra em {payName.title} no mês do vencimento.</span>}
                     </p>
                   )}
+                  {byWho.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar border-b border-line px-4 py-2.5 md:px-5">
+                      {byWho.map((g) => (
+                        <button key={g.final} type="button" onClick={() => setWhoFilter(whoFilter === g.final ? null : g.final)} aria-pressed={whoFilter === g.final}
+                          className={cn('flex shrink-0 flex-col items-start rounded-lg border px-3 py-1.5 text-left transition pointer-coarse:py-2', whoFilter === g.final ? 'border-accent bg-accent-soft' : 'border-line hover:border-accent/60')}>
+                          <span className="text-xs text-muted">{g.final ? <>·· {g.final}{g.holder && <> · {g.holder}</>}</> : 'Sem cartão informado'}</span>
+                          <span className={cn('tnum text-sm font-medium', g.cents < 0 && 'text-ok')}>{formatBRL(fromCents(g.cents))} <span className="text-xs font-normal text-faint">· {g.count}</span></span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {catFilter && (
                     <div className="flex items-center gap-2 border-b border-line bg-accent-soft/40 px-4 py-2 text-xs md:px-5">
                       <span>Mostrando só <b>{catMap.get(catFilter)?.label ?? 'Sem categoria'}</b> · {shownItems.length} lançamento(s)</span>
@@ -164,6 +188,7 @@ export function CardsPage() {
                             <p className="truncate text-sm font-medium">{t.description}</p>
                             <p className="text-xs text-faint max-sm:line-clamp-2">
                               {t.totalInstallments > 1 ? `parcela ${t.installmentNumber}/${t.totalInstallments} · total ${formatBRL(t.totalAmount)}` : 'à vista'}
+                              {t.cardFinal && ` · ·· ${t.cardFinal}${t.cardHolder ? ` ${t.cardHolder.split(' ')[0]}` : ''}`}
                               {t.notes && ` · ${t.notes}`}
                             </p>
                           </div>

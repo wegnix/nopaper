@@ -37,6 +37,8 @@ export interface Card {
 export interface CardTx {
   id: string; cardId: string; statementId: string; groupId: string; description: string; categoryId: string | null;
   amount: string; totalAmount: string; purchaseDate: string; installmentNumber: number; totalInstallments: number; notes: string | null;
+  /** Fatura com vários cartões (titular, virtual, adicionais): final do cartão que fez a compra e o portador. */
+  cardFinal: string | null; cardHolder: string | null;
 }
 export interface StatementView {
   card: Card; ref: string; statement: { id: string | null; ref: string; closingDate: string; dueDate: string; billId: string | null };

@@ -1,10 +1,10 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   addMonthsRef, billPerm, cardCategorySchema, cardDescKeys, classifySpending, cardOfxImportSchema, cardOfxLines, cardSchema, cardTxSchema, cardTxUpdateSchema, cycleForPurchase, cycleForRef,
-  MONTHS_PT_SHORT, decodeOfx, fromCents, matchExistingCardTx, OFX_MAX_TRANSACTIONS, parseOfx, toCents, todayISO,
+  MONTHS_PT_SHORT, decodeOfx, fromCents, matchExistingCardTx, OFX_MAX_TRANSACTIONS, parseOfx, toCents, todayISO, type CardOfxLine,
 } from '@nopaper/shared';
 import { env } from '../env.js';
 import { db, schema } from '../db/client.js';
@@ -18,6 +18,8 @@ import {
   loadCard, ensureStatement, createPurchase, deleteTransactions, limitUsed, statementStatus, statementsOf, syncStatementBill,
 } from '../services/cards.js';
 import { checkCardSpace } from '../services/spaceCheck.js';
+import { readCardStatementFile } from '../services/cardStatementFile.js';
+import { rememberPdfPassword } from '../services/pdfPasswords.js';
 
 const view = requirePerm('cards.view');
 const refName = (ref: string) => `${MONTHS_PT_SHORT[Number(ref.slice(5, 7)) - 1]}/${ref.slice(0, 4)}`;
@@ -206,12 +208,22 @@ export default async function cardRoutes(app: FastifyInstance) {
   });
 
   // ------------------------------------------------------------ fatura em OFX
-  /** Só lê o arquivo: lançamentos já tratados (descrição, parcela, sinal) + categoria sugerida pelo histórico. */
-  app.post('/api/cards/ofx/read', { preHandler: edit }, async (req) => {
-    const file = await req.file({ limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
-    if (!file) throw badRequest('Envie a fatura em OFX');
-    const buf = await file.toBuffer();
-    if (file.file.truncated) throw badRequest(`Arquivo maior que ${env.MAX_UPLOAD_MB} MB`);
+  /** Categoria usada da última vez na mesma loja (descrição ou estabelecimento antes do "*"); senão, a da regra pelo nome. */
+  const withSuggestions = async <L extends CardOfxLine>(req: FastifyRequest, lines: L[]) => {
+    const cats = await ensureCardCategories(req.org!.id, req.user!.id);
+    const hist = await db.select({ description: schema.cardTransactions.description, categoryId: schema.cardTransactions.categoryId })
+      .from(schema.cardTransactions).where(eq(schema.cardTransactions.orgId, req.org!.id))
+      .orderBy(desc(schema.cardTransactions.createdAt)).limit(3000);
+    const known = new Map<string, string>();
+    for (const h of hist) if (h.categoryId) for (const k of cardDescKeys(h.description)) if (!known.has(k)) known.set(k, h.categoryId);
+    return lines.map((l) => {
+      const shop = cardDescKeys(l.description).map((k) => known.get(k)).find(Boolean);
+      const rule = shop ? null : categoryForRule(cats, classifySpending(l.description));
+      return { ...l, suggestedCategoryId: shop ?? rule?.id ?? null, suggestedFrom: shop ? 'shop' as const : rule ? 'rule' as const : null };
+    });
+  };
+
+  const readOfx = async (req: FastifyRequest, buf: Buffer, fileName: string) => {
     const ofx = parseOfx(decodeOfx(new Uint8Array(buf)));
     if (ofx.statements.reduce((n, st) => n + st.transactions.length, 0) > OFX_MAX_TRANSACTIONS) throw badRequest(`Este arquivo tem mais de ${OFX_MAX_TRANSACTIONS} lançamentos. Exporte um período menor.`);
     const cc = ofx.statements.filter((s) => s.kind === 'creditcard');
@@ -221,24 +233,75 @@ export default async function cardRoutes(app: FastifyInstance) {
     }
     const warnings = [...ofx.warnings];
     if (cc.length > 1) warnings.push(`O arquivo tem ${cc.length} cartões; os lançamentos de todos aparecem juntos.`);
-    const lines = cc.flatMap((s) => cardOfxLines(s));
-    // categoria usada da última vez na mesma loja (descrição ou estabelecimento antes do "*"); senão, a da regra pelo nome
-    const cats = await ensureCardCategories(req.org!.id, req.user!.id);
-    const hist = await db.select({ description: schema.cardTransactions.description, categoryId: schema.cardTransactions.categoryId })
-      .from(schema.cardTransactions).where(eq(schema.cardTransactions.orgId, req.org!.id))
-      .orderBy(desc(schema.cardTransactions.createdAt)).limit(3000);
-    const known = new Map<string, string>();
-    for (const h of hist) if (h.categoryId) for (const k of cardDescKeys(h.description)) if (!known.has(k)) known.set(k, h.categoryId);
     const s0 = cc[0];
     return {
       ...(await checkCardSpace(req, s0.accountId)),
-      fileName: file.filename.slice(0, 200), bank: ofx.org, fid: ofx.fid, accountId: s0.accountId,
+      fileName, bank: ofx.org, fid: ofx.fid, accountId: s0.accountId,
       balance: cc.length === 1 ? s0.balance : null, balanceDate: cc.length === 1 ? s0.balanceDate : null, warnings,
-      lines: lines.map((l) => {
-        const shop = cardDescKeys(l.description).map((k) => known.get(k)).find(Boolean);
-        const rule = shop ? null : categoryForRule(cats, classifySpending(l.description));
-        return { ...l, suggestedCategoryId: shop ?? rule?.id ?? null, suggestedFrom: shop ? 'shop' as const : rule ? 'rule' as const : null };
-      }),
+      lines: await withSuggestions(req, cc.flatMap((s) => cardOfxLines(s))),
+    };
+  };
+
+  const upload = async (req: FastifyRequest, what: string) => {
+    const file = await req.file({ limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
+    if (!file) throw badRequest(what);
+    const buf = await file.toBuffer();
+    if (file.file.truncated) throw badRequest(`Arquivo maior que ${env.MAX_UPLOAD_MB} MB`);
+    if (!buf.length) throw badRequest('Arquivo vazio');
+    // campos de texto do envio (vêm antes do arquivo): senha digitada na hora e "lembrar"
+    const field = (k: string) => { const f = (file.fields as Record<string, unknown>)[k] as { value?: unknown } | undefined; return typeof f?.value === 'string' ? f.value : ''; };
+    return { buf, fileName: (file.filename || 'fatura').slice(0, 200), password: field('password').slice(0, 64), remember: field('remember') === '1' };
+  };
+
+  // ------------------------------------------------------------ fatura em arquivo (OFX, PDF, planilha)
+  /** Só lê o arquivo: lançamentos já tratados (descrição, parcela, sinal) + categoria sugerida pelo histórico. */
+  app.post('/api/cards/ofx/read', { preHandler: edit }, async (req) => {
+    const up = await upload(req, 'Envie a fatura em OFX');
+    return readOfx(req, up.buf, up.fileName);
+  });
+
+  /**
+   * Lê a fatura em qualquer formato — OFX, PDF ou planilha (xlsx/csv) —, sem gravar. PDF e planilha
+   * trazem também o total impresso e a conferência com a soma lida, e o cartão de cada lançamento
+   * quando a fatura junta vários (titular, virtual, adicionais). Arquivo com senha: tenta as regras de
+   * senha do espaço e a senha enviada no campo `password`; sem abrir, devolve `locked`.
+   */
+  app.post('/api/cards/statement/read', { preHandler: edit }, async (req) => {
+    const up = await upload(req, 'Envie a fatura do cartão');
+    const f = await readCardStatementFile(req.org!.id, up.buf, up.fileName, up.password || null, todayISO(req.org!.timezone));
+    if (f.kind === 'ofx') return { format: 'ofx' as const, locked: false, ...(await readOfx(req, up.buf, up.fileName)) };
+    if (f.kind === 'locked') {
+      if (up.password) throw badRequest('A senha não abriu este arquivo. Confira e tente de novo.');
+      return { format: null, locked: true, fileName: up.fileName, lines: [], warnings: [] };
+    }
+    if (f.unlockedBy === 'senha informada' && up.remember && req.org!.can('org.settings')) {
+      if (await rememberPdfPassword(req.org!.id, `Senha de ${up.fileName.replace(/\.[a-z0-9]+$/i, '')}`.slice(0, 60), up.password)) {
+        await audit(req, { action: 'org.pdf_passwords', entityType: 'organization', entityId: req.org!.id, description: `Guardou a senha do arquivo "${up.fileName}" como regra` });
+      }
+    }
+    const { read } = f;
+    // de que cartão é: o que tem um dos finais da fatura no cadastro, ou que já recebeu compras desses finais
+    const finals = read.cards.map((c) => c.final);
+    let knownCard: { id: string; name: string } | null = null;
+    if (finals.length) {
+      const mine = await db.select({ id: schema.cards.id, name: schema.cards.name, last4: schema.cards.last4 }).from(schema.cards).where(and(eq(schema.cards.orgId, req.org!.id), eq(schema.cards.active, true)));
+      const byLast4 = mine.filter((c) => c.last4 && finals.includes(c.last4));
+      if (byLast4.length === 1) knownCard = { id: byLast4[0].id, name: byLast4[0].name };
+      else {
+        const [used] = await db.select({ cardId: schema.cardTransactions.cardId, n: sql<number>`count(*)::int` }).from(schema.cardTransactions)
+          .where(and(eq(schema.cardTransactions.orgId, req.org!.id), inArray(schema.cardTransactions.cardFinal, finals)))
+          .groupBy(schema.cardTransactions.cardId).orderBy(desc(sql`count(*)`)).limit(1);
+        const hit = used ? mine.find((c) => c.id === used.cardId) : undefined;
+        if (hit) knownCard = { id: hit.id, name: hit.name };
+      }
+    }
+    // o nome da regra que abriu só vai para quem cuida das regras
+    const unlockedBy = f.unlockedBy && !req.org!.can('org.settings') && f.unlockedBy !== 'senha informada' ? 'regra do espaço' : f.unlockedBy;
+    return {
+      format: read.format, locked: false, unlockedBy, knownCard, spaceCheck: null,
+      fileName: up.fileName, bank: null, fid: null, accountId: null, balance: null, balanceDate: null,
+      dueDate: read.dueDate, total: read.total, sum: read.sum, diff: read.diff, cards: read.cards, warnings: read.warnings,
+      lines: await withSuggestions(req, read.lines),
     };
   });
 
@@ -298,7 +361,7 @@ export default async function cardRoutes(app: FastifyInstance) {
           rows.push({
             orgId: card.orgId, cardId: card.id, statementId: target.id, groupId, description: i.description, categoryId: i.categoryId,
             amount: i.amount, totalAmount: fromCents(toCents(i.amount) * of), purchaseDate: i.date, installmentNumber: k, totalInstallments: of,
-            notes: i.notes, importBatchId: batchId, createdBy: req.user!.id,
+            notes: i.notes, cardFinal: i.cardFinal ?? null, cardHolder: i.holder || null, importBatchId: batchId, createdBy: req.user!.id,
           });
         }
       }

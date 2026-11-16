@@ -122,6 +122,9 @@ export const cardOfxImportSchema = z.object({
     installment: z.number().int().min(1).max(99).nullable().default(null),
     installments: z.number().int().min(2).max(99).nullable().default(null),
     notes: z.string().max(1000).nullable().default(null),
+    /** Fatura com vários cartões (PDF/planilha): final do cartão que fez a compra e o portador. */
+    cardFinal: z.string().regex(/^\d{4}$/).nullish(),
+    holder: z.string().trim().max(64).nullish(),
   }).refine((i) => (i.installment === null) === (i.installments === null) && (i.installment ?? 0) <= (i.installments ?? 0), 'Parcela inválida'))
     .min(1, 'Marque ao menos um lançamento').max(1000, 'No máximo 1000 lançamentos por importação'),
 });

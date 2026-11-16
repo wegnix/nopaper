@@ -1,22 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle2, FileText, Info, Layers, RotateCcw, Upload } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileText, Info, Layers, Lock, LockOpen, RotateCcw, Upload } from 'lucide-react';
 import {
-  addMonthsRef, cycleForRef, formatBRL, formatDateBR, fromCents, matchExistingCardTx, suggestCardRef, toCents, type CardOfxLine, type SpaceCheck,
+  addMonthsRef, cycleForRef, formatBRL, formatDateBR, fromCents, matchExistingCardTx, suggestCardRef, toCents, type CardOfxLine, type CardStatementCard, type SpaceCheck,
 } from '@nopaper/shared';
 import { Dialog, useConfirm } from '@/components/ui/dialog';
 import { Button, Checkbox, Field, Input, Select, Spinner, Switch } from '@/components/ui/base';
 import { api, del, get, post, errMsg } from '@/lib/api';
 import { WrongSpaceAlert, WrongSpaceNote, useSpaceGuard } from '@/components/WrongSpace';
 import { useCardCategories } from '@/lib/queries';
-import { useSession } from '@/lib/session';
+import { useCan, useSession } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
 import type { Card, StatementView } from '@/lib/types';
 import { refLabel } from './CardForms';
 
-type Line = CardOfxLine & { suggestedCategoryId: string | null; suggestedFrom: 'shop' | 'rule' | null };
-interface ReadResult { fileName: string; bank: string | null; accountId: string | null; balance: string | null; balanceDate: string | null; warnings: string[]; lines: Line[]; knownCard?: { id: string; name: string } | null; spaceCheck?: SpaceCheck | null }
+type Line = CardOfxLine & { suggestedCategoryId: string | null; suggestedFrom: 'shop' | 'rule' | null; cardFinal?: string | null; holder?: string | null };
+interface ReadResult {
+  fileName: string; bank: string | null; accountId: string | null; balance: string | null; balanceDate: string | null; warnings: string[]; lines: Line[];
+  knownCard?: { id: string; name: string } | null; spaceCheck?: SpaceCheck | null;
+  /** PDF e planilha: arquivo com senha que nenhuma regra abriu, vencimento e total impressos, soma lida e os cartões da fatura. */
+  format: 'ofx' | 'pdf' | 'sheet' | null; locked: boolean; unlockedBy?: string | null;
+  dueDate?: string | null; total?: string | null; sum?: string; diff?: string | null; cards?: CardStatementCard[];
+}
+const FORMAT_LABEL = { ofx: 'OFX', pdf: 'PDF', sheet: 'Planilha' } as const;
 interface RowState { checked: boolean; description: string; categoryId: string }
 interface CardImportRow { id: string; fileName: string; rowCount: number; totalAmount: string; createdAt: string; createdBy: string | null; parcels: number; refs: string[]; paidRefs: string[] }
 
@@ -29,7 +36,7 @@ function useCardImports(cardId: string | undefined, enabled: boolean) {
 }
 
 /**
- * Importar a fatura do cartão (OFX): lê o arquivo, sugere a fatura e as categorias (pelo histórico),
+ * Importar a fatura do cartão (PDF, planilha ou OFX): lê o arquivo, sugere a fatura e as categorias (pelo histórico),
  * reconhece o que já está lançado e cria as compras — parcelas seguintes vão para as próximas faturas.
  */
 export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onDone }: {
@@ -48,14 +55,23 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [defaultCat, setDefaultCat] = useState('');
   const [future, setFuture] = useState(true);
+  // arquivo com senha que as regras do espaço não abriram: pede a senha e lê de novo
+  const [locked, setLocked] = useState<File | null>(null);
+  const [pw, setPw] = useState({ value: '', remember: true });
+  const canOrg = useCan()('org.settings');
+  // fatura com vários cartões: mostra só os lançamentos de um deles (não muda o que está marcado)
+  const [whoFilter, setWhoFilter] = useState<string | null>(null);
   const activeCards = cards.filter((c) => c.active);
   const card = cards.find((c) => c.id === cardId);
 
-  useEffect(() => { if (open) { setFile(null); setCardId(initialCardId); setFuture(true); } }, [open, initialCardId]);
+  useEffect(() => { if (open) { setFile(null); setLocked(null); setPw({ value: '', remember: true }); setCardId(initialCardId); setFuture(true); } }, [open, initialCardId]);
+  useEffect(() => { setWhoFilter(null); }, [file]);
+  // PDF e planilha dizem o vencimento: a fatura é a desse mês; no OFX, a mais comum pelas datas das compras
+  const fileRefOf = (c: Card) => (file?.dueDate ? file.dueDate.slice(0, 7) : suggestCardRef(file?.lines ?? [], c.closingDay, c.dueDay));
   // fatura sugerida pelas datas das compras e o ciclo do cartão escolhido
   useEffect(() => {
     if (!file || !card) return;
-    setRef(suggestCardRef(file.lines, card.closingDay, card.dueDay) ?? card.currentRef);
+    setRef(fileRefOf(card) ?? card.currentRef);
     setDefaultCat((c) => (c && payCats.some((p) => p.id === c) ? c : payCats.find((p) => p.ruleKey === 'other')?.id ?? payCats[0]?.id ?? ''));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file, cardId]);
@@ -69,11 +85,16 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
   const usedExisting = new Set(dup.values());
   const otherExisting = (st?.items ?? []).filter((t) => !usedExisting.has(t.id));
 
-  const pick = async (f: File) => {
+  const pick = async (f: File, password?: string) => {
     setReading(true);
     try {
-      const fd = new FormData(); fd.append('file', f);
-      const r = await api<ReadResult>('POST', '/api/cards/ofx/read', fd);
+      const fd = new FormData();
+      // os campos de texto vão antes do arquivo
+      if (password) { fd.append('password', password); if (pw.remember && canOrg) fd.append('remember', '1'); }
+      fd.append('file', f);
+      const r = await api<ReadResult>('POST', '/api/cards/statement/read', fd);
+      if (r.locked) { setLocked(f); return; }
+      setLocked(null); setPw({ value: '', remember: true });
       setRows(Object.fromEntries(r.lines.map((l) => [l.fitId, {
         checked: l.kind !== 'payment', description: l.description,
         categoryId: l.suggestedCategoryId && payCats.some((c) => c.id === l.suggestedCategoryId) ? l.suggestedCategoryId : '',
@@ -113,6 +134,7 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
         items: selected.map((l) => ({
           fitId: l.fitId, date: l.date, description: rows[l.fitId].description.trim(), amount: l.amount, categoryId: rows[l.fitId].categoryId || defaultCat,
           installment: l.installment, installments: l.installments, notes: l.memo && l.memo !== rows[l.fitId].description.trim() ? l.memo.slice(0, 1000) : null,
+          cardFinal: l.cardFinal ?? null, holder: l.holder ?? null,
         })),
       });
       qc.invalidateQueries({ queryKey: ['bills'] });
@@ -125,32 +147,50 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
 
   const refOptions = useMemo(() => {
     if (!card || !ref) return [];
-    const base = suggestCardRef(file?.lines ?? [], card.closingDay, card.dueDay) ?? ref;
+    const base = fileRefOf(card) ?? ref;
     const set = new Set([...Array.from({ length: 7 }, (_, i) => addMonthsRef(base, i - 3)), ref]);
     return [...set].sort().map((r) => cycleForRef(r, card.closingDay, card.dueDay));
   }, [card, ref, file]);
 
   return (
-    <Dialog open={open} onClose={onClose} size={file ? 'xl' : 'md'} title="Importar fatura do cartão (OFX)"
+    <Dialog open={open} onClose={onClose} size={file ? 'xl' : 'md'} title="Importar fatura do cartão"
       description={file ? 'Confira a fatura, as descrições e as categorias. O que já está lançado é reconhecido e não entra de novo.' : 'Traga as compras da fatura direto do arquivo do banco, sem digitar uma por uma.'}
       footer={file && !guard.blocked ? <>
-        <Button variant="ghost" className="mr-auto" onClick={() => setFile(null)}>Trocar arquivo</Button>
+        <Button variant="ghost" className="mr-auto" onClick={() => { setFile(null); setLocked(null); }}>Trocar arquivo</Button>
         <span className="hidden sm:block text-sm text-muted">{plural(selected.length, 'marcado', 'marcados')} · <b className="tnum text-ink">{formatBRL(fromCents(total))}</b></span>
         <Button variant="ghost" onClick={onClose}>Fechar</Button>
         <Button variant="primary" loading={busy} disabled={!ok} onClick={run}>Importar {selected.length || ''}</Button>
       </> : <Button variant="ghost" onClick={onClose}>Fechar</Button>}>
-      <input ref={fileRef} type="file" accept=".ofx,.OFX,application/x-ofx,application/ofx" className="hidden" onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
-      {!file ? (
+      <input ref={fileRef} type="file" accept=".pdf,.xlsx,.csv,.ofx,.OFX,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/x-ofx,application/ofx" className="hidden" onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />
+      {!file && locked ? (
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-warn/40 bg-warn/5 p-4">
+            <p className="flex items-start gap-2.5 text-sm">
+              <Lock className="mt-0.5 size-5 shrink-0 text-warn" />
+              <span><b className="block font-display text-base">Este arquivo tem senha</b>
+                <span className="break-all text-muted">{locked.name}</span> — o banco costuma usar o CPF do titular (só os números) ou parte dele.</span>
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Input type="password" autoFocus autoComplete="off" value={pw.value} onChange={(e) => setPw({ ...pw, value: e.target.value })} placeholder="Senha do arquivo" className="h-10 w-56 max-sm:w-full"
+                onKeyDown={(e) => { if (e.key === 'Enter' && pw.value) { e.preventDefault(); void pick(locked, pw.value); } }} />
+              <Button variant="primary" loading={reading} disabled={!pw.value} onClick={() => pick(locked, pw.value)}>Abrir</Button>
+              <Button variant="ghost" onClick={() => { setLocked(null); setPw({ value: '', remember: true }); }}>Escolher outro arquivo</Button>
+            </div>
+            {canOrg && <div className="mt-3"><Checkbox checked={pw.remember} onChange={(remember) => setPw({ ...pw, remember })} label={<span className="text-sm text-muted">Lembrar esta senha neste espaço (as próximas faturas abrem sozinhas)</span>} /></div>}
+          </div>
+        </div>
+      ) : !file ? (
         <div className="flex flex-col gap-4">
           <button type="button" onClick={() => fileRef.current?.click()} disabled={reading}
             className="flex w-full flex-col items-center gap-3 rounded-xl border-2 border-dashed border-line px-6 py-12 text-center transition hover:border-accent hover:bg-accent-soft/30">
             {reading ? <Spinner className="size-6" /> : <span className="grid size-12 place-items-center rounded-2xl bg-accent-soft text-accent"><Upload className="size-5" /></span>}
-            <span className="font-medium">{reading ? 'Lendo a fatura…' : 'Escolher a fatura (.ofx)'}</span>
-            <span className="text-xs text-faint">Exportada no app ou no internet banking do cartão.</span>
+            <span className="font-medium">{reading ? 'Lendo a fatura…' : 'Escolher a fatura'}</span>
+            <span className="text-xs text-faint">PDF, planilha (.xlsx ou .csv) ou OFX, do jeito que o app ou o site do banco exporta.</span>
           </button>
           <div className="rounded-xl bg-surface-2/60 px-4 py-3 text-sm text-muted">
             <p className="font-medium text-ink">Como funciona</p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              <li>No PDF e na planilha, a soma dos lançamentos lidos é conferida com o <b>total da fatura</b>; se a fatura junta vários cartões (titular, virtual, adicionais), cada compra guarda o cartão e a pessoa.</li>
               <li>Compra parcelada (ex.: <b>02/12</b>) entra nesta fatura e as parcelas seguintes já vão para as próximas.</li>
               <li>Estornos abatem da fatura; o pagamento da fatura anterior fica de fora (ele é a baixa da conta a pagar).</li>
               <li>A categoria do cartão é sugerida pelo que você usou antes na mesma loja ou pelo nome dela (mercado, posto, farmácia…).</li>
@@ -166,10 +206,16 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
           {guard.accepted && <WrongSpaceNote check={guard.check!} />}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
             <span className="flex min-w-0 items-center gap-1.5"><FileText className="size-4 shrink-0 text-faint" /><span className="truncate">{file.fileName}</span></span>
+            {file.format && <span>{FORMAT_LABEL[file.format]}</span>}
             {file.bank && <span>{file.bank}</span>}
             <span>{plural(file.lines.length, 'lançamento', 'lançamentos')} no arquivo</span>
             {file.balance && <span>Saldo informado pelo banco{file.balanceDate ? ` em ${formatDateBR(file.balanceDate)}` : ''}: <b className="tnum text-ink">{formatBRL(fromCents(Math.abs(toCents(file.balance))))}</b></span>}
           </div>
+          {file.unlockedBy && <p className="flex items-center gap-1.5 text-xs text-ok"><LockOpen className="size-3.5 shrink-0" />Arquivo com senha aberto ({file.unlockedBy}).</p>}
+          {file.total != null && file.diff != null && toCents(file.diff) === 0 && (
+            <p className="flex items-start gap-2 rounded-lg bg-ok/10 px-3 py-2 text-sm text-ok"><CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+              <span>Leitura conferida: os lançamentos somam o total da fatura, <b className="tnum">{formatBRL(file.total)}</b>{file.dueDate && <>, com vencimento em {formatDateBR(file.dueDate)}</>}.</span></p>
+          )}
           {file.warnings.map((w) => <p key={w} className="flex items-start gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{w}</p>)}
 
           {cardDoubt && (
@@ -220,6 +266,21 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
               hint={future ? `${plural(futureParcels, 'parcela futura vai', 'parcelas futuras vão')} para as faturas seguintes (até ${refLabel(addMonthsRef(ref, Math.max(...selected.filter((l) => l.installment).map((l) => l.installments! - l.installment!))))}). Nas próximas importações elas são reconhecidas.` : 'Só a parcela desta fatura entra; as seguintes vêm nas próximas importações.'} />
           )}
 
+          {(file.cards?.length ?? 0) > 1 && (
+            <div>
+              <p className="mb-1.5 text-xs text-muted">Esta fatura junta {file.cards!.length} cartões. Toque num deles para ver só os lançamentos dele.</p>
+              <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                {file.cards!.map((c) => (
+                  <button key={c.final} type="button" onClick={() => setWhoFilter(whoFilter === c.final ? null : c.final)} aria-pressed={whoFilter === c.final}
+                    className={cn('flex shrink-0 flex-col items-start rounded-lg border px-3 py-1.5 text-left transition pointer-coarse:py-2', whoFilter === c.final ? 'border-accent bg-accent-soft' : 'border-line hover:border-accent/60')}>
+                    <span className="text-xs text-muted">·· {c.final}{c.holder && <> · {c.holder}</>}{c.label && <> · {c.label}</>}</span>
+                    <span className={cn('tnum text-sm font-medium', c.sum.startsWith('-') && 'text-ok')}>{formatBRL(c.sum)} <span className="text-xs font-normal text-faint">· {c.count}</span></span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="overflow-hidden rounded-xl border border-line">
             <div className="flex items-center gap-3 border-b border-line bg-surface-2/60 px-3 py-2 text-xs text-muted">
               <Checkbox checked={allChecked} indeterminate={!allChecked && selected.length > 0} onChange={toggleAll} disabled={!importableCount} />
@@ -227,7 +288,7 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
               <span className="tnum sm:hidden font-medium text-ink">{formatBRL(fromCents(total))}</span>
             </div>
             <ul className="divide-y divide-line">
-              {file.lines.map((l) => {
+              {file.lines.filter((l) => whoFilter === null || l.cardFinal === whoFilter).map((l) => {
                 const s = rows[l.fitId];
                 const isDup = dup.has(l.fitId);
                 const off = l.kind === 'payment' || isDup;
@@ -244,6 +305,7 @@ export function CardOfxDialog({ open, onClose, cards, cardId: initialCardId, onD
                         {isDup && <span className="flex items-center gap-1 text-ok"><CheckCircle2 className="size-3.5" />Já está na fatura</span>}
                         {l.kind === 'refund' && !isDup && <span className="text-ok">Estorno · abate da fatura</span>}
                         {!off && s.categoryId && s.categoryId === l.suggestedCategoryId && l.suggestedFrom && <span className="text-muted">{l.suggestedFrom === 'shop' ? 'categoria usada antes nesta loja' : 'categoria pelo nome da loja'}</span>}
+                        {l.cardFinal && <span className="text-muted">·· {l.cardFinal}{l.holder ? ` ${l.holder.split(' ')[0]}` : ''}</span>}
                         {l.installment && <span className="flex items-center gap-1"><Layers className="size-3.5" />parcela {l.installment}/{l.installments}{!off && future && l.installment < l.installments! && ` · cria até ${l.installments}/${l.installments}`}</span>}
                         {l.memo !== l.description && <span className="truncate" title={l.memo}>{l.memo}</span>}
                       </p>

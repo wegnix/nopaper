@@ -58,7 +58,7 @@ export function zipDeclaredSize(buf: Buffer): number | null {
 }
 const XLSX_MAX_OPEN_BYTES = 150 * 1024 * 1024;
 
-async function readXlsx(buf: Buffer): Promise<ImportSheet[]> {
+export async function readXlsx(buf: Buffer): Promise<ImportSheet[]> {
   const open = zipDeclaredSize(buf);
   if (open === null || open > XLSX_MAX_OPEN_BYTES) throw badRequest('Esta planilha é grande demais para importar. Divida em arquivos menores (por ano, por exemplo).');
   const wb = new ExcelJS.Workbook();
@@ -82,7 +82,7 @@ async function readXlsx(buf: Buffer): Promise<ImportSheet[]> {
   return sheets;
 }
 
-function readCsv(buf: Buffer, name: string): ImportSheet[] {
+export function readCsv(buf: Buffer, name: string): ImportSheet[] {
   let text = buf.toString('utf8');
   if (text.includes('�')) text = buf.toString('latin1');
   text = text.replace(/^﻿/, '');
