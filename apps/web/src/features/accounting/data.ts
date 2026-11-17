@@ -21,6 +21,15 @@ export function useAccountantOnly() {
   return can('accounting.upload') && !(['accounting.review', 'accounting.send', 'payable.view', 'receivable.view', 'cards.view', 'bank.view', 'payroll.view', 'reports.view'] as const).some(can);
 }
 
+/**
+ * Está do lado do contador neste espaço: envia documentos e recebe os do cliente (a mesma regra do
+ * servidor). Pode ter outras permissões de consulta — aí o menu é o completo, com "Contador" e "Recebidos".
+ */
+export function useIsAccountant() {
+  const can = useCan();
+  return can('accounting.upload') && !can('accounting.review') && !can('accounting.send');
+}
+
 export const accountingKey = (orgId: string | null, ...rest: unknown[]) => ['accounting', orgId, ...rest];
 
 /** `to_client` = o que o contador mandou para o espaço; `to_accountant` = o que o espaço mandou para o contador. */

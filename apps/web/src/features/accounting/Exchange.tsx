@@ -13,7 +13,7 @@ import { api, get, put, errMsg, uploadFormWithProgress } from '@/lib/api';
 import { useOrg } from '@/lib/session';
 import { cn, isTouch, plural } from '@/lib/utils';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
-import { useAccountantOnly, useAccountants, useAccountingDocs, type AccountingDoc } from './data';
+import { useAccountants, useAccountingDocs, useIsAccountant, type AccountingDoc } from './data';
 import { useProgressive } from '@/lib/useProgressive';
 import { KIND_ICON, acceptFiles, canPreview, docTitle, fileAccept, norm, sentMonth, sizeText, when } from './common';
 
@@ -255,7 +255,7 @@ export function ClientOutbox() {
 // ------------------------------------------------------------------ lado do contador
 /** Caixa "Recebidos" do contador: o que o espaço mandou para ele. Abrir ou baixar marca como recebido. */
 export function AccountantInboxPage() {
-  const accountant = useAccountantOnly();
+  const accountant = useIsAccountant();
   const org = useOrg();
   const docs = useAccountingDocs('to_accountant', accountant);
   const { refresh } = useDocActions();

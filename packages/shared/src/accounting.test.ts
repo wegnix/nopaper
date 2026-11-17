@@ -12,8 +12,8 @@ test('área do contador: descrição sugerida da conta', () => {
 });
 
 test('área do contador: campos do envio e da conferência', () => {
-  assert.deepEqual(accountingUploadSchema.parse({ kind: 'das', competence: '2026-10', note: '  vence dia 20 ' }), { kind: 'das', competence: '2026-10', note: 'vence dia 20' });
-  assert.deepEqual(accountingUploadSchema.parse({ kind: 'other', competence: '', note: '' }), { kind: 'other', competence: null, note: null });
+  assert.deepEqual(accountingUploadSchema.parse({ kind: 'das', competence: '2026-10', note: '  vence dia 20 ' }), { kind: 'das', kinds: null, competence: '2026-10', note: 'vence dia 20' });
+  assert.deepEqual(accountingUploadSchema.parse({ kind: 'other', competence: '', note: '' }), { kind: 'other', kinds: null, competence: null, note: null });
   assert.equal(accountingUploadSchema.safeParse({ kind: 'nota', competence: '2026-10' }).success, false);
   assert.equal(accountingUploadSchema.safeParse({ kind: 'das', competence: '2026-13' }).success, false);
   assert.equal(accountingHandleSchema.safeParse({ status: 'done', billId: 'x' }).success, false);
@@ -36,4 +36,11 @@ test('grupo Contador só envia; Operadores não ganham a área do contador sozin
 test('números soltos de um relatório não viram linha digitável', () => {
   // passa nos DVs dos 3 campos, mas não no DV geral (caso real de holerite lido como boleto)
   assert.equal(findBoletoInText('total 2026122115 03995075086 27115039862 7 10641216210011'), null);
+});
+
+test('área do contador: tipo por arquivo no mesmo envio', () => {
+  assert.deepEqual(accountingUploadSchema.parse({ kind: 'das', kinds: '["das","payslip"]' }).kinds, ['das', 'payslip']);
+  assert.equal(accountingUploadSchema.parse({ kind: 'das', kinds: '' }).kinds, null);
+  assert.equal(accountingUploadSchema.safeParse({ kind: 'das', kinds: '["invoice"]' }).success, false);
+  assert.equal(accountingUploadSchema.safeParse({ kind: 'das', kinds: 'x' }).success, false);
 });

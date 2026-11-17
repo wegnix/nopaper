@@ -122,7 +122,7 @@ export function uploadFormWithProgress<T>(path: string, build: () => FormData, o
         return;
       }
       if (xhr.status >= 200 && xhr.status < 300) resolve(data as T);
-      else reject(new ApiError(xhr.status, xhr.status === 413 ? 'O envio é grande demais para o servidor.' : (data.error as string) || `Erro ${xhr.status}`, data.code as string | undefined, data));
+      else reject(new ApiError(xhr.status, (data.error as string) || (xhr.status === 413 ? 'O envio é grande demais para o servidor.' : `Erro ${xhr.status}`), data.code as string | undefined, data));
     };
     xhr.send(build());
   });

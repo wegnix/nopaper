@@ -8,6 +8,19 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.30.0] - 2026-11-17
+
+### Corrigido
+- **Área do contador — envio de vários arquivos**: o envio com tipos diferentes agora vai de uma vez só: ou entra tudo ou não entra nada (antes, se um arquivo fosse recusado, parte já tinha sido enviada e parte não), e quem confere recebe um aviso só, com todos os documentos.
+- **Área do contador — envios acima de 20 MB somados** eram recusados pelo servidor de produção com uma mensagem sem explicação; agora vale só o limite por arquivo (15 MB), que a tela informa e confere antes de enviar. Arquivo vazio também é recusado na hora.
+- **Contador com alguma outra permissão** (por exemplo, também no grupo Leitura) ficava com a tela "Contador" vazia, sem o envio e sem os recebidos. Agora ele tem o envio, o histórico e o item "Recebidos" no menu.
+- Contador que abria o endereço de outra tela via uma página vazia; agora volta para o Início.
+- O contador não recebe mais dados internos de quem confere (conta criada, anotação, quem conferiu) junto com a lista dos próprios envios.
+- No espaço Pessoal, o texto de boas-vindas do contador não cita mais holerites.
+
+### Novo
+- **Área do contador**: aviso na lista quando o arquivo escolhido já foi enviado antes (mesmo nome e tamanho), aviso quando um PDF enviado como holerite, 13º ou férias não tem recibos reconhecidos, e barra de progresso no envio.
+
 ## [1.29.0] - 2026-11-16
 
 ### Novo

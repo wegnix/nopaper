@@ -161,12 +161,16 @@ export default async function accountingRoutes(app: FastifyInstance) {
         inArray(schema.bills.type, (['payable', 'receivable'] as const).filter((t) => req.org!.can(`${t}.view`))))) : [];
     const bmap = new Map(bills.map((b) => [b.id, b]));
     return {
-      items: rows.map(({ storageKey: _k, sha256: _s, hiddenBy, ...r }) => ({
+      items: rows.map(({ storageKey: _k, sha256: _s, hiddenBy, ...row }) => {
+        // o contador vê a situação do que enviou, mas não a conta criada, a anotação nem quem conferiu
+        const r = side === 'sender' && !outbound ? { ...row, billId: null, handleNote: null, handledBy: null } : row;
+        return {
         hiddenByMe: !!r.hiddenAt && hiddenBy === req.user!.id,
         ...r, uploadedByName: r.uploadedBy ? uname.get(r.uploadedBy) ?? null : null, handledByName: r.handledBy ? uname.get(r.handledBy) ?? null : null,
         recipientName: r.recipientId ? uname.get(r.recipientId) ?? null : null,
         bill: r.billId ? bmap.get(r.billId) ?? null : null, mine: r.uploadedBy === req.user!.id,
-      })),
+        };
+      }),
     };
   });
 
@@ -180,6 +184,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
     const sniff = (head: Buffer) => { const mime = sniffMime(head); return mime && ALLOWED_UPLOADS[mime] ? { mime, ext: ALLOWED_UPLOADS[mime]! } : null; };
     let docs: Doc[];
     let body;
+    const unread: string[] = [];
     try {
       for await (const part of req.parts({ limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: MAX_FILES } })) {
         if (part.type === 'field') { fields[part.fieldname] = String(part.value ?? ''); continue; }
@@ -191,16 +196,28 @@ export default async function accountingRoutes(app: FastifyInstance) {
         await assertStorageRoom(orgId, saved.reduce((n, f) => n + f.size, 0));
       }
       if (!saved.length) throw badRequest('Escolha ao menos um arquivo');
-      body = parse(accountingUploadSchema, fields);
-      if (accountingIsPayroll(body.kind) && req.org!.kind !== 'company') throw badRequest('Documentos da folha só podem ser enviados a espaços do tipo Empresa.', 'company_only');
-      if ((accountingIsSlips(body.kind) || body.kind === 'vacation') && saved.some((f) => f.mime !== 'application/pdf')) {
-        throw badRequest(`${ACCOUNTING_KIND_LABEL[body.kind]}: envie o PDF original do sistema de folha (não uma foto ou digitalização).`);
+      const sentBody = parse(accountingUploadSchema, fields);
+      body = sentBody;
+      // `kinds` = o tipo de cada arquivo, na ordem em que foram enviados (um envio só com tipos diferentes:
+      // ou entra tudo ou não entra nada, e quem confere recebe um aviso só); sem ele vale `kind` para todos
+      if (sentBody.kinds && sentBody.kinds.length !== saved.length) throw badRequest('A lista de tipos não bate com os arquivos enviados.');
+      const kindOf = (i: number): AccountingKind => sentBody.kinds?.[i] ?? sentBody.kind;
+      for (const [i, f] of saved.entries()) {
+        const k = kindOf(i);
+        if (accountingIsPayroll(k) && req.org!.kind !== 'company') throw badRequest('Documentos da folha só podem ser enviados a espaços do tipo Empresa.', 'company_only');
+        if ((accountingIsSlips(k) || k === 'vacation') && f.mime !== 'application/pdf') {
+          throw badRequest(`"${f.filename}" (${ACCOUNTING_KIND_LABEL[k]}): envie o PDF original do sistema de folha, não uma foto ou digitalização.`);
+        }
       }
       const values = [];
-      for (const f of saved) {
-        const detected = await detect(body.kind, await readStoredFile(f.key), f.mime, f.filename);
+      for (const [i, f] of saved.entries()) {
+        const sent = kindOf(i);
+        const detected = await detect(sent, await readStoredFile(f.key), f.mime, f.filename);
+        // PDF enviado como holerite/13º/férias em que não achamos recibos: entra assim mesmo (pode ser um
+        // modelo que ainda não lemos), mas quem enviou é avisado para conferir se é o arquivo certo
+        if (accountingIsSlips(sent) && !detected) unread.push(f.filename);
         // um relatório da folha que é o relatório de férias ganha o tipo próprio: aparece pronto em Folha → Férias
-        const kind = body.kind === 'payroll_report' && detected?.vacations ? 'vacation' : body.kind;
+        const kind = sent === 'payroll_report' && detected?.vacations ? 'vacation' : sent;
         values.push({
           orgId, direction: 'to_client', kind, competence: body.competence ?? null, note: body.note, originalName: f.filename, mime: f.mime, size: f.size,
           storageKey: f.key, sha256: f.sha256, detected, uploadedBy: req.user!.id,
@@ -211,14 +228,15 @@ export default async function accountingRoutes(app: FastifyInstance) {
       for (const f of saved) await deleteFile(f.key);
       throw e;
     }
+    const sentKinds = [...new Set(docs.map((d) => d.kind as AccountingKind))];
     await audit(req, {
       action: 'accounting.upload', entityType: 'accounting_document', entityId: docs[0]!.id,
-      description: `Enviou ${docs.length === 1 ? `o documento "${docs[0]!.originalName}"` : `${docs.length} documentos`} (${ACCOUNTING_KIND_LABEL[body.kind]}${body.competence ? ` – ${refLabelPT(body.competence)}` : ''}) pela área do contador`,
-      details: { kind: body.kind, competence: body.competence ?? null, files: docs.map((d) => d.originalName) },
+      description: `Enviou ${docs.length === 1 ? `o documento "${docs[0]!.originalName}"` : `${docs.length} documentos`} (${sentKinds.map((k) => ACCOUNTING_KIND_LABEL[k]).join(', ')}${body.competence ? ` – ${refLabelPT(body.competence)}` : ''}) pela área do contador`,
+      details: { kind: sentKinds[0], kinds: sentKinds, competence: body.competence ?? null, files: docs.map((d) => d.originalName) },
     });
     // o aviso não segura a resposta nem derruba o envio
     void notifyUpload(req.org!.id, req.user!.name, docs).catch((e) => req.log.error({ err: e }, 'aviso da área do contador falhou'));
-    return { created: docs.length, storage: await storageInfo(orgId) };
+    return { created: docs.length, unread, storage: await storageInfo(orgId) };
   });
 
   /**

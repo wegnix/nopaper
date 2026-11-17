@@ -71,6 +71,14 @@ const text = (max: number) => z.string().max(max).nullish().transform((v) => (v 
 /** Campos que acompanham os arquivos no envio. */
 export const accountingUploadSchema = z.object({
   kind: z.enum(ACCOUNTING_KINDS),
+  /**
+   * Tipo de cada arquivo, na ordem dos arquivos (JSON, ex.: `["das","payslip"]`). Opcional: sem ele, `kind`
+   * vale para todos. Serve para mandar tipos diferentes num envio só.
+   */
+  kinds: z.string().max(2000).nullish().transform((v, ctx) => {
+    if (!v || !v.trim()) return null;
+    try { return z.array(z.enum(ACCOUNTING_KINDS)).min(1).max(20).parse(JSON.parse(v)); } catch { ctx.addIssue({ code: 'custom', message: 'Lista de tipos inválida' }); return z.NEVER; }
+  }),
   /** Competência (mês a que o documento se refere). */
   competence: ref.nullish().or(z.literal('').transform(() => null)),
   note: text(500),

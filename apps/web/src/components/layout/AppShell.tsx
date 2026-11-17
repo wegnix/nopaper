@@ -15,7 +15,7 @@ import { endSession, useIdleLogout } from '@/lib/idle';
 import { Logo } from './Logo';
 import { OrgAvatar } from '@/components/ui/org-avatar';
 import { NAV, NAV_ACCOUNTANT_INBOX, NAV_BOTTOM, navLabel, navVisible, type NavItem } from './nav';
-import { useAccountantOnly, useAccountingInbox, useAccountingPending } from '@/features/accounting/data';
+import { useAccountantOnly, useAccountingInbox, useAccountingPending, useIsAccountant } from '@/features/accounting/data';
 import { CommandPalette } from './CommandPalette';
 import { EMBEDDED, notifyHost } from '@/lib/embed';
 import { NewOrgDialog } from './NewOrgDialog';
@@ -28,9 +28,13 @@ function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNaviga
   const badge = (i: NavItem) => (i.to === '/contador' ? pendingDocs : i.to === '/recebidos' ? inboxDocs : 0);
   // contador: o Início dele já é a área do contador
   const accountantOnly = useAccountantOnly();
+  // quem é contador mas também consulta outras áreas: "Recebidos" logo depois de "Contador"
+  const isAccountant = useIsAccountant();
+  const visible = items.filter((i) => navVisible(i, can, kind) && !(accountantOnly && i.to === '/contador'));
+  if (isAccountant && items === NAV) visible.splice(accountantOnly ? visible.length : visible.findIndex((i) => i.to === '/contador') + 1, 0, NAV_ACCOUNTANT_INBOX);
   return (
     <>
-      {[...items.filter((i) => navVisible(i, can, kind) && !(accountantOnly && i.to === '/contador')), ...(accountantOnly && items === NAV ? [NAV_ACCOUNTANT_INBOX] : [])].map((i) => (
+      {visible.map((i) => (
         <Tooltip key={i.to} content={collapsed ? navLabel(i, kind) : null} side="right">
           <NavLink
             to={i.to} end={i.to === '/'} onClick={onNavigate} aria-label={collapsed ? navLabel(i, kind) : undefined}
@@ -165,6 +169,11 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, [accountantOnly]);
   useEffect(() => setDrawer(false), [loc.pathname]);
+  // contador que digita o endereço de outra tela (ou abre um link antigo): volta para o Início dele,
+  // em vez de uma tela vazia em que nada carrega
+  useEffect(() => {
+    if (accountantOnly && !/^\/($|contador$|recebidos$|config(\/|$))/.test(loc.pathname)) nav('/', { replace: true });
+  }, [accountantOnly, loc.pathname, nav]);
   // embutido em outro sistema: avisa em que tela está, para o menu de lá acompanhar
   // só o caminho: a busca digitada e os filtros (que iam junto em `search`) não saem do NoPaper
   useEffect(() => notifyHost(loc.pathname), [loc.pathname]);
