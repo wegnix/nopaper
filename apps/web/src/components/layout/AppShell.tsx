@@ -19,6 +19,7 @@ import { useAccountantOnly, useAccountingInbox, useAccountingPending, useIsAccou
 import { CommandPalette } from './CommandPalette';
 import { EMBEDDED, notifyHost } from '@/lib/embed';
 import { NewOrgDialog } from './NewOrgDialog';
+import { HelpButton } from '@/features/help/Manuals';
 
 function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNavigate?: () => void; collapsed?: boolean }) {
   const can = useCan();
@@ -220,6 +221,7 @@ export function AppShell() {
           {!noSpace && <OrgSwitcher onNew={() => setNewOrg(true)} slim />}
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             {!accountantOnly && !noSpace && <button onClick={() => setPalette(true)} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink pointer-coarse:size-10" aria-label="Buscar ou ir para (Ctrl K)"><Search className="size-4" /></button>}
+            <HelpButton className="size-8 pointer-coarse:size-10" />
             <button onClick={toggle} className="grid size-8 place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-ink pointer-coarse:size-10" aria-label="Alternar tema">
               {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </button>
@@ -301,6 +303,7 @@ export function AppShell() {
             <kbd className="hidden sm:inline rounded border border-line px-1.5 text-[11px]">Ctrl K</kbd>
           </button>}
           <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
+            <HelpButton className="size-11 sm:size-9" />
             <button onClick={toggle} className="grid size-11 sm:size-9 place-items-center rounded-lg text-muted hover:text-ink hover:bg-surface-2" aria-label="Alternar tema">
               {theme === 'dark' ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
             </button>

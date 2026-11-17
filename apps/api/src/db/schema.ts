@@ -732,3 +732,19 @@ export const payslipSignatures = pgTable('payslip_signatures', {
   uniqueIndex('payslip_signatures_emp_comp_uq').on(t.orgId, t.employeeId, t.competence, t.docKey),
   index('payslip_signatures_period_idx').on(t.orgId, t.periodId),
 ]);
+
+/** Manuais em PDF enviados pelo administrador da plataforma; cada pessoa abre os do seu público pelo "?" do cabeçalho. */
+export const manuals = pgTable('manuals', {
+  id: id(),
+  title: varchar('title', { length: 120 }).notNull(),
+  description: varchar('description', { length: 300 }),
+  /** Chaves de MANUAL_AUDIENCES (shared): para quem o manual aparece. */
+  audiences: jsonb('audiences').$type<string[]>().notNull().default([]),
+  originalName: varchar('original_name', { length: 255 }).notNull(),
+  size: integer('size').notNull(),
+  storageKey: varchar('storage_key', { length: 255 }).notNull(),
+  sha256: varchar('sha256', { length: 64 }).notNull(),
+  updatedBy: uuid('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

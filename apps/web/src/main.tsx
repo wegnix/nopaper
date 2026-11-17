@@ -1,3 +1,4 @@
+import { ManualsPage } from '@/features/platform/Manuals';
 import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
@@ -110,6 +111,7 @@ function App() {
             <Route path="plataforma/backups" element={<BackupsPage />} />
             <Route path="plataforma/notificacoes" element={<NotificationsPage />} />
             <Route path="plataforma/seguranca" element={<SecurityPage />} />
+            <Route path="plataforma/manuais" element={<ManualsPage />} />
             <Route path="plataforma/atualizacoes" element={<UpdatesPage />} />
             <Route path="plataforma/auditoria" element={<PlatformAuditPage />} />
             <Route path="sistema" element={<Navigate to="/config/plataforma/backups" replace />} />

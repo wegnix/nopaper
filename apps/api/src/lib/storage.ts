@@ -61,8 +61,11 @@ export async function linkFile(orgId: string, key: string) {
   return copy;
 }
 
+/** Pasta dos arquivos da plataforma (manuais), ao lado das pastas dos espaços. */
+export const MANUALS_DIR = 'manuais';
+
 function resolveKey(key: string) {
-  if (!/^[0-9a-f-]{36}\/[0-9a-f]{32}\.[a-z0-9]{2,5}$/.test(key)) throw new Error('storage key inválida');
+  if (!/^(?:[0-9a-f-]{36}|manuais)\/[0-9a-f]{32}\.[a-z0-9]{2,5}$/.test(key)) throw new Error('storage key inválida');
   return path.join(root, key);
 }
 

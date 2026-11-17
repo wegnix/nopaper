@@ -26,6 +26,7 @@ import updateRoutes from './routes/updates.js';
 import payrollRoutes from './routes/payroll.js';
 import bankRoutes from './routes/bank.js';
 import accountingRoutes from './routes/accounting.js';
+import manualRoutes from './routes/manuals.js';
 import esignRoutes from './routes/esign.js';
 import vacationRoutes from './routes/vacations.js';
 import integrationRoutes from './routes/integrations.js';
@@ -108,6 +109,7 @@ export async function buildApp() {
   await app.register(payrollRoutes);
   await app.register(bankRoutes);
   await app.register(accountingRoutes);
+  await app.register(manualRoutes);
   await app.register(esignRoutes);
   await app.register(vacationRoutes);
   await app.register(integrationRoutes);

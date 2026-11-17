@@ -8,6 +8,11 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.31.0] - 2026-11-17
+
+### Novo
+- **Manuais pelo "?"**: um botão "?" no alto da tela abre o manual da pessoa dentro do próprio NoPaper, com as opções de baixar e imprimir. Quem administra a plataforma publica os PDFs em **Configurações → Plataforma → Manuais** e escolhe para quem cada um aparece (contador, contas, cartões, folha, administradores…). Quem tem mais de um manual vê a lista; quem não tem nenhum não vê o botão. Arquivos de até 50 MB; trocar o PDF não exige versão nova do sistema.
+
 ## [1.30.0] - 2026-11-17
 
 ### Corrigido
