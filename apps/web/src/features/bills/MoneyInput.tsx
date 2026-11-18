@@ -10,7 +10,9 @@ export const MoneyInput = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<
   function MoneyInput({ value, onChange, className, ...rest }, ref) {
     const [text, setText] = useState(fmt(value ? parseMoneyInput(value) : null));
     const [focused, setFocused] = useState(false);
-    useEffect(() => { if (!focused) setText(value ? fmt(parseMoneyInput(value)) : ''); }, [value, focused]);
+    // com o cursor no campo, o texto é de quem digita; mas um valor que chega de fora (leitura do boleto)
+    // num campo ainda vazio aparece na hora, sem esperar sair do campo
+    useEffect(() => { if (!focused || (!text && value)) setText(value ? fmt(parseMoneyInput(value)) : ''); }, [value, focused]); // eslint-disable-line react-hooks/exhaustive-deps
     return (
       <div className="relative">
         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-faint">R$</span>

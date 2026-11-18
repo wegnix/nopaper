@@ -253,7 +253,7 @@ export function AccountingPage() {
 
       <FileViewer target={viewer} onClose={() => setViewer(null)} />
       <BillForm type="payable" bill={null} open={!!billFor} onClose={() => setBillFor(null)} onRestructure={() => undefined} onStopRecurrence={() => undefined} onView={() => undefined}
-        seed={billFor ? { file: billFor.file, description: accountingBillDescription(billFor.doc.kind, billFor.doc.competence), notes: billFor.doc.note ?? '', slot: accountingIsPayable(billFor.doc.kind) ? 'boleto' : undefined, categoryId: billFor.categoryId } : null}
+        seed={billFor ? { file: billFor.file, description: accountingBillDescription(billFor.doc.kind, billFor.doc.competence), notes: billFor.doc.note ?? '', slot: accountingIsPayable(billFor.doc.kind) ? 'boleto' : undefined, categoryId: billFor.categoryId, amount: billFor.doc.detected?.amount, dueDate: billFor.doc.detected?.dueDate, barcode: billFor.doc.detected?.barcode } : null}
         onCreated={(b: Bill) => { if (billFor) void handle(billFor.doc, 'done', b.id); }} />
     </div>
   );

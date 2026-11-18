@@ -97,8 +97,16 @@ export function useFormState<T>(initial: T | (() => T)) {
   const [base, setBase] = useState(() => serialize(value));
   const load = useCallback((v: T) => { setValue(v); setBase(serialize(v)); }, []);
   const markSaved = useCallback((v: T) => setBase(serialize(v)), []);
+  /** Ajusta a partir do valor ATUAL (não do da última renderização) sem contar como alteração, se nada tinha sido mexido. */
+  const patch = useCallback((fn: (prev: T) => T) => {
+    setValue((prev) => {
+      const next = fn(prev);
+      if (next !== prev) { const was = serialize(prev); setBase((b) => (b === was ? serialize(next) : b)); }
+      return next;
+    });
+  }, []);
   const dirty = serialize(value) !== base;
-  return [value, setValue as (v: SetStateAction<T>) => void, { dirty, load, markSaved }] as const;
+  return [value, setValue as (v: SetStateAction<T>) => void, { dirty, load, markSaved, patch }] as const;
 }
 
 /** Fecha direto, ou pergunta antes se houver alterações não salvas. */

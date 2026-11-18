@@ -31,7 +31,7 @@ interface Props {
   onStopRecurrence: (b: Bill) => void;
   onView: (b: Bill, slot: AttachmentSlot) => void;
   /** Conta nova já com um arquivo para ler (ex.: guia enviada pelo contador) e textos sugeridos. */
-  seed?: { file: File; description?: string; notes?: string; /** Tipo do anexo quando a leitura não tiver certeza. */ slot?: AttachmentSlot; /** Categoria sugerida (usada se existir entre as da conta). */ categoryId?: string | null } | null;
+  seed?: { file: File; description?: string; notes?: string; /** Tipo do anexo quando a leitura não tiver certeza. */ slot?: AttachmentSlot; /** Categoria sugerida (usada se existir entre as da conta). */ categoryId?: string | null; /** Já lidos antes (ex.: no envio do contador): o formulário abre com eles, e a leitura do arquivo só completa. */ amount?: string | null; dueDate?: string | null; barcode?: string | null } | null;
   /** Chamado quando a conta nova é criada. */
   onCreated?: (b: Bill) => void;
 }
@@ -101,16 +101,23 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
       form.load(fromBill(bill));
       setRec(initialRec(bill.recurrenceType, bill.isIndefinite));
     } else {
-      form.load({ ...blank(), categoryId: seedCategory() ?? cats[0]?.id ?? '', description: seed?.description ?? '', notes: seed?.notes ?? '' });
+      form.load({
+        ...blank(), categoryId: seedCategory() ?? cats[0]?.id ?? '', description: seed?.description ?? '', notes: seed?.notes ?? '',
+        ...(seed?.amount ? { amount: seed.amount } : {}), ...(seed?.dueDate ? { dueDate: seed.dueDate } : {}),
+        ...(seed?.barcode ? { barcode: seed.barcode, paymentMethod: 'Boleto' } : {}),
+      });
       setRec(initialRec());
       if (seed) void analyze(seed.file, seed.slot);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, bill?.id]);
   // conta nova e as categorias chegaram depois de abrir: escolhe a 1ª sem contar como alteração.
-  // Só em conta nova: ao editar, este efeito roda junto com o de cima ainda com o `f` vazio e
-  // apagava os dados recém-carregados (a 1ª edição depois de abrir a página vinha em branco).
-  useEffect(() => { if (open && !bill && !f.categoryId && cats[0]) form.load({ ...f, categoryId: seedCategory() ?? cats[0].id, description: f.description || seed?.description || '', notes: f.notes || seed?.notes || '' }); }, [cats, open, f.categoryId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Só em conta nova, e só a categoria, a partir do valor atual: este efeito roda na mesma passada do
+  // de cima, com o `f` da renderização anterior — recarregar o formulário inteiro com ele apagava o que
+  // acabou de ser preenchido (a 1ª edição vinha em branco; o valor do documento do contador sumia).
+  useEffect(() => {
+    if (open && !bill && cats[0]) form.patch((p) => (p.categoryId ? p : { ...p, categoryId: seedCategory() ?? cats[0]!.id }));
+  }, [cats, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const boleto = useMemo(() => (f.barcode.replace(/\D/g, '').length >= 44 ? parseBoleto(f.barcode) : null), [f.barcode]);
   const pix = useMemo(() => (f.pixKey.trim() ? parsePix(f.pixKey) : null), [f.pixKey]);

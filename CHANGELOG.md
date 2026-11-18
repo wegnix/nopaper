@@ -8,6 +8,13 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.34.1] - 2026-11-18
+
+### Corrigido
+- **Lançar conta pela área do contador**: o valor, o vencimento e o código de barras que aparecem no documento já vêm no formulário assim que ele abre — antes dependiam de uma segunda leitura do arquivo e, às vezes (guia do FGTS), o valor só aparecia depois de abrir a janela de novo.
+- Formulário de conta nova: na primeira abertura depois de carregar a página, o que tinha acabado de ser preenchido podia ser apagado quando a lista de categorias chegava.
+- Campo de valor: um valor lido do documento aparece mesmo se o cursor já estiver no campo.
+
 ## [1.34.0] - 2026-11-18
 
 ### Novo
