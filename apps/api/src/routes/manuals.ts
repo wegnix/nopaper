@@ -64,7 +64,8 @@ export default async function manualRoutes(app: FastifyInstance) {
   /** URL assinada (10 min) para ver/baixar. */
   app.get<{ Params: { id: string } }>('/api/manuals/:id/url', { preHandler: requireAuth }, async (req) => {
     const [m] = await db.select().from(schema.manuals).where(eq(schema.manuals.id, req.params.id));
-    if (!m || !manualVisible(m.audiences, await viewerOf(req))) throw notFound('Manual não encontrado');
+    // o administrador da plataforma abre qualquer manual (é ele quem publica), mesmo fora do público marcado
+    if (!m || !(req.user!.isSuperadmin || manualVisible(m.audiences, await viewerOf(req)))) throw notFound('Manual não encontrado');
     const t = signFileToken(tokenId(m.id));
     return { url: `/api/manuals/files/${m.id}?t=${t}`, downloadUrl: `/api/manuals/files/${m.id}?t=${t}&download=1`, name: m.originalName, mime: 'application/pdf' };
   });

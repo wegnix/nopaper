@@ -59,10 +59,11 @@ export async function buildApp() {
   // o dev e para o visualizador de arquivos, que é um quadro dentro do quadro.
   const embedders = env.EMBED_ALLOWED_ORIGINS;
   await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'same-origin' }, ...(embedders.length ? { frameguard: false } : {}) });
-  if (embedders.length) {
-    const ancestors = `frame-ancestors 'self' ${embedders.join(' ')}`;
-    app.addHook('onSend', async (_req, reply) => { if (!reply.hasHeader('content-security-policy')) reply.header('content-security-policy', ancestors); });
-  }
+  // Nada do que a API devolve (JSON, PDF, imagem) precisa carregar scripts ou outros recursos: se um
+  // arquivo enviado um dia for aberto como página, não executa nada. `style-src` é para o visualizador
+  // de PDF/imagem do próprio navegador. O nginx repassa este cabeçalho como veio.
+  const apiCsp = `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self'${embedders.map((o) => ` ${o}`).join('')}`;
+  app.addHook('onSend', async (_req, reply) => { if (!reply.hasHeader('content-security-policy')) reply.header('content-security-policy', apiCsp); });
   await app.register(cookie);
   // chamada da API pública repassada a uma rota interna já foi contada no limite do token: não conta de novo por IP
   await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute', allowList: (req) => req.headers['x-np-internal'] === INTERNAL_KEY });

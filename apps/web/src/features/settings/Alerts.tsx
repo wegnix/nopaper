@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CheckCircle2, ExternalLink, Mail, Plus, Send, Trash2, X, XCircle } from 'lucide-react';
-import { ALERT_DAY_OPTIONS, ALERT_MINUTE_STEP, COLOR_PRESETS, type AlertConfig } from '@nopaper/shared';
+import { ALERT_BCC_MAX, ALERT_DAY_OPTIONS, ALERT_MINUTE_STEP, COLOR_PRESETS, type AlertConfig } from '@nopaper/shared';
 import { Button, Card, Field, IconButton, Input, Segmented, Select, Switch } from '@/components/ui/base';
 import { useCategories } from '@/lib/queries';
 import { api, errMsg, get, post, put } from '@/lib/api';
@@ -27,6 +27,7 @@ export function AlertsPage() {
   const q = useQuery({ queryKey: ['alerts', orgId], queryFn: () => get<AlertsView>('/api/alerts') });
   const [f, setF] = useState<AlertConfig | null>(null);
   const [email, setEmail] = useState('');
+  const [bccEmail, setBccEmail] = useState('');
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
   const [link, setLink] = useState<{ url: string; bot: string } | null>(null);
   const poll = useRef<number | null>(null);
@@ -77,12 +78,24 @@ export function AlertsPage() {
   const unlink = async (id: string) => {
     try { await api('DELETE', `/api/alerts/telegram/chats/${id}`); qc.invalidateQueries({ queryKey: ['alerts', orgId] }); } catch (e) { toast.error(errMsg(e)); }
   };
-  const addEmail = () => {
-    const e = email.trim().toLowerCase();
+  const addEmail = (list: 'recipients' | 'bcc') => {
+    const e = (list === 'bcc' ? bccEmail : email).trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(e)) { toast.error('E-mail inválido'); return; }
-    if (!f.email.recipients.includes(e)) setF({ ...f, email: { ...f.email, recipients: [...f.email.recipients, e] } });
-    setEmail('');
+    if (f.email.recipients.includes(e) || f.email.bcc.includes(e)) { toast.warning('Esse e-mail já está na lista'); return; }
+    setF({ ...f, email: { ...f.email, [list]: [...f.email[list], e] } });
+    (list === 'bcc' ? setBccEmail : setEmail)('');
   };
+  const dropEmail = (list: 'recipients' | 'bcc', e: string) => setF({ ...f, email: { ...f.email, [list]: f.email[list].filter((x) => x !== e) } });
+  const chips = (list: 'recipients' | 'bcc') => f.email[list].length > 0 && (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {f.email[list].map((e) => (
+        <span key={e} className="inline-flex max-w-full items-center gap-1 rounded-lg bg-surface-2 py-1 pl-2.5 pr-1 text-sm">
+          <span className="truncate">{e}</span>
+          <button className="grid size-5 shrink-0 place-items-center rounded text-muted hover:text-danger pointer-coarse:size-7" aria-label={`Remover ${e}`} onClick={() => dropEmail(list, e)}><X className="size-3.5" /></button>
+        </span>
+      ))}
+    </div>
+  );
 
   const rule = (k: 'payable' | 'receivable', title: string) => {
     const r = f[k];
@@ -220,19 +233,20 @@ export function AlertsPage() {
             </div>
             <Switch checked={f.email.enabled} onChange={(enabled) => setF({ ...f, email: { ...f.email, enabled } })} />
           </div>
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            {f.email.recipients.map((e) => (
-              <span key={e} className="inline-flex items-center gap-1 rounded-lg bg-surface-2 py-1 pl-2.5 pr-1 text-sm">
-                {e}
-                <button className="grid size-5 place-items-center rounded text-muted hover:text-danger" aria-label={`Remover ${e}`}
-                  onClick={() => setF({ ...f, email: { ...f.email, recipients: f.email.recipients.filter((x) => x !== e) } })}><X className="size-3.5" /></button>
-              </span>
-            ))}
+          <p className="mt-4 text-[13px] font-medium text-muted">Destinatários</p>
+          {chips('recipients')}
+          <div className="mt-2 flex gap-2">
+            <Input type="email" aria-label="E-mail do destinatário" value={email} placeholder="nome@empresa.com.br" onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEmail('recipients'); } }} />
+            <Button variant="secondary" icon={<Plus className="size-4" />} onClick={() => addEmail('recipients')} disabled={f.email.recipients.length >= 10}>Adicionar</Button>
           </div>
-          <div className="mt-3 flex gap-2">
-            <Input type="email" value={email} placeholder="nome@empresa.com.br" onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEmail(); } }} />
-            <Button variant="secondary" icon={<Plus className="size-4" />} onClick={addEmail} disabled={f.email.recipients.length >= 10}>Adicionar</Button>
+          <p className="mt-5 text-[13px] font-medium text-muted">Cópia oculta <span className="font-normal text-faint">· {f.email.bcc.length} de {ALERT_BCC_MAX}</span></p>
+          <p className="mt-0.5 text-xs text-faint">Recebem o mesmo e-mail sem que os outros vejam o endereço.{!f.email.recipients.length && ' Precisa de pelo menos um destinatário acima.'}</p>
+          {chips('bcc')}
+          <div className="mt-2 flex gap-2">
+            <Input type="email" aria-label="E-mail em cópia oculta" value={bccEmail} placeholder="nome@empresa.com.br" disabled={!f.email.recipients.length} onChange={(e) => setBccEmail(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addEmail('bcc'); } }} />
+            <Button variant="secondary" icon={<Plus className="size-4" />} onClick={() => addEmail('bcc')} disabled={!f.email.recipients.length || f.email.bcc.length >= ALERT_BCC_MAX}>Adicionar</Button>
           </div>
         </Card>
       </div>

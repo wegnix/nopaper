@@ -7,7 +7,7 @@ import { db, schema } from '../db/client.js';
 import { env } from '../env.js';
 import { getOrgSetting, setOrgSetting } from '../lib/settings.js';
 import { restrictedCategoryIds } from './bills.js';
-import { escapeHtml, sendEmail, telegramSend, telegramToken } from './notify.js';
+import { emailTarget, escapeHtml, sendEmail, telegramSend, telegramToken } from './notify.js';
 
 export interface StoredAlerts extends AlertConfig {
   lastSentOn?: string | null;
@@ -227,10 +227,11 @@ export async function deliver(orgId: string, cfg: AlertConfig, d: Digest, test =
   }
   if (cfg.email.enabled && cfg.email.recipients.length) {
     const m = digestEmail(d);
+    const bcc = cfg.email.bcc ?? [], target = emailTarget(cfg.email.recipients, bcc);
     try {
-      await sendEmail(cfg.email.recipients, test ? `[teste] ${m.subject}` : m.subject, m.html, m.text);
-      results.push({ channel: 'email', target: cfg.email.recipients.join(', '), ok: true });
-    } catch (e) { results.push({ channel: 'email', target: cfg.email.recipients.join(', '), ok: false, error: (e as Error).message }); }
+      await sendEmail(cfg.email.recipients, test ? `[teste] ${m.subject}` : m.subject, m.html, m.text, bcc);
+      results.push({ channel: 'email', target, ok: true });
+    } catch (e) { results.push({ channel: 'email', target, ok: false, error: (e as Error).message }); }
   }
   if (results.length) {
     await db.insert(schema.alertDeliveries).values(results.map((r) => ({

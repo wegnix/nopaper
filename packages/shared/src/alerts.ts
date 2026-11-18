@@ -19,6 +19,8 @@ const typeRule = z.object({
 export type AlertTypeRule = z.infer<typeof typeRule>;
 /** Passo dos minutos do horário de envio (o verificador roda de 5 em 5 minutos). */
 export const ALERT_MINUTE_STEP = 5;
+/** Limite de endereços em cópia oculta no e-mail dos alertas. */
+export const ALERT_BCC_MAX = 20;
 export const ALERT_DAY_OPTIONS = [0, 1, 2, 3, 5, 7, 10, 15] as const;
 
 export const alertConfigSchema = z.object({
@@ -40,7 +42,12 @@ export const alertConfigSchema = z.object({
   email: z.object({
     enabled: z.boolean().default(false),
     recipients: z.array(z.string().trim().toLowerCase().email('E-mail inválido')).max(10).default([]),
-  }).default({ enabled: false, recipients: [] }),
+    /** Cópia oculta: recebem o mesmo e-mail sem aparecer para os outros destinatários. */
+    bcc: z.array(z.string().trim().toLowerCase().email('E-mail inválido')).max(ALERT_BCC_MAX).default([]),
+  }).default({ enabled: false, recipients: [], bcc: [] })
+    // sem repetidos; quem já é destinatário principal não entra de novo na cópia oculta
+    .transform((e) => ({ ...e, recipients: [...new Set(e.recipients)], bcc: [...new Set(e.bcc)].filter((x) => !e.recipients.includes(x)) }))
+    .refine((e) => !e.bcc.length || e.recipients.length > 0, { message: 'Informe ao menos um destinatário principal antes da cópia oculta', path: ['recipients'] }),
 });
 export type AlertConfig = z.infer<typeof alertConfigSchema>;
 

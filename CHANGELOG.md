@@ -8,6 +8,19 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.32.0] - 2026-11-17
+
+### Novo
+- **Cópia oculta nos alertas por e-mail**: em Configurações → Alertas → E-mail, além dos destinatários, dá para incluir até 20 endereços em cópia oculta — recebem o mesmo e-mail (resumo diário e aviso de documentos do contador) sem que os outros vejam o endereço. Precisa de pelo menos um destinatário principal.
+
+### Corrigido
+- **Manuais**: o administrador da plataforma não conseguia abrir pelo botão "Ver" um manual publicado para um público do qual ele não faz parte (ex.: "Contador") — aparecia "Manual não encontrado". Agora ele abre qualquer manual.
+
+### Segurança e desempenho
+- **Atualização pela web**: o sistema recusa atualizar quando a pasta do servidor foi clonada de um repositório diferente do configurado em `UPDATE_REPO` (antes só avisava na tela).
+- As respostas da API (inclusive PDFs e imagens) passam a sair com uma política de conteúdo que impede a execução de scripts caso um arquivo enviado seja aberto como página.
+- **Contas bancárias**: ao escolher a conta de um lançamento na conciliação, só aquela linha é redesenhada.
+
 ## [1.31.0] - 2026-11-17
 
 ### Novo

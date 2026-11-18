@@ -50,7 +50,7 @@ export async function smtpConfig(): Promise<StoredSmtp | null> {
   return s?.host ? s : null;
 }
 
-export async function sendEmail(to: string[], subject: string, html: string, text: string) {
+export async function sendEmail(to: string[], subject: string, html: string, text: string, bcc: string[] = []) {
   const s = await smtpConfig();
   if (!s) throw badRequest('O servidor de e-mail (SMTP) não está configurado. Peça ao administrador da plataforma.');
   const transport = nodemailer.createTransport({
@@ -58,7 +58,12 @@ export async function sendEmail(to: string[], subject: string, html: string, tex
     auth: s.user ? { user: s.user, pass: decryptSecret(s.passwordEnc) ?? '' } : undefined,
     connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 30_000,
   });
-  await transport.sendMail({ from: s.from || s.user, to, subject, html, text });
+  await transport.sendMail({ from: s.from || s.user, to, ...(bcc.length ? { bcc } : {}), subject, html, text });
+}
+
+/** Como o envio aparece no histórico: os principais + quantos foram em cópia oculta. */
+export function emailTarget(to: string[], bcc: string[] = []) {
+  return to.join(', ') + (bcc.length ? ` + ${bcc.length} em cópia oculta` : '');
 }
 
 export const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

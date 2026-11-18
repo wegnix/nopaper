@@ -49,19 +49,29 @@ function holdUntilUpdaterIdle() {
   }, 5000);
 }
 
+/**
+ * A lista de versões vem das Releases de UPDATE_REPO, mas quem baixa o código é o `git fetch origin`
+ * da pasta do projeto: se a instalação foi clonada de outro repositório (um fork, um espelho), a
+ * "mesma" versão seria outro código. Sem origem configurada o próprio fetch falha.
+ */
+function originMatches(origin: string | undefined | null) {
+  if (!origin) return true;
+  const repo = env.UPDATE_REPO.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^(?:https?://(?:[^/@]+@)?|ssh://git@|git@)github\\.com[:/]${repo}(\\.git)?/?$`).test(origin.trim().toLowerCase());
+}
+
 export default async function updateRoutes(app: FastifyInstance) {
   const guard = { preHandler: [requireAuth, requireSuperadmin] };
 
   app.get('/api/system/updates', guard, async () => {
     const [rel, info, status, backup] = await Promise.all([availableReleases(), updaterInfo(), updaterStatus(), latestPreUpdateBackup()]);
-    const expectedOrigin = `github.com/${env.UPDATE_REPO}`;
     return {
       current: APP_VERSION, repo: env.UPDATE_REPO,
       releases: rel.releases, checkedAt: new Date(rel.at).toISOString(), checkError: rel.error,
       updater: info && {
         ...info,
         // a instalação foi clonada de outro repositório (ex.: um fork): avisa na tela
-        originMatches: !info.origin || info.origin.replace(/\.git$/, '').toLowerCase().includes(expectedOrigin.toLowerCase()),
+        originMatches: originMatches(info.origin),
       },
       status, backup, busy: currentOperation(),
     };
@@ -89,6 +99,9 @@ export default async function updateRoutes(app: FastifyInstance) {
     if (!info) throw badRequest('O serviço de atualização (updater) não está instalado ou não responde. Veja o guia de publicação.');
     if (!info.git) throw badRequest(info.error ?? 'A instalação não é um clone git do repositório.');
     if (info.dirty) throw badRequest('Há arquivos do projeto alterados no servidor (git status). Desfaça as alterações locais antes de atualizar.');
+    if (!originMatches(info.origin)) {
+      throw badRequest(`Esta instalação foi clonada de outro repositório (${info.origin}), diferente do configurado para as atualizações (${env.UPDATE_REPO}). Ajuste UPDATE_REPO no .env ou a origem do git no servidor antes de atualizar.`);
+    }
     const status = await updaterStatus();
     if (status?.state === 'running') throw conflict('Já existe uma atualização em andamento');
 

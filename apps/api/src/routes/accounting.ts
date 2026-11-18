@@ -18,7 +18,7 @@ import { loadBill, restrictedCategoryIds } from '../services/bills.js';
 import { accountantsOf, resolveRecipients } from '../services/accounting.js';
 import { readVacationReport } from '../services/vacations.js';
 import { assertStorageRoom, storageInfo } from '../services/storageQuota.js';
-import { escapeHtml, sendEmail, telegramSend, telegramToken } from '../services/notify.js';
+import { emailTarget, escapeHtml, sendEmail, telegramSend, telegramToken } from '../services/notify.js';
 import { checkPayslipsSpace } from '../services/spaceCheck.js';
 
 type Doc = typeof schema.accountingDocuments.$inferSelect;
@@ -103,11 +103,12 @@ async function notifyUpload(orgId: string, uploader: string, docs: Doc[]) {
 <h2 style="margin:0 0 4px;font-size:20px">${escapeHtml(org?.name ?? 'NoPaper')}</h2><p style="margin:0 0 16px;color:#5b6478">${escapeHtml(title)} pela área do contador.</p>
 <ul style="padding-left:18px;font-size:14px">${docs.map((d) => `<li style="margin:4px 0">${escapeHtml(line(d))} <span style="color:#8a93a8">— ${escapeHtml(d.originalName)}</span></li>`).join('')}</ul>
 <p style="margin:16px 0 0"><a href="${url}" style="color:#5b4be8">Conferir e lançar</a></p></div>`;
+    const bcc = cfg.email.bcc ?? [], target = emailTarget(cfg.email.recipients, bcc);
     const textBody = [`${org?.name ?? 'NoPaper'} — ${title} pela área do contador.`, ...docs.map((d) => `  - ${line(d)} — ${d.originalName}`), url].join('\n');
     try {
-      await sendEmail(cfg.email.recipients, `NoPaper · ${org?.name ?? ''}: ${title}`, html, textBody);
-      results.push({ channel: 'email', target: cfg.email.recipients.join(', '), ok: true });
-    } catch (e) { results.push({ channel: 'email', target: cfg.email.recipients.join(', '), ok: false, error: (e as Error).message }); }
+      await sendEmail(cfg.email.recipients, `NoPaper · ${org?.name ?? ''}: ${title}`, html, textBody, bcc);
+      results.push({ channel: 'email', target, ok: true });
+    } catch (e) { results.push({ channel: 'email', target, ok: false, error: (e as Error).message }); }
   }
   if (results.length) {
     await db.insert(schema.alertDeliveries).values(results.map((r) => ({

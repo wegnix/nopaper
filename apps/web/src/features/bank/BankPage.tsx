@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -145,8 +145,11 @@ function Reconcile({ account, refStr, onRef }: { account: BankAccount; refStr: s
     match: planned.filter((x) => x.d.kind === 'link' && billMap.get((x.d as { billId: string }).billId)?.status === 'paid').length,
     create: planned.filter((x) => x.d.kind === 'create').length, ignore: planned.filter((x) => x.d.kind === 'ignore').length,
   };
-  const catsFor = (amount: string) => categories.filter((c) => c.kind === 'both' || c.kind === (amount.startsWith('-') ? 'payable' : 'receivable'));
-  const setD = (t: BankTx, d: Decision) => setOver((p) => ({ ...p, [t.id]: d }));
+  const catsPay = useMemo(() => categories.filter((c) => c.kind === 'both' || c.kind === 'payable'), [categories]);
+  const catsRec = useMemo(() => categories.filter((c) => c.kind === 'both' || c.kind === 'receivable'), [categories]);
+  const catsFor = (amount: string) => (amount.startsWith('-') ? catsPay : catsRec);
+  // ações de identidade fixa: uma escolha numa linha não redesenha as outras (TxRow é `memo`)
+  const onDecide = useCallback((t: BankTx, d: Decision) => setOver((p) => ({ ...p, [t.id]: d })), []);
 
   const apply = async () => {
     const actions: ReconcileAction[] = planned.map(({ t, d }) => (d.kind === 'link' ? { kind: 'link', txId: t.id, billId: d.billId }
@@ -179,6 +182,10 @@ function Reconcile({ account, refStr, onRef }: { account: BankAccount; refStr: s
     }
     setOver(next);
   };
+
+  const undoRef = useRef(undo);
+  undoRef.current = undo;
+  const onUndo = useCallback((t: BankTx) => void undoRef.current(t), []);
 
   // pendentes com sugestão primeiro (cada grupo do mais recente para o mais antigo)
   const shown = txs.filter((t) => filter === 'all' || t.status === filter)
@@ -234,7 +241,7 @@ function Reconcile({ account, refStr, onRef }: { account: BankAccount; refStr: s
               {list.visible.map((t) => (
                 <TxRow key={t.id} t={t} mode={mode} editable={editable} decision={decisionOf(t)} suggestion={suggestions.get(t.id) ?? null}
                   options={t.status === 'pending' ? candidatesFor({ id: t.id, date: t.postedAt, amount: t.amount, memo: t.memo, name: t.name }, sameAmountBills(t, byAmount).filter((b) => (chosen.get(b.id) ?? t.id) === t.id)) : []}
-                  billMap={billMap} cats={catsFor(t.amount)} onDecide={(d) => setD(t, d)} onUndo={() => undo(t)} canUndo={can('bank.import')} />
+                  billMap={billMap} cats={catsFor(t.amount)} onDecide={onDecide} onUndo={onUndo} canUndo={can('bank.import')} />
               ))}
             </ul>
             {list.sentinel}
@@ -276,11 +283,22 @@ function Amount({ v, className }: { v: string; className?: string }) {
 
 const billLine = (b: Pick<Bill, 'description' | 'dueDate' | 'status' | 'paidAt'>) => `${b.description} · ${b.status === 'paid' ? `paga em ${formatDateBR(b.paidAt ?? b.dueDate).slice(0, 5)}` : `vence ${formatDateBR(b.dueDate).slice(0, 5)}`}`;
 
-function TxRow({ t, mode, editable, decision, suggestion, options, billMap, cats, onDecide, onUndo, canUndo }: {
+interface TxRowProps {
   t: BankTx; mode: Mode; editable: boolean; decision: Decision; suggestion: { billId: string; reason: string } | null;
   options: Array<MatchBill & { score: number; reason: string }>; billMap: Map<string, Bill>; cats: Array<{ id: string; label: string; isRestricted: boolean }>;
-  onDecide: (d: Decision) => void; onUndo: () => void; canUndo: boolean;
-}) {
+  onDecide: (t: BankTx, d: Decision) => void; onUndo: (t: BankTx) => void; canUndo: boolean;
+}
+/** A escolha e as opções são montadas a cada desenho da lista: compara pelo conteúdo, não pela identidade. */
+const sameDecision = (a: Decision, b: Decision) => a === b || (a.kind === b.kind
+  && (a.kind !== 'link' || a.billId === (b as typeof a).billId)
+  && (a.kind !== 'create' || (a.description === (b as typeof a).description && a.categoryId === (b as typeof a).categoryId)));
+const sameRow = (a: TxRowProps, b: TxRowProps) => a.t === b.t && a.mode === b.mode && a.editable === b.editable && a.canUndo === b.canUndo
+  && a.suggestion === b.suggestion && a.billMap === b.billMap && a.cats === b.cats && a.onDecide === b.onDecide && a.onUndo === b.onUndo
+  && sameDecision(a.decision, b.decision) && a.options.length === b.options.length && a.options.every((o, i) => o.id === b.options[i].id);
+
+const TxRow = memo(function TxRow({ t, mode, editable, decision, suggestion, options, billMap, cats, onDecide: decide, onUndo: undoTx, canUndo }: TxRowProps) {
+  const onDecide = (d: Decision) => decide(t, d);
+  const onUndo = () => undoTx(t);
   const title = txTitle(t), sub = txSub(t);
   const value = decision.kind === 'link' ? `link:${decision.billId}` : decision.kind;
   const linkedBill = decision.kind === 'link' ? billMap.get(decision.billId) : undefined;
@@ -346,7 +364,7 @@ function TxRow({ t, mode, editable, decision, suggestion, options, billMap, cats
       </div>
     </li>
   );
-}
+}, sameRow);
 
 function BulkCreate({ cats, onApply }: { cats: Array<{ id: string; label: string; kind: string }>; onApply: (type: 'payable' | 'receivable', categoryId: string) => void }) {
   const [type, setType] = useState<'payable' | 'receivable'>('payable');
