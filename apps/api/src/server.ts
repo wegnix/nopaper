@@ -7,6 +7,7 @@ import { ensureInitialAdmin } from './services/bootstrap.js';
 import { pool } from './db/client.js';
 import { cleanupInterruptedBackups } from './services/backup.js';
 import { recoverInterruptedRestore } from './services/restore.js';
+import { warmPdfReader } from './services/pdf.js';
 
 const app = await buildApp();
 await mkdir(env.STORAGE_DIR, { recursive: true });
@@ -19,6 +20,7 @@ await cleanupInterruptedBackups();
 await ensureInitialAdmin(app.log);
 await startJobs(app.log);
 await app.listen({ host: env.HOST, port: env.PORT });
+void warmPdfReader();
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, async () => {

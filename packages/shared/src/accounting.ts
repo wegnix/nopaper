@@ -115,3 +115,35 @@ export function accountingBillDescription(kind: AccountingKind, competence: stri
   const base = kind === 'office_fee' ? 'Honorários contabilidade' : kind === 'state_tax' ? 'Guia estadual' : kind === 'other' || accountingIsPayroll(kind) ? 'Documento do contador' : kind === 'tax_other' ? 'Imposto' : kind === 'fee_other' ? 'Honorários' : ACCOUNTING_KIND_LABEL[kind];
   return competence ? `${base} – ${refLabel(competence)}` : base;
 }
+
+/** Palavras do nome da categoria que combinam com cada grupo (sem acento, minúsculas). */
+const CATEGORY_WORDS: Partial<Record<AccountingGroupKey, string[]>> = {
+  taxes: ['imposto', 'impostos', 'tributo', 'tributos', 'taxa', 'taxas', 'encargos'],
+  fees: ['contabilidade', 'contador', 'contabil', 'honorario', 'honorarios', 'escritorio'],
+};
+const plain = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/**
+ * Categoria sugerida para a conta lançada a partir de um documento do contador:
+ * 1. a categoria cujo nome combina com o grupo do tipo ("Imposto", "Tributos" para impostos;
+ *    "Contabilidade", "Honorários" para honorários);
+ * 2. senão, a mesma da última conta lançada de um documento do mesmo tipo, e depois do mesmo grupo.
+ * O histórico ignora `ignoreId` (a categoria que o formulário põe sozinho, a 1ª da lista): conta lançada sem
+ * trocar a categoria não é escolha de ninguém. `history` vai do mais novo para o mais antigo; só valem
+ * categorias que estão em `categories` (as que a pessoa vê e servem para a conta).
+ */
+export function accountingCategoryFor(
+  kind: AccountingKind,
+  categories: ReadonlyArray<{ id: string; label: string }>,
+  history: ReadonlyArray<{ kind: AccountingKind; categoryId: string | null | undefined }>,
+  ignoreId?: string | null,
+): string | null {
+  const group = accountingGroupOf(kind);
+  const words = group ? CATEGORY_WORDS[group] : undefined;
+  const byName = words && categories.find((c) => plain(c.label).split(/[^a-z0-9]+/).some((w) => words.includes(w)));
+  if (byName) return byName.id;
+  const ok = new Set(categories.map((c) => c.id));
+  const usable = history.filter((h) => h.categoryId && ok.has(h.categoryId) && h.categoryId !== ignoreId);
+  const same = usable.find((h) => h.kind === kind) ?? (group ? usable.find((h) => accountingGroupOf(h.kind) === group) : undefined);
+  return same?.categoryId ?? null;
+}

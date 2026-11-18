@@ -101,3 +101,16 @@ export async function pdfToCells(buf: Buffer, maxPages = 30): Promise<PdfCell[][
 export async function pdfToRows(buf: Buffer, maxPages = 30): Promise<string[][]> {
   return (await pdfToCells(buf, maxPages)).map((r) => r.map((c) => c.s));
 }
+
+/**
+ * Carrega o leitor de PDF logo depois que a API sobe: a 1ª leitura depois de um reinício custava ~1,5 s
+ * (carga do pdfjs), e quem sentia era a primeira pessoa a anexar um documento. Falha aqui não importa.
+ */
+export async function warmPdfReader(): Promise<void> {
+  try {
+    const { PDFDocument, StandardFonts } = await import('pdf-lib');
+    const doc = await PDFDocument.create();
+    doc.addPage([200, 100]).drawText('NoPaper', { x: 10, y: 50, size: 12, font: await doc.embedFont(StandardFonts.Helvetica) });
+    await pdfToText(Buffer.from(await doc.save()));
+  } catch { /* só aquecimento */ }
+}

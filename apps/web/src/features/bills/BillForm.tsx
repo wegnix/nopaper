@@ -31,7 +31,7 @@ interface Props {
   onStopRecurrence: (b: Bill) => void;
   onView: (b: Bill, slot: AttachmentSlot) => void;
   /** Conta nova já com um arquivo para ler (ex.: guia enviada pelo contador) e textos sugeridos. */
-  seed?: { file: File; description?: string; notes?: string; /** Tipo do anexo quando a leitura não tiver certeza. */ slot?: AttachmentSlot } | null;
+  seed?: { file: File; description?: string; notes?: string; /** Tipo do anexo quando a leitura não tiver certeza. */ slot?: AttachmentSlot; /** Categoria sugerida (usada se existir entre as da conta). */ categoryId?: string | null } | null;
   /** Chamado quando a conta nova é criada. */
   onCreated?: (b: Bill) => void;
 }
@@ -92,6 +92,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
       notes: b.notes ?? '', barcode: b.barcode ?? '', pixKey: b.pixKey ?? '', paymentMethod: b.paymentMethod ?? '',
     };
   }
+  const seedCategory = () => (seed?.categoryId && cats.some((c) => c.id === seed.categoryId) ? seed.categoryId : null);
   useEffect(() => {
     if (!open) return;
     setCurrent(bill);
@@ -100,7 +101,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
       form.load(fromBill(bill));
       setRec(initialRec(bill.recurrenceType, bill.isIndefinite));
     } else {
-      form.load({ ...blank(), categoryId: cats[0]?.id ?? '', description: seed?.description ?? '', notes: seed?.notes ?? '' });
+      form.load({ ...blank(), categoryId: seedCategory() ?? cats[0]?.id ?? '', description: seed?.description ?? '', notes: seed?.notes ?? '' });
       setRec(initialRec());
       if (seed) void analyze(seed.file, seed.slot);
     }
@@ -109,7 +110,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
   // conta nova e as categorias chegaram depois de abrir: escolhe a 1ª sem contar como alteração.
   // Só em conta nova: ao editar, este efeito roda junto com o de cima ainda com o `f` vazio e
   // apagava os dados recém-carregados (a 1ª edição depois de abrir a página vinha em branco).
-  useEffect(() => { if (open && !bill && !f.categoryId && cats[0]) form.load({ ...f, categoryId: cats[0].id, description: f.description || seed?.description || '', notes: f.notes || seed?.notes || '' }); }, [cats, open, f.categoryId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open && !bill && !f.categoryId && cats[0]) form.load({ ...f, categoryId: seedCategory() ?? cats[0].id, description: f.description || seed?.description || '', notes: f.notes || seed?.notes || '' }); }, [cats, open, f.categoryId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const boleto = useMemo(() => (f.barcode.replace(/\D/g, '').length >= 44 ? parseBoleto(f.barcode) : null), [f.barcode]);
   const pix = useMemo(() => (f.pixKey.trim() ? parsePix(f.pixKey) : null), [f.pixKey]);

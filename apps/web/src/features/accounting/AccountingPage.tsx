@@ -7,7 +7,7 @@ import {
   Building2, Check, CircleCheck, CircleSlash, Eye, FileText, FileUp, Landmark, MoreHorizontal, Paperclip, Receipt, RotateCcw, Search, Trash2, TriangleAlert, Upload, UsersRound, Wallet, X, Palmtree } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import {
-  ACCOUNTING_GROUPS, ACCOUNTING_KINDS, ACCOUNTING_KIND_HINT, ACCOUNTING_KIND_LABEL, ACCOUNTING_STATUS_LABEL, accountingBillDescription, accountingIsPayable, accountingIsPayroll, accountingIsSlips, addMonthsRef,
+  ACCOUNTING_GROUPS, ACCOUNTING_KINDS, ACCOUNTING_KIND_HINT, ACCOUNTING_KIND_LABEL, ACCOUNTING_STATUS_LABEL, accountingBillDescription, accountingCategoryFor, accountingIsPayable, accountingIsPayroll, accountingIsSlips, addMonthsRef,
   type AccountingGroupKey,
   MONTHS_PT, formatBRL, formatDateBR, refLabelPT, todayISO, type AccountingKind, type AccountingStatus,
 } from '@nopaper/shared';
@@ -19,6 +19,7 @@ import { useCan, useOrg, useSession } from '@/lib/session';
 import { cn, isTouch, plural } from '@/lib/utils';
 import type { Bill } from '@/lib/types';
 import { BillForm } from '@/features/bills/BillForm';
+import { useCategories } from '@/lib/queries';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
 import { useAccountantOnly, useAccountingDocs, useIsAccountant, type AccountingDoc } from './data';
 import { GROUP_ICON, KIND_ICON, docTitle, norm, sentMonth, sizeText, when } from './common';
@@ -49,7 +50,8 @@ export function AccountingPage() {
   const [monthFilter, setMonthFilter] = useState('');
   const [viewer, setViewer] = useState<FileViewerTarget | null>(null);
   /** Conta a pagar sendo criada a partir de um documento. */
-  const [billFor, setBillFor] = useState<{ doc: AccountingDoc; file: File } | null>(null);
+  const [billFor, setBillFor] = useState<{ doc: AccountingDoc; file: File; categoryId: string | null } | null>(null);
+  const categories = useCategories();
   const [opening, setOpening] = useState<string | null>(null);
   const canSend = can('accounting.send') && !accountant;
   /** Lado do espaço: o que chegou do contador × o que foi enviado para ele. */
@@ -86,7 +88,10 @@ export function AccountingPage() {
     try {
       const u = await get<{ url: string }>(`/api/accounting/documents/${d.id}/url`);
       const blob = await (await fetch(u.url)).blob();
-      setBillFor({ doc: d, file: new File([blob], d.originalName, { type: d.mime }) });
+      // categoria: a que foi usada nos últimos documentos do mesmo tipo/grupo, ou a que combina pelo nome
+      const cats = (categories.data ?? []).filter((c) => c.kind !== 'receivable');
+      const categoryId = accountingCategoryFor(d.kind, cats, all.filter((x) => x.bill).map((x) => ({ kind: x.kind, categoryId: x.bill!.categoryId })), cats[0]?.id);
+      setBillFor({ doc: d, file: new File([blob], d.originalName, { type: d.mime }), categoryId });
     } catch (e) { toast.error(errMsg(e)); } finally { setOpening(null); }
   };
   const view = (d: AccountingDoc) => setViewer({ urlPath: `/api/accounting/documents/${d.id}/url`, label: ACCOUNTING_KIND_LABEL[d.kind], title: d.competence ? refLabelPT(d.competence) : d.originalName });
@@ -248,7 +253,7 @@ export function AccountingPage() {
 
       <FileViewer target={viewer} onClose={() => setViewer(null)} />
       <BillForm type="payable" bill={null} open={!!billFor} onClose={() => setBillFor(null)} onRestructure={() => undefined} onStopRecurrence={() => undefined} onView={() => undefined}
-        seed={billFor ? { file: billFor.file, description: accountingBillDescription(billFor.doc.kind, billFor.doc.competence), notes: billFor.doc.note ?? '', slot: accountingIsPayable(billFor.doc.kind) ? 'boleto' : undefined } : null}
+        seed={billFor ? { file: billFor.file, description: accountingBillDescription(billFor.doc.kind, billFor.doc.competence), notes: billFor.doc.note ?? '', slot: accountingIsPayable(billFor.doc.kind) ? 'boleto' : undefined, categoryId: billFor.categoryId } : null}
         onCreated={(b: Bill) => { if (billFor) void handle(billFor.doc, 'done', b.id); }} />
     </div>
   );

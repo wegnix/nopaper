@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { accountingBillDescription, accountingHandleSchema, accountingIsPayable, accountingSendSchema, accountingUploadSchema } from './accounting.js';
+import { accountingBillDescription, accountingCategoryFor, accountingHandleSchema, accountingIsPayable, accountingSendSchema, accountingUploadSchema } from './accounting.js';
 import { DEFAULT_ACCOUNTANT_PERMISSIONS, DEFAULT_OPERATOR_PERMISSIONS, withRequired } from './permissions.js';
 import { findBoletoInText } from './boleto.js';
 
@@ -45,4 +45,18 @@ test('área do contador: tipo por arquivo no mesmo envio', () => {
   assert.equal(accountingUploadSchema.parse({ kind: 'das', kinds: '' }).kinds, null);
   assert.equal(accountingUploadSchema.safeParse({ kind: 'das', kinds: '["invoice"]' }).success, false);
   assert.equal(accountingUploadSchema.safeParse({ kind: 'das', kinds: 'x' }).success, false);
+});
+
+test('categoria sugerida para a conta do documento do contador', () => {
+  const cats = [{ id: 'c0', label: 'Bônus' }, { id: 'c1', label: 'Fixa' }, { id: 'c2', label: 'Imposto' }, { id: 'c3', label: 'Serviços' }];
+  // pelo nome do grupo, mesmo que antes tenham usado outra
+  assert.equal(accountingCategoryFor('das', cats, [{ kind: 'das', categoryId: 'c1' }]), 'c2');
+  assert.equal(accountingCategoryFor('fgts', cats, []), 'c2');
+  assert.equal(accountingCategoryFor('other', cats, []), null);
+  // sem nome que combine: a escolha de antes (mesmo tipo, depois mesmo grupo)
+  assert.equal(accountingCategoryFor('office_fee', cats, [{ kind: 'fee_other', categoryId: 'c1' }, { kind: 'office_fee', categoryId: 'c3' }]), 'c3');
+  assert.equal(accountingCategoryFor('office_fee', cats, [{ kind: 'fee_other', categoryId: 'c1' }]), 'c1');
+  // a categoria que o formulário põe sozinho não conta como escolha; categoria que sumiu também não
+  assert.equal(accountingCategoryFor('office_fee', cats, [{ kind: 'office_fee', categoryId: 'c0' }, { kind: 'office_fee', categoryId: 'sumiu' }], 'c0'), null);
+  assert.equal(accountingCategoryFor('office_fee', [...cats, { id: 'c4', label: 'Honorários contábeis' }], []), 'c4');
 });

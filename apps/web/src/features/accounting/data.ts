@@ -9,7 +9,7 @@ export interface AccountingDoc {
   createdAt: string; uploadedByName: string | null; handledByName: string | null; recipientName?: string | null; mine: boolean;
   /** Tirado da lista de quem confere (o registro continua para quem enviou). `hiddenByMe` = cancelado por quem enviou. */
   hiddenAt: string | null; hiddenByMe: boolean;
-  bill: { id: string; description: string; status: 'pending' | 'paid'; dueDate: string; amount: string } | null;
+  bill: { id: string; description: string; status: 'pending' | 'paid'; dueDate: string; amount: string; categoryId: string } | null;
 }
 
 /**

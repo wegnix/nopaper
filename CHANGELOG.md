@@ -8,6 +8,14 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.34.0] - 2026-11-18
+
+### Novo
+- **Categoria já escolhida ao lançar conta pela área do contador**: guias de impostos (DAS, DARF, FGTS, DAE, guias estaduais) abrem com a categoria de impostos do espaço ("Imposto", "Tributos", "Taxas"…) e os honorários com a de contabilidade/honorários. Se o espaço não tiver uma categoria com esse nome, vale a que foi usada da última vez para o mesmo tipo de documento. Dá para trocar antes de criar a conta.
+
+### Desempenho
+- O leitor de PDF é carregado quando o servidor sobe: a primeira leitura de documento depois de uma atualização ou reinício não demora mais cerca de 1,5 s.
+
 ## [1.33.0] - 2026-11-18
 
 ### Novo

@@ -156,7 +156,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
     // a conta ligada só aparece para quem confere (o contador não vê as contas do espaço)
     const hiddenCats = req.org!.can('bills.view_restricted') ? [] : await restrictedCategoryIds(req.org!.id);
     const billIds = !outbound && side === 'recipient' ? rows.map((r) => r.billId).filter((x): x is string => !!x) : [];
-    const bills = billIds.length ? await db.select({ id: schema.bills.id, description: schema.bills.description, status: schema.bills.status, dueDate: schema.bills.dueDate, amount: schema.bills.amount })
+    const bills = billIds.length ? await db.select({ id: schema.bills.id, description: schema.bills.description, status: schema.bills.status, dueDate: schema.bills.dueDate, amount: schema.bills.amount, categoryId: schema.bills.categoryId })
       .from(schema.bills).where(and(eq(schema.bills.orgId, req.org!.id), inArray(schema.bills.id, billIds),
         hiddenCats.length ? notInArray(schema.bills.categoryId, hiddenCats) : undefined,
         inArray(schema.bills.type, (['payable', 'receivable'] as const).filter((t) => req.org!.can(`${t}.view`))))) : [];
