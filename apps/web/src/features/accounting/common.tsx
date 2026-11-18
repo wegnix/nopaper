@@ -4,7 +4,7 @@ import type { AccountingDoc } from './data';
 
 export const KIND_ICON: Record<AccountingKind, typeof FileText> = {
   payslip: UsersRound, thirteenth: Gift, vacation_slip: TreePalm, payroll_report: ClipboardList, vacation: Palmtree,
-  das: Landmark, darf: Landmark, dae: Landmark, state_tax: Landmark, tax_other: Landmark, office_fee: Building2, fee_other: BadgeDollarSign,
+  das: Landmark, darf: Landmark, fgts: Landmark, dae: Landmark, state_tax: Landmark, tax_other: Landmark, office_fee: Building2, fee_other: BadgeDollarSign,
   other: FileText, invoice: ReceiptText, term: FileSignature,
 };
 export const GROUP_ICON: Record<AccountingGroupKey, typeof FileText> = { payroll: UsersRound, taxes: Landmark, fees: Building2, other: FolderOpen };

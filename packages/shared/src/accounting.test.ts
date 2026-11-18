@@ -6,6 +6,8 @@ import { findBoletoInText } from './boleto.js';
 
 test('área do contador: descrição sugerida da conta', () => {
   assert.equal(accountingBillDescription('das', '2026-10'), 'DAS – Out/2026');
+  assert.equal(accountingBillDescription('fgts', '2026-10'), 'FGTS – Out/2026');
+  assert.ok(accountingIsPayable('fgts'));
   assert.equal(accountingBillDescription('office_fee', '2027-01'), 'Honorários contabilidade – Jan/2027');
   assert.equal(accountingBillDescription('state_tax', null), 'Guia estadual');
   assert.ok(accountingIsPayable('darf') && !accountingIsPayable('payslip') && !accountingIsPayable('other'));

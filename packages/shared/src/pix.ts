@@ -174,3 +174,31 @@ export function buildPixBrCode(opts: { key: string; keyType: PixKeyType; amount?
     + '6304';
   return body + crc16(body);
 }
+
+/**
+ * Procura um PIX copia e cola ("000201…6304XXXX" com CRC válido) num texto extraído de PDF ou OCR.
+ * O código pode ter espaços de verdade (nome do recebedor: "CAIXA ECONOMICA FEDERAL") e quebras de
+ * linha postas pelo PDF no meio dele; por isso tenta o texto com as quebras juntadas e, se não fechar,
+ * sem nenhum espaço. Quem decide é o CRC — o 1º trecho que fecha vale.
+ */
+export function findPixInText(text: string): string | null {
+  const variants = [text.replace(/\r?\n/g, ''), text.replace(/\s*\r?\n\s*/g, ''), text.replace(/\s+/g, '')];
+  const seen = new Set<string>();
+  for (const v of variants) {
+    if (seen.has(v)) continue;
+    seen.add(v);
+    let from = 0;
+    for (let tries = 0; tries < 20; tries++) {
+      const start = v.indexOf('000201', from);
+      if (start < 0) break;
+      from = start + 6;
+      const end = Math.min(v.length, start + 800); // teto do código: a busca fica com tempo previsível
+      for (let i = v.indexOf('6304', start + 20); i >= 0 && i + 8 <= end; i = v.indexOf('6304', i + 1)) {
+        const code = v.slice(start, i + 8);
+        if (/[\r\n]/.test(code)) break;
+        if (crc16(code.slice(0, -4)) === code.slice(-4).toUpperCase()) return code;
+      }
+    }
+  }
+  return null;
+}

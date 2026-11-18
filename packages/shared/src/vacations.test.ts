@@ -99,3 +99,30 @@ test('relatório do contador: linhas, data base e colunas vazias', () => {
   assert.deepEqual([r.rows[1]!.balance, r.rows[1]!.paid], [15, 15]);
   assert.deepEqual([r.rows[2]!.absences, r.rows[2]!.leave, r.rows[2]!.balance, r.rows[2]!.kind], [7, 30, 2.5, 'A']);
 });
+
+test('relatório "férias vencidas e a vencer": colunas vazias, gozados e só em aquisição', () => {
+  const head = [
+    { x: 30, w: 15, s: 'Cod.' }, { x: 60, w: 20, s: 'Nome' }, { x: 252, w: 35, s: 'Admissão' }, { x: 318, w: 10, s: 'em' }, { x: 353, w: 22, s: 'Faltas' },
+    { x: 379, w: 30, s: 'de direito' }, { x: 413, w: 28, s: 'gozados' }, { x: 446, w: 25, s: 'a gozar' }, { x: 475, w: 34, s: 'Aviso até' }, { x: 522, w: 40, s: 'Vencimento' },
+  ];
+  const line = (code: string, name: string, adm: string, extra: Array<[number, string]>) =>
+    [{ x: 45, w: 10, s: code }, { x: 60, w: 150, s: name }, { x: 247, w: 40, s: adm }, ...extra.map(([x, s]) => ({ x, w: s.length > 3 ? 40 : 10, s }))];
+  const r = parseVacationReport([
+    [{ x: 32, w: 300, s: 'RELATÓRIO DE FÉRIAS VENCIDAS E A VENCER' }],
+    [{ x: 489, w: 80, s: '18/11/2026 10:25:11' }],
+    [{ x: 31, w: 200, s: '0001 - EMPRESA EXEMPLO LTDA' }],
+    [{ x: 309, w: 30, s: 'Vencida' }, { x: 386, w: 20, s: 'Dias' }, { x: 418, w: 20, s: 'Dias' }, { x: 447, w: 22, s: 'Saldo' }, { x: 475, w: 40, s: 'Conceder' }, { x: 528, w: 35, s: 'Próximo' }],
+    head,
+    line('33', 'FULANA DE TAL', '01/08/2025', [[303, '31/07/2026'], [390, '30'], [452, '30'], [476, '01/06/2027'], [522, '31/07/2027']]),
+    line('30', 'BELTRANO SOUZA', '10/10/2023', [[303, '09/10/2026'], [390, '30'], [423, '15'], [452, '15'], [476, '10/08/2027'], [522, '08/10/2027']]),
+    line('34', 'SICRANA LIMA', '13/05/2026', [[522, '12/05/2027']]),
+  ]);
+  assert.equal(r.company, 'EMPRESA EXEMPLO LTDA');
+  assert.equal(r.baseDate, '2026-11-18');
+  assert.equal(r.rows.length, 5);
+  assert.deepEqual(r.rows[0], { code: '33', name: 'FULANA DE TAL', limit: '2027-07-01', admission: '2025-08-01', periodStart: '2025-08-01', periodEnd: '2026-07-31', absences: 0, leave: 0, balance: 30, paid: 0, kind: 'V' });
+  assert.deepEqual([r.rows[1]!.periodStart, r.rows[1]!.kind, r.rows[1]!.balance], ['2026-08-01', 'A', 10]);
+  assert.deepEqual([r.rows[2]!.periodStart, r.rows[2]!.paid, r.rows[2]!.balance, r.rows[2]!.limit], ['2025-10-10', 15, 15, '2027-09-24']);
+  assert.deepEqual([r.rows[3]!.periodStart, r.rows[3]!.periodEnd], ['2026-10-10', '2027-10-09']);
+  assert.deepEqual([r.rows[4]!.periodStart, r.rows[4]!.kind, r.rows[4]!.balance], ['2026-05-13', 'A', 15]);
+});

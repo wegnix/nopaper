@@ -240,6 +240,8 @@ const num = (s: string) => Number(s.replace(/\./g, '').replace(',', '.'));
  * As colunas de faltas e afastamentos costumam vir vazias: o número é atribuído pela posição do título.
  */
 export function parseVacationReport(rows: PdfCell[][]): VacationReport {
+  const flat = (r: PdfCell[]) => r.map((c) => c.s.trim()).join(' ');
+  if (rows.slice(0, 12).some((r) => /f[ée]rias\s+vencidas\s+e\s+a\s+vencer/i.test(flat(r)))) return parseVacationDueReport(rows);
   const out: VacationReport = { company: null, baseDate: null, rows: [] };
   let xAbs: number | null = null, xLeave: number | null = null, xBal: number | null = null;
   for (const raw of rows) {
@@ -270,6 +272,74 @@ export function parseVacationReport(rows: PdfCell[][]): VacationReport {
       code: m[1]!, name: m[2]!.trim(), limit: iso(m[3]!), admission: iso(m[4]!), periodStart: iso(m[5]!), periodEnd: iso(m[6]!),
       absences, leave, balance: num(m[8]!), paid: num(m[9]!), kind: m[10] as 'V' | 'A',
     });
+  }
+  return out;
+}
+
+/**
+ * Lê o relatório "Relatório de Férias Vencidas e a Vencer" (outro sistema de contabilidade). Cada linha:
+ * código, nome, admissão, "vencida em" (fim do período aquisitivo já completo, se houver), faltas, dias de
+ * direito, dias gozados, saldo a gozar, "conceder aviso até" e "próximo vencimento" (fim do período que
+ * está sendo adquirido). Colunas vazias são comuns: cada valor vai para a coluna do título mais próximo.
+ * Os períodos seguem os aniversários da admissão (como o resto do controle); vira uma linha V para o
+ * período vencido e uma A para o que está sendo adquirido, no mesmo formato do outro relatório.
+ */
+function parseVacationDueReport(rows: PdfCell[][]): VacationReport {
+  const out: VacationReport = { company: null, baseDate: null, rows: [] };
+  type Col = 'admission' | 'due' | 'absences' | 'entitled' | 'taken' | 'balance' | 'notice' | 'next';
+  const TITLES: Array<[Col, RegExp]> = [
+    ['admission', /^admiss[ãa]o$/i], ['due', /^em$/i], ['absences', /^faltas$/i], ['entitled', /^de direito$/i],
+    ['taken', /^gozados$/i], ['balance', /^a gozar$/i], ['notice', /^aviso at[ée]$/i], ['next', /^vencimento$/i],
+  ];
+  let cols: Array<{ col: Col; x: number }> | null = null;
+  const DATE = /^\d{2}\/\d{2}\/\d{4}$/;
+  for (const raw of rows) {
+    const row = [...raw].filter((c) => c.s.trim()).sort((a, b) => a.x - b.x);
+    if (!row.length) continue;
+    const cells = row.map((c) => c.s.trim());
+    if (!out.company) { const m = /^\d+\s*-\s*(.+)$/.exec(cells[0]!); if (m && row.length === 1) out.company = m[1]!.trim(); }
+    if (!cols && !out.baseDate) { const d = cells.map((s) => /^(\d{2}\/\d{2}\/\d{4})\s+\d{2}:\d{2}/.exec(s)?.[1]).find(Boolean); if (d) out.baseDate = iso(d); }
+    if (cells.some((s) => /^gozados$/i.test(s))) {
+      cols = TITLES.flatMap(([col, re]) => { const c = row.find((x) => re.test(x.s.trim())); return c ? [{ col, x: c.x + c.w / 2 }] : []; });
+      continue;
+    }
+    if (!cols || row.length < 3 || !/^\d+$/.test(cells[0]!) || !DATE.test(cells[2]!)) continue;
+    const v: Partial<Record<Col, string>> = {};
+    for (const c of row.slice(2)) {
+      const mid = c.x + c.w / 2;
+      const near = cols.reduce((a, b) => (Math.abs(b.x - mid) < Math.abs(a.x - mid) ? b : a));
+      v[near.col] = c.s.trim();
+    }
+    const admission = iso(cells[2]!);
+    const n = (s?: string) => (s && /^\d+(?:,\d+)?$/.test(s) ? num(s) : null);
+    // período que termina na data: o aniversário da admissão no ano anterior ao dia seguinte
+    const startEndingAt = (end: string) => {
+      const next = addDaysISO(end, 1);
+      const start = addYearsISO(admission, Number(next.slice(0, 4)) - 1 - Number(admission.slice(0, 4)));
+      return start < admission ? admission : start;
+    };
+    const push = (start: string, kind: 'V' | 'A', balance: number, paid: number, absences: number) => {
+      const end = addDaysISO(addYearsISO(start, 1), -1);
+      const concessiveEnd = addDaysISO(addYearsISO(start, 2), -1);
+      const limitDays = kind === 'V' ? Math.ceil(balance) : vacationEntitlement(absences);
+      out.rows.push({
+        code: cells[0]!, name: cells[1]!, limit: addDaysISO(concessiveEnd, -limitDays), admission, periodStart: start, periodEnd: end,
+        absences, leave: 0, balance, paid, kind,
+      });
+    };
+    if (v.due && DATE.test(v.due)) {
+      const absences = Math.round(n(v.absences) ?? 0);
+      const paid = n(v.taken) ?? 0;
+      const entitled = n(v.entitled) ?? vacationEntitlement(absences);
+      push(startEndingAt(iso(v.due)), 'V', n(v.balance) ?? Math.max(0, entitled - paid), paid, absences);
+    }
+    if (v.next && DATE.test(v.next)) {
+      const start = startEndingAt(iso(v.next));
+      if (!out.rows.some((r) => r.code === cells[0] && r.periodStart === start)) {
+        const accrued = out.baseDate ? (30 * monthsWorked(start, out.baseDate)) / 12 : 0;
+        push(start, 'A', Math.round(accrued * 100) / 100, 0, 0);
+      }
+    }
   }
   return out;
 }

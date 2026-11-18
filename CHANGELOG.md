@@ -8,6 +8,18 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.33.0] - 2026-11-18
+
+### Novo
+- **Relatório de férias "Férias Vencidas e a Vencer"**: o segundo modelo de relatório de férias do contador também é reconhecido — na área do contador (envio em "Relatórios da folha") e em Folha → Férias → Relatório do contador. Traz admissão, período vencido, dias gozados, saldo e o período que está sendo adquirido de cada funcionário.
+- **PIX das guias de impostos**: além do código de barras, o NoPaper lê o QR Code do PIX do DAS, do DARF e de guias estaduais (inclusive escaneadas). Ao lançar a conta, o PIX já vem preenchido.
+- **Tipo FGTS** na área do contador (grupo Impostos), para a guia do FGTS Digital; a conta lançada já sai como "FGTS – mês".
+- Na área do contador, os documentos mostram as etiquetas "código de barras" e "PIX" quando foram lidos.
+
+### Corrigido
+- **Guia do FGTS Digital** (paga só por PIX): o PIX copia e cola não era reconhecido quando o nome do recebedor tinha espaços; agora a guia é lida com PIX, valor e vencimento.
+- Vencimento das guias do Simples Nacional e de parcelamentos estaduais ("Pagar este documento até", "Guia válida para pagamento até") passa a ser lido.
+
 ## [1.32.0] - 2026-11-17
 
 ### Novo

@@ -210,10 +210,12 @@ export function AccountingPage() {
                       <p className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="font-medium">{docTitle(d)}</span>{statusChip(d)}</p>
                       <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted"><Paperclip className="size-3 shrink-0 text-faint" /><span className="truncate">{d.originalName}</span><span className="shrink-0 text-faint">· {sizeText(d.size)}</span></p>
                       <p className="mt-0.5 text-xs text-faint">{canReview && d.uploadedByName ? `${d.uploadedByName} · ` : ''}enviado em {when(d.createdAt)}</p>
-                      {(det?.amount || det?.dueDate || det?.slips) && (
+                      {(det?.amount || det?.dueDate || det?.slips || det?.barcode || det?.pix) && (
                         <p className="mt-1.5 flex flex-wrap gap-1.5 text-xs">
                           {det.amount && <span className="rounded-md bg-surface-2 px-2 py-0.5 tnum">{formatBRL(det.amount)}</span>}
                           {det.dueDate && <span className={cn('rounded-md bg-surface-2 px-2 py-0.5 tnum', d.status === 'new' && det.dueDate < todayISO() && 'bg-danger/10 text-danger')}>vence {formatDateBR(det.dueDate)}</span>}
+                          {det.barcode && <span className="rounded-md bg-surface-2 px-2 py-0.5">código de barras</span>}
+                          {det.pix && <span className="rounded-md bg-surface-2 px-2 py-0.5">PIX</span>}
                           {det.slips ? <span className="rounded-md bg-surface-2 px-2 py-0.5">{plural(det.slips, 'holerite', 'holerites')}{det.slipsRef ? ` de ${refLabelPT(det.slipsRef)}` : ''}</span> : null}
                         </p>
                       )}
@@ -362,7 +364,7 @@ function UploadCard({ company, onSent, history }: { company: boolean; onSent: ()
       {group && groupKinds.length > 1 && (
         <div className="mt-3 rounded-xl border border-line bg-surface-2/40 p-3">
           <p className="mb-2 text-[13px] font-medium text-muted">Qual documento de {ACCOUNTING_GROUPS.find((g) => g.key === group)!.label.toLowerCase()}?</p>
-          <div role="radiogroup" aria-label="Tipo do documento" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          <div role="radiogroup" aria-label="Tipo do documento" className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
             {groupKinds.map((k) => {
               const Icon = KIND_ICON[k], on = kind === k;
               return (
@@ -394,7 +396,7 @@ function UploadCard({ company, onSent, history }: { company: boolean; onSent: ()
             className={cn('flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition', over ? 'border-accent bg-accent-soft/40' : 'border-line hover:border-accent hover:bg-accent-soft/30')}>
             <span className="grid size-11 place-items-center rounded-2xl bg-accent-soft text-accent"><Upload className="size-5" /></span>
             <span className="font-medium">{isTouch() ? 'Toque para escolher os arquivos' : 'Arraste os arquivos aqui ou clique para escolher'}</span>
-            <span className="text-xs text-faint">{accountingIsSlips(kind) ? 'O PDF original do sistema de folha, com os recibos de todos os funcionários.' : kind === 'payroll_report' ? 'O relatório de férias (“Períodos Aquisitivos Abertos”) é reconhecido sozinho e já aparece na folha da empresa.' : !accountingIsPayable(kind) ? `PDF de preferência. Até ${MAX_MB} MB por arquivo, 20 arquivos por envio.` : `PDF de preferência (lemos valor, vencimento e código de barras). Até ${MAX_MB} MB por arquivo, 20 arquivos por envio.`}</span>
+            <span className="text-xs text-faint">{accountingIsSlips(kind) ? 'O PDF original do sistema de folha, com os recibos de todos os funcionários.' : kind === 'payroll_report' ? 'O relatório de férias (“Períodos Aquisitivos Abertos” ou “Férias Vencidas e a Vencer”) é reconhecido sozinho e já aparece na folha da empresa.' : !accountingIsPayable(kind) ? `PDF de preferência. Até ${MAX_MB} MB por arquivo, 20 arquivos por envio.` : `PDF de preferência (lemos valor, vencimento, código de barras e PIX). Até ${MAX_MB} MB por arquivo, 20 arquivos por envio.`}</span>
             <span className="text-xs font-medium text-accent">Os arquivos adicionados agora entram como “{ACCOUNTING_KIND_LABEL[kind]}”.</span>
           </button>
           </> : <p className="rounded-lg bg-surface-2/60 px-3 py-2.5 text-sm text-muted">Para juntar arquivos de outro tipo, escolha o grupo e o tipo acima. Os que já estão na lista mantêm o tipo de cada um.</p>}

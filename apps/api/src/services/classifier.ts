@@ -2,9 +2,9 @@
  * Classificador de documentos (porta do sistema anterior + extras):
  * boleto / nota fiscal / comprovante, com extração de linha digitável, valor, vencimento e PIX copia-e-cola.
  */
-import { findBoletoInText, parseBoleto, parsePix, parseMoneyInput, type AttachmentSlot } from '@nopaper/shared';
+import { findBoletoInText, findPixInText, parseBoleto, parsePix, parseMoneyInput, type AttachmentSlot } from '@nopaper/shared';
 import { pdfToText } from './pdf.js';
-import { ocrDocument } from './ocr.js';
+import { ocrDocument, scanCodes } from './ocr.js';
 
 export type Kind = AttachmentSlot | 'unknown';
 export interface Classification {
@@ -60,19 +60,21 @@ function byFilename(name: string): { kind: Kind; reasons: string[] } {
 }
 
 function extractExtras(text: string) {
-  const pixMatch = text.replace(/\s+/g, '').match(/000201[0-9A-Za-z.@:/\-_*+ ]{20,800}?6304[0-9A-F]{4}/); // teto: sem ele a busca é quadrática num texto que repete "000201"
+  const pixFound = findPixInText(text);
   let pixCode: string | null = null, pixKey: string | null = null, pixAmount: string | null = null;
-  if (pixMatch) {
-    const p = parsePix(pixMatch[0]);
-    if (p.crcValid) { pixCode = pixMatch[0]; pixKey = p.key; pixAmount = p.amount; }
+  if (pixFound) {
+    const p = parsePix(pixFound);
+    if (p.crcValid) { pixCode = pixFound; pixKey = p.key; pixAmount = p.amount; }
   }
   const nfKey = text.replace(/[ .]/g, '').match(/(?<!\d)(\d{2}\d{4}\d{14}(?:55|57|62|65|66)\d{3}\d{9}\d{10})(?!\d)/);
   let amount: string | null = null;
   const valueRe = /(valor\s+(?:total\s+)?(?:do\s+documento|da\s+nota|a\s+pagar|cobrado|total|pago)[^\d\n]{0,40})(\d{1,3}(?:\.\d{3})*,\d{2})/i;
-  const vm = text.match(valueRe);
-  if (vm) amount = parseMoneyInput(vm[2]);
+  // guias do governo (FGTS Digital, DAS, DARF): o rótulo fica numa linha e o valor/data na seguinte
+  const GUIDE_VALUE = /(?:valor\s+a\s+recolher|total\s+da\s+guia|valor\s+total\s+do\s+documento)[^\d\n]{0,20}\n?[ \t]*(?:r\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2})(?!\d)/i;
+  const vm = text.match(valueRe) ?? text.match(GUIDE_VALUE);
+  if (vm) amount = parseMoneyInput(vm[vm.length - 1]!);
   let dueDate: string | null = null;
-  const dm = text.match(/vencimento[^\d\n]{0,30}(\d{2})\/(\d{2})\/(\d{4})/i);
+  const dm = text.match(/vencimento[^\d\n]{0,30}(\d{2})\/(\d{2})\/(\d{4})/i) ?? text.match(/(?:pagar\s+(?:este\s+documento\s+)?|para\s+pagamento\s+)at[ée][^\d\n]{0,20}\n?[ \t]*(\d{2})\/(\d{2})\/(\d{4})/i);
   if (dm) dueDate = `${dm[3]}-${dm[2]}-${dm[1]}`;
   const bm = text.match(/(?:benefici[aá]rio|cedente|raz[aã]o social)[\s:\-]{0,60}([A-ZÀ-Ü0-9][^\n]{3,80})/i);
   return { pixCode, pixKey, pixAmount, invoiceKey: nfKey?.[1] ?? null, amount, dueDate, beneficiary: bm?.[1]?.trim() ?? null };
@@ -140,6 +142,25 @@ export function classifyText(input: string): Classification {
   return base;
 }
 
+/**
+ * Guia/boleto lido pelo texto, mas sem o PIX copia e cola escrito: o QR Code costuma estar como imagem
+ * (DAS, DARF). Lê só os códigos da página e aproveita o PIX (e o código de barras, se o texto não trouxe).
+ */
+async function withImageCodes(c: Classification, buf: Buffer, mime: string): Promise<Classification> {
+  const seen = await scanCodes(buf, mime);
+  const pix = seen?.pix ? parsePix(seen.pix) : null;
+  const code = !c.barcode && seen?.barcode ? parseBoleto(seen.barcode) : null;
+  if (!pix?.crcValid && !code?.valid) return c;
+  return {
+    ...c,
+    reasons: [...c.reasons, pix?.crcValid ? 'QR Code do PIX lido da imagem' : 'código de barras lido da imagem'],
+    pixCode: pix?.crcValid ? seen!.pix : c.pixCode, pixKey: pix?.crcValid ? pix.key : c.pixKey,
+    barcode: code?.valid ? code.line : c.barcode,
+    amount: c.amount ?? (code?.valid ? code.amount : null) ?? pix?.amount ?? null,
+    dueDate: c.dueDate ?? (code?.valid ? code.dueDate : null),
+  };
+}
+
 export async function classifyDocument(buf: Buffer, mime: string, filename: string): Promise<Classification> {
   let fromText: Classification = BASE;
   let locked = false; // PDF que só abre com senha (ex.: fatura da Copel): não dá para ler o conteúdo
@@ -150,6 +171,7 @@ export async function classifyDocument(buf: Buffer, mime: string, filename: stri
       if (!locked) console.warn('[classifier] falha ao ler PDF:', (e as Error).message);
     }
     fromText = classifyText(raw);
+    if (fromText.kind === 'boleto' && !fromText.pixCode) return withImageCodes(fromText, buf, mime);
     if (fromText.kind !== 'unknown') return fromText;
   }
   // imagem, PDF escaneado ou com letras que não viram texto (guias de DARF/FGTS): tenta ler a imagem

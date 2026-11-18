@@ -305,7 +305,7 @@ function SetupDialog({ employee, onClose, onSaved }: { employee: VacEmployee; on
 }
 
 type ReadRow = VacationReportRow & { employeeId: string | null; matchedBy: 'code' | 'name' | null; currentAdmission: string | null };
-/** Relatório "Períodos Aquisitivos Abertos de Férias" do contador: preenche admissão, períodos em aberto e dias já gozados. */
+/** Relatório de férias do contador ("Períodos Aquisitivos Abertos" ou "Férias Vencidas e a Vencer"): preenche admissão, períodos em aberto e dias já gozados. */
 function ReportDialog({ docId, docs, onClose, onApplied }: { docId: string | null; docs: AccountingDoc[]; onClose: () => void; onApplied: () => void }) {
   const input = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
@@ -345,7 +345,7 @@ function ReportDialog({ docId, docs, onClose, onApplied }: { docId: string | nul
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   return (
-    <Dialog open onClose={onClose} size="lg" title="Relatório de férias do contador" description="Envie o PDF “Períodos Aquisitivos Abertos de Férias”. Ele traz a admissão, os períodos em aberto, o saldo e o limite de cada funcionário."
+    <Dialog open onClose={onClose} size="lg" title="Relatório de férias do contador" description="Envie o PDF “Períodos Aquisitivos Abertos de Férias” ou “Férias Vencidas e a Vencer”. Ele traz a admissão, os períodos em aberto, o saldo e o limite de cada funcionário."
       footer={<><Button variant="ghost" onClick={onClose}>Fechar</Button>{data && <Button variant="primary" loading={busy} disabled={!ready.length || dup} onClick={apply}>Aplicar a {plural(new Set(ready.map((r) => link[r.code])).size, 'funcionário', 'funcionários')}</Button>}</>}>
       <input ref={input} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void read(f); }} />
       {!data ? (

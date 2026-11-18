@@ -78,10 +78,22 @@ export function ocrDocument(buf: Buffer, mime: string): Promise<Seen | null> {
   return job;
 }
 
-async function read(buf: Buffer, mime: string): Promise<Seen | null> {
+/**
+ * Só os códigos (sem OCR): para PDFs que têm texto mas trazem o QR Code do PIX como imagem (DAS, DARF,
+ * guias estaduais). Mesma fila da leitura completa. Null se faltar ferramenta ou não houver código.
+ */
+export function scanCodes(buf: Buffer, mime: string): Promise<Pick<Seen, 'barcode' | 'pix'> | null> {
+  if (waiting >= MAX_QUEUE) return Promise.resolve(null);
+  waiting++;
+  const job = queue.then(() => read(buf, mime, true)).catch(() => null).finally(() => { waiting--; });
+  queue = job;
+  return job;
+}
+
+async function read(buf: Buffer, mime: string, codesOnly = false): Promise<Seen | null> {
   const t = await ocrTools();
   const isPdf = mime === 'application/pdf';
-  if (!t.ocr || (isPdf && !t.pdf) || buf.length > MAX_BYTES) return null;
+  if ((codesOnly ? !t.zbar : !t.ocr) || (isPdf && !t.pdf) || buf.length > MAX_BYTES) return null;
   if (!isPdf && !/^image\/(png|jpeg|webp)$/.test(mime)) return null;
   if (!isPdf && (imagePixels(buf) ?? 0) > MAX_PIXELS) return null;
   const dir = await mkdtemp(path.join(tmpdir(), 'np-ocr-'));
@@ -102,6 +114,7 @@ async function read(buf: Buffer, mime: string): Promise<Seen | null> {
         barcode ??= codes.map((c) => /^I2\/5:(\d{44})$/.exec(c.trim())?.[1]).find(Boolean) ?? null;
         pix ??= codes.map((c) => /^QR-Code:(000201.{20,600})$/.exec(c.trim())?.[1]).find(Boolean) ?? null;
       }
+      if (codesOnly) { if (pix) break; continue; }
       text += `${(await run('tesseract', [img, 'stdout', '-l', 'por', '--psm', '6'])) ?? ''}\n`;
     }
     return text.trim() || barcode || pix ? { text, barcode, pix } : null;

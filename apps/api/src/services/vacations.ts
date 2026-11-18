@@ -165,7 +165,7 @@ export async function readVacationReport(orgId: string, buf: Buffer, fileName: s
   if (buf.subarray(0, 5).toString('latin1') !== '%PDF-') throw badRequest('O arquivo não é um PDF.');
   let report;
   try { report = parseVacationReport(await pdfToCells(buf)); } catch { throw badRequest('Não consegui ler este PDF. Peça o relatório de novo ao contador.'); }
-  if (!report.rows.length) throw badRequest('Não achei períodos de férias neste PDF. Use o relatório "Períodos Aquisitivos Abertos de Férias" do contador.', 'vacation_report_unknown');
+  if (!report.rows.length) throw badRequest('Não achei períodos de férias neste PDF. Use o relatório "Períodos Aquisitivos Abertos de Férias" ou "Férias Vencidas e a Vencer" do contador.', 'vacation_report_unknown');
   const employees = await db.select({ id: schema.employees.id, name: schema.employees.name, payslipCode: schema.employees.payslipCode, admissionDate: schema.employees.admissionDate })
     .from(schema.employees).where(and(eq(schema.employees.orgId, orgId), eq(schema.employees.active, true)));
   const rows = report.rows.map((r) => {
