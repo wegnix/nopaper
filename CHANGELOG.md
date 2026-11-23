@@ -8,6 +8,14 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.36.0] - 2026-11-23
+
+### Corrigido
+- **Telas sem permissão ficam bloqueadas também pelo endereço**: abrir uma tela que não está no menu da pessoa (por link, favorito ou pelo menu de outro sistema em que o NoPaper aparece integrado) mostra "Sem acesso a esta tela" com o botão para o Início, em vez da tela vazia. Vale para Contas a pagar/receber, Cartões, Contas bancárias, Folha, Contador, Relatórios e Importar, com a mesma regra do menu. Os dados já eram recusados pelo servidor.
+
+### Novo
+- **Exibição integrada**: o NoPaper avisa a página de fora quais telas a pessoa pode abrir no espaço atual (mensagem `{ source: 'nopaper', type: 'nav', items: [...] }`, a cada login, troca de espaço ou mudança de permissão), para o outro sistema mostrar no menu dele só essas.
+
 ## [1.35.0] - 2026-11-23
 
 ### Novo

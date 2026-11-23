@@ -14,10 +14,10 @@ import { useSidebar } from '@/lib/sidebar';
 import { endSession, useIdleLogout } from '@/lib/idle';
 import { Logo } from './Logo';
 import { OrgAvatar } from '@/components/ui/org-avatar';
-import { NAV, NAV_ACCOUNTANT_INBOX, NAV_BOTTOM, navLabel, navVisible, type NavItem } from './nav';
+import { NAV, NAV_BOTTOM, navLabel, navVisible, screenAllowed, visibleNav, type NavItem } from './nav';
 import { useAccountantOnly, useAccountingInbox, useAccountingPending, useIsAccountant } from '@/features/accounting/data';
 import { CommandPalette } from './CommandPalette';
-import { EMBEDDED, notifyHost } from '@/lib/embed';
+import { EMBEDDED, notifyHost, notifyHostNav } from '@/lib/embed';
 import { NewOrgDialog } from './NewOrgDialog';
 import { HelpButton } from '@/features/help/Manuals';
 
@@ -31,8 +31,7 @@ function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNaviga
   const accountantOnly = useAccountantOnly();
   // quem é contador mas também consulta outras áreas: "Recebidos" logo depois de "Contador"
   const isAccountant = useIsAccountant();
-  const visible = items.filter((i) => navVisible(i, can, kind) && !(accountantOnly && i.to === '/contador'));
-  if (isAccountant && items === NAV) visible.splice(accountantOnly ? visible.length : visible.findIndex((i) => i.to === '/contador') + 1, 0, NAV_ACCOUNTANT_INBOX);
+  const visible = items === NAV ? visibleNav(can, kind, accountantOnly, isAccountant) : items.filter((i) => navVisible(i, can, kind));
   return (
     <>
       {visible.map((i) => (
@@ -57,6 +56,17 @@ function NavItems({ items, onNavigate, collapsed }: { items: NavItem[]; onNaviga
         </Tooltip>
       ))}
     </>
+  );
+}
+
+/** Tela sem permissão: aviso no lugar dela (a mesma regra do menu). */
+function NoAccess() {
+  return (
+    <div className="mx-auto mt-10 max-w-md rounded-2xl border border-line bg-surface p-6 text-center shadow-card">
+      <p className="font-display text-lg font-semibold">Sem acesso a esta tela</p>
+      <p className="mt-2 text-sm text-muted">Sua conta não tem permissão para abrir esta tela neste espaço. Se precisar dela, peça a um administrador do espaço.</p>
+      <NavLink to="/" className="mt-4 inline-flex h-10 items-center justify-center rounded-lg bg-accent px-4 text-sm font-semibold text-accent-ink hover:opacity-90">Ir para o Início</NavLink>
+    </div>
   );
 }
 
@@ -160,6 +170,14 @@ export function AppShell() {
   const nav = useNavigate();
   /** Contador: sem busca (não há o que buscar). */
   const accountantOnly = useAccountantOnly();
+  const isAccountant = useIsAccountant();
+  const can = useCan();
+  const kind = currentOrg?.kind;
+  // tela aberta pelo endereço (link, favorito, menu de outro sistema) sem a permissão dela: não mostra
+  const allowed = !currentOrg || screenAllowed(loc.pathname, can, kind, accountantOnly, isAccountant);
+  const page = allowed ? <Outlet /> : <NoAccess />;
+  // embutido: a página de fora recebe as telas liberadas, para o menu de lá mostrar só essas
+  const navItems = currentOrg ? visibleNav(can, kind, accountantOnly, isAccountant).map((i) => i.to).join('|') : '';
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -177,6 +195,7 @@ export function AppShell() {
   }, [accountantOnly, loc.pathname, nav]);
   // embutido em outro sistema: avisa em que tela está, para o menu de lá acompanhar
   // só o caminho: a busca digitada e os filtros (que iam junto em `search`) não saem do NoPaper
+  useEffect(() => notifyHostNav(navItems ? navItems.split('|') : []), [navItems]);
   useEffect(() => notifyHost(loc.pathname), [loc.pathname]);
   // servidor atualizado e este front ainda é o antigo (aba aberta ou PWA em cache): oferece recarregar
   const serverVersion = useSession((s) => s.serverVersion);
@@ -246,7 +265,7 @@ export function AppShell() {
                   </a>
                 )}
               </div>
-            ) : <Outlet />}
+            ) : page}
           </motion.div>
         </main>
         <CommandPalette open={palette} onClose={() => setPalette(false)} />
@@ -314,7 +333,7 @@ export function AppShell() {
         <OrgStateBanner />
         <main className="safe-bottom flex-1 overflow-y-auto overscroll-contain">
           <motion.div key={loc.pathname.split('/')[1]} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: 'easeOut' }} className="w-full px-3 py-4 sm:px-4 md:px-5 md:py-5 lg:px-6 lg:py-6">
-            <Outlet />
+            {page}
           </motion.div>
         </main>
       </div>

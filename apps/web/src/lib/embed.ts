@@ -29,3 +29,13 @@ export function notifyHost(path: string) {
   if (!EMBEDDED) return;
   try { if (window.parent !== window) window.parent.postMessage({ source: 'nopaper', type: 'route', path }, '*'); } catch { /* sem página de fora */ }
 }
+
+/**
+ * Avisa a página de fora quais telas a pessoa pode abrir no espaço atual (os mesmos itens do menu
+ * do NoPaper), para ela esconder do próprio menu o que não está liberado. Vai só a lista de caminhos.
+ * Esconder lá é conforto: quem decide é o NoPaper (tela bloqueada e servidor recusando os dados).
+ */
+export function notifyHostNav(items: string[]) {
+  if (!EMBEDDED) return;
+  try { if (window.parent !== window) window.parent.postMessage({ source: 'nopaper', type: 'nav', items }, '*'); } catch { /* sem página de fora */ }
+}
