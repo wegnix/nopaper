@@ -2,7 +2,7 @@ import { cloneElement, forwardRef, isValidElement, useEffect, useId, useLayoutEf
 import { createPortal } from 'react-dom';
 import { PixelSpinner } from '@/components/brand/Brand';
 import { Checkbox as RCheckbox, Switch as RSwitch } from 'radix-ui';
-import { Check, Minus } from 'lucide-react';
+import { Check, Eye, EyeOff, Minus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'ok' | 'outline';
@@ -61,8 +61,22 @@ export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTM
 
 const fieldBase = 'w-full rounded-lg border border-line bg-surface-2 px-3 text-sm text-ink placeholder:text-faint transition-colors hover:border-line-strong focus:border-accent focus:outline-none focus:ring-3 focus:ring-accent/20 disabled:opacity-60';
 
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...rest }, ref) {
-  return <input ref={ref} className={cn(fieldBase, 'h-10', className)} {...rest} />;
+/** Campo de texto. Com `type="password"` ganha sozinho o olho de mostrar/ocultar (vale para toda senha do sistema). */
+export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, type, ...rest }, ref) {
+  const [shown, setShown] = useState(false);
+  if (type !== 'password') return <input ref={ref} type={type} className={cn(fieldBase, 'h-10', className)} {...rest} />;
+  // as classes de quem usa (largura, altura) valem para a moldura e para o campo; o campo ocupa a moldura inteira
+  return (
+    <span className={cn('relative block w-full min-w-0', className)}>
+      <input ref={ref} type={shown ? 'text' : 'password'} {...(shown ? { autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false } : {})}
+        className={cn(fieldBase, 'h-10', className, 'w-full max-w-none m-0 pr-11 [&::-ms-reveal]:hidden [&::-ms-clear]:hidden')} {...rest} />
+      <button type="button" aria-label={shown ? 'Ocultar senha' : 'Mostrar senha'} title={shown ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={shown}
+        disabled={rest.disabled} onClick={(e) => { e.preventDefault(); setShown((v) => !v); }}
+        className="absolute inset-y-0 right-0 grid w-10 place-items-center rounded-r-lg text-faint transition-colors hover:text-ink focus-visible:text-accent focus-visible:outline-none pointer-coarse:w-11 disabled:opacity-60">
+        {shown ? <EyeOff className="size-[18px]" /> : <Eye className="size-[18px]" />}
+      </button>
+    </span>
+  );
 });
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea({ className, ...rest }, ref) {
   return <textarea ref={ref} className={cn(fieldBase, 'py-2 min-h-[72px] resize-y', className)} {...rest} />;

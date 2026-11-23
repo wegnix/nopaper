@@ -4,6 +4,7 @@ export * from './dates.js';
 export * from './money.js';
 export * from './boleto.js';
 export * from './pix.js';
+export * from './receipt.js';
 export * from './schemas.js';
 export * from './cards.js';
 export * from './import.js';

@@ -8,6 +8,12 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.35.0] - 2026-11-23
+
+### Novo
+- **Olho para ver a senha**: todo campo de senha do NoPaper (entrar, criar/trocar a senha, senha provisória de contas e membros, senha de arquivo na fatura do cartão, confirmação para remover espaço, SMTP, Telegram e SFTP do backup) tem um botão para mostrar e ocultar o que foi digitado.
+- **Recibo de honorários do contador**: o recibo de mensalidade que o escritório de contabilidade envia (sem código de barras, com "Vencimento", "Subtotal/Total" e a chave PIX no cabeçalho) agora é lido. Na área do contador ele já aparece com valor e vencimento, e o "Lançar conta" abre com valor, vencimento, chave PIX e forma de pagamento PIX preenchidos. Vale também ao anexar o recibo direto numa conta nova.
+
 ## [1.34.1] - 2026-11-18
 
 ### Corrigido

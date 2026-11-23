@@ -2,8 +2,8 @@
  * Classificador de documentos (porta do sistema anterior + extras):
  * boleto / nota fiscal / comprovante, com extração de linha digitável, valor, vencimento e PIX copia-e-cola.
  */
-import { findBoletoInText, findPixInText, parseBoleto, parsePix, parseMoneyInput, type AttachmentSlot } from '@nopaper/shared';
-import { pdfToText } from './pdf.js';
+import { findBoletoInText, findPixInText, parseBoleto, parseChargeReceipt, parsePix, parseMoneyInput, type AttachmentSlot } from '@nopaper/shared';
+import { pdfToRows, pdfToText } from './pdf.js';
 import { ocrDocument, scanCodes } from './ocr.js';
 
 export type Kind = AttachmentSlot | 'unknown';
@@ -161,6 +161,19 @@ async function withImageCodes(c: Classification, buf: Buffer, mime: string): Pro
   };
 }
 
+/**
+ * Recibo de cobrança sem código de barras (honorários do escritório de contabilidade): é o documento
+ * a pagar, com valor, vencimento e a chave PIX de quem cobra. `text` = linhas na ordem da página.
+ */
+function fromChargeReceipt(text: string, textLength: number): Classification | null {
+  const r = parseChargeReceipt(text);
+  if (!r) return null;
+  return {
+    ...BASE, textLength, kind: 'boleto', confidence: 'medium', reasons: ['recibo de cobrança (honorários/mensalidade)'],
+    amount: r.amount, dueDate: r.dueDate, pixKey: r.pixKey, beneficiary: r.issuer,
+  };
+}
+
 export async function classifyDocument(buf: Buffer, mime: string, filename: string): Promise<Classification> {
   let fromText: Classification = BASE;
   let locked = false; // PDF que só abre com senha (ex.: fatura da Copel): não dá para ler o conteúdo
@@ -173,6 +186,13 @@ export async function classifyDocument(buf: Buffer, mime: string, filename: stri
     fromText = classifyText(raw);
     if (fromText.kind === 'boleto' && !fromText.pixCode) return withImageCodes(fromText, buf, mime);
     if (fromText.kind !== 'unknown') return fromText;
+    // o texto corrido embaralha as colunas desse tipo de recibo: relê pela posição na página
+    if (fromText.textLength >= 20) {
+      try {
+        const receipt = fromChargeReceipt((await pdfToRows(buf, 2)).map((r) => r.join(' ')).join('\n'), fromText.textLength);
+        if (receipt) return receipt;
+      } catch { /* segue para a leitura da imagem */ }
+    }
   }
   // imagem, PDF escaneado ou com letras que não viram texto (guias de DARF/FGTS): tenta ler a imagem
   const seen = await ocrDocument(buf, mime);
@@ -195,6 +215,8 @@ export async function classifyDocument(buf: Buffer, mime: string, filename: stri
       };
     }
     if (c.kind !== 'unknown') return { ...c, reasons: [...c.reasons, 'lido por OCR'] };
+    const receipt = fromChargeReceipt(seen.text, seen.text.length);
+    if (receipt) return { ...receipt, reasons: [...receipt.reasons, 'lido por OCR'] };
   }
   const reasons = locked ? ['PDF protegido por senha'] : mime === 'application/pdf' && fromText.textLength < 20 ? ['PDF sem texto (escaneado?)'] : [];
   const f = byFilename(filename);

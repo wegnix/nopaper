@@ -67,10 +67,10 @@ async function detect(kind: AccountingKind, buf: Buffer, mime: string, filename:
     }
     const c = await classifyDocument(buf, mime, filename);
     // só vale o que veio de um boleto/guia reconhecido com segurança (números soltos de outro PDF enganam)
-    if (c.kind !== 'boleto' || c.confidence === 'low' || (!c.amount && !c.dueDate && !c.barcode && !c.pixCode)) return null;
+    if (c.kind !== 'boleto' || c.confidence === 'low' || (!c.amount && !c.dueDate && !c.barcode && !c.pixCode && !c.pixKey)) return null;
     // linha digitável que não fecha nos dígitos verificadores é coincidência de números no texto
     if (c.barcode && !parseBoleto(c.barcode)?.valid) return null;
-    return { amount: c.amount, dueDate: c.dueDate, barcode: c.barcode, pix: !!c.pixCode };
+    return { amount: c.amount, dueDate: c.dueDate, barcode: c.barcode, pix: !!(c.pixCode || c.pixKey) };
   } catch { return null; }
 }
 

@@ -143,7 +143,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
       amount: !isEdit && !p.amount && c.amount ? c.amount : p.amount,
       dueDate: !isEdit && c.dueDate ? c.dueDate : p.dueDate,
       description: !isEdit && !p.description && c.beneficiary ? c.beneficiary.slice(0, 120) : p.description,
-      paymentMethod: p.paymentMethod || (c.kind === 'boleto' ? (c.barcode ? 'Boleto' : c.pixCode ? 'PIX' : '') : ''),
+      paymentMethod: p.paymentMethod || (c.kind === 'boleto' ? (c.barcode ? 'Boleto' : c.pixCode || c.pixKey ? 'PIX' : '') : ''),
     }));
   };
 
