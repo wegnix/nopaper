@@ -32,11 +32,11 @@ const sentence = (v: string | null) => (v ? v.charAt(0).toUpperCase() + v.slice(
  * no mês. Só grava em "Lançar". Quem não está no cadastro pode entrar como "só holerite" (tem o
  * documento, mas não recebe pela empresa).
  */
-export function PayslipsDialog({ open, onClose, periods, currentRef, employees, rubrics, costs, payslips, payMonth, canManage, onDone, docId }: {
+export function PayslipsDialog({ open, onClose, periods, currentRef, employees, rubrics, costs, payslips, canManage, onDone, docId }: {
   /** Documento da área do contador para ler no lugar de escolher um arquivo; ao lançar, ele fica como "lançado". */
   docId?: string | null;
   open: boolean; onClose: () => void; periods: PeriodSummary[]; currentRef: string; employees: Employee[]; rubrics: Rubric[];
-  costs: PayrollCosts; payslips: PayrollPayslipsSettings; payMonth: 'same' | 'next'; canManage: boolean; onDone: (ref: string) => void;
+  costs: PayrollCosts; payslips: PayrollPayslipsSettings; canManage: boolean; onDone: (ref: string) => void;
 }) {
   const qc = useQueryClient();
   const [ref, setRef] = useState(currentRef);
@@ -71,7 +71,8 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
    * é contada pelo mês do pagamento (Configurar → pagamento "no próprio mês"), é a do mês seguinte;
    * se é contada pela competência (pagamento "no mês seguinte"), é a do mesmo mês.
    */
-  const folhaOf = (competence: string) => (payMonth === 'same' ? addMonthsRef(competence, 1) : competence);
+  /** O holerite da competência C entra na folha C+1 (a folha leva o nome do mês do pagamento). */
+  const folhaOf = (competence: string) => addMonthsRef(competence, 1);
   const rmap = useMemo(() => new Map(rubrics.map((r) => [r.id, r])), [rubrics]);
   const empById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
   const extraOf = (kind: 'earning' | 'deduction') => rubrics.filter((r) => r.section === 'extra' && r.kind === kind && r.active);
@@ -216,7 +217,7 @@ export function PayslipsDialog({ open, onClose, periods, currentRef, employees, 
       {!file ? (
         <div className="flex flex-col gap-4">
           {/* o que o contador já mandou pelo NoPaper: usa direto, sem baixar e subir de novo */}
-          <AccountantPayslipDocs enabled={open && !docId} folhaRef={currentRef} payMonth={payMonth} busy={reading ? doc ?? 'x' : null} action="Usar este" onPick={(d) => pick(null, d.id)} />
+          <AccountantPayslipDocs enabled={open && !docId} folhaRef={currentRef} busy={reading ? doc ?? 'x' : null} action="Usar este" onPick={(d) => pick(null, d.id)} />
           <button type="button" onClick={() => fileRef.current?.click()} disabled={reading}
             className="flex w-full flex-col items-center gap-3 rounded-xl border-2 border-dashed border-line px-6 py-10 text-center transition hover:border-accent hover:bg-accent-soft/30">
             {reading ? <Spinner className="size-6" /> : <span className="grid size-12 place-items-center rounded-2xl bg-accent-soft text-accent"><Upload className="size-5" /></span>}

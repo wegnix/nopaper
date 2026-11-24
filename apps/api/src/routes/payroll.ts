@@ -458,7 +458,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(req.params.ref)) throw badRequest('Mês inválido');
     const settings = await getPayrollSettings(req.org!.id);
     const [p] = await db.select().from(schema.payrollPeriods).where(and(eq(schema.payrollPeriods.orgId, req.org!.id), eq(schema.payrollPeriods.ref, req.params.ref)));
-    if (!p) return { period: null, suggestedPayDate: defaultPayDate(req.params.ref, settings.payDay, settings.payMonth), entries: [] };
+    if (!p) return { period: null, suggestedPayDate: defaultPayDate(req.params.ref, settings.payDay), entries: [] };
     const entries = await db.select().from(schema.payrollEntries).where(eq(schema.payrollEntries.periodId, p.id));
     const lines = entries.length ? await db.select().from(schema.payrollEntryLines).where(inArray(schema.payrollEntryLines.entryId, entries.map((e) => e.id))) : [];
     const billIds = entries.map((e) => e.billId).filter((x): x is string => !!x);
@@ -754,7 +754,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
       let entries = 0;
       for (const m of months) {
         const [p] = await tx.insert(schema.payrollPeriods).values({
-          orgId, ref: m.ref, payDate: m.payDate ?? defaultPayDate(m.ref, settings.payDay, settings.payMonth), billsEnabled: false, importBatchId: batchId, createdBy: req.user!.id,
+          orgId, ref: m.ref, payDate: m.payDate ?? defaultPayDate(m.ref, settings.payDay), billsEnabled: false, importBatchId: batchId, createdBy: req.user!.id,
         }).returning();
         for (const e of m.entries) {
           const emp = byKey.get(personKey(e.name))!;

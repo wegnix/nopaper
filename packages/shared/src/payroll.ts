@@ -165,13 +165,11 @@ export function payrollTotals(
 export const refLabelPT = (ref: string) => `${MONTHS_PT_SHORT[Number(ref.slice(5, 7)) - 1]}/${ref.slice(0, 4)}`;
 
 /**
- * Data de pagamento padrão de uma competência. `payDay` 0 = 5º dia útil (segunda a sábado, sem
- * considerar feriados — a data pode ser ajustada no mês); 1–31 = dia fixo. `payMonth` = mês da
- * competência ('same') ou o seguinte ('next').
+ * Data de pagamento padrão da folha `ref` (o nome da folha é o mês do pagamento). `payDay` 0 = 5º dia
+ * útil (segunda a sábado, sem considerar feriados — a data pode ser ajustada no mês); 1–31 = dia fixo.
  */
-export function defaultPayDate(ref: string, payDay: number, payMonth: 'same' | 'next'): string {
-  let [y, m] = ref.split('-').map(Number);
-  if (payMonth === 'next') { m += 1; if (m > 12) { m = 1; y += 1; } }
+export function defaultPayDate(ref: string, payDay: number): string {
+  const [y, m] = ref.split('-').map(Number);
   if (payDay >= 1) return toISODate(y, m, Math.min(payDay, daysInMonth(y, m)));
   let n = 0;
   for (let d = 1; d <= daysInMonth(y, m); d++) {
@@ -296,7 +294,11 @@ export const payrollSettingsSchema = z.object({
   categoryId: z.string().uuid('Escolha a categoria das contas de salário').nullish(),
   folderId: z.string().uuid().nullish(),
   payDay: z.number().int().min(0).max(31).default(0),
-  payMonth: z.enum(['same', 'next']).default('next'),
+  /**
+   * Fixo desde a 1.36.3: a folha leva o nome do mês do PAGAMENTO (holerites e vendas do mês anterior).
+   * Continua no formato por compatibilidade (API pública); qualquer valor gravado vira 'same'.
+   */
+  payMonth: z.enum(['same', 'next']).optional().transform(() => 'same' as const),
   paymentMethod: optText(64),
   costs: payrollCostsSchema.default(DEFAULT_PAYROLL_COSTS),
   print: payrollPrintSchema.default({ hidden: [], order: [] }),

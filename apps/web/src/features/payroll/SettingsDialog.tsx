@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowDown, ArrowUp, CalendarCheck, Minus, Pin, Plus, Trash2 } from 'lucide-react';
-import { FGTS_PCT, MONTHS_PT, PAYROLL_REGIMES, PAYROLL_REGIME_LABEL, PAYROLL_SECTIONS, PAYROLL_SECTION_LABEL, defaultPayDate, employerInssPct, type PayrollCosts, formatDateBR, todayISO, type PayrollKind, type PayrollSection, type PayrollSettings } from '@nopaper/shared';
+import { FGTS_PCT, MONTHS_PT, PAYROLL_REGIMES, PAYROLL_REGIME_LABEL, PAYROLL_SECTIONS, PAYROLL_SECTION_LABEL, addMonthsRef, defaultPayDate, employerInssPct, type PayrollCosts, formatDateBR, todayISO, type PayrollKind, type PayrollSection, type PayrollSettings } from '@nopaper/shared';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { DayPicker } from '@/components/ui/day-picker';
 import { Button, Field, IconButton, Input, Segmented, Select, Switch } from '@/components/ui/base';
@@ -92,20 +92,14 @@ export function SettingsDialog({ open, onClose, settings, rubrics, employees, in
                 <span className="text-[13px] font-medium text-muted">Dia do pagamento</span>
                 <DayPicker aria-label="Dia do pagamento" value={f.payDay} onChange={(payDay) => setF({ ...f, payDay })} special={{ value: 0, label: '5º dia útil' }} />
               </div>
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <span className="text-[13px] font-medium text-muted">A folha leva o nome do mês…</span>
-                <Segmented className="w-full" value={f.payMonth} onChange={(payMonth) => setF({ ...f, payMonth })}
-                  options={[{ value: 'same', label: 'do pagamento' }, { value: 'next', label: 'trabalhado' }]} />
-                <span className="text-xs text-faint">{f.payMonth === 'same'
-                  ? 'Folha de dezembro = paga em dezembro (trabalho, holerites e vendas de novembro).'
-                  : 'Folha de novembro = trabalho de novembro, paga em dezembro (holerites e vendas de novembro).'}
-                  {' '}Ao abrir a Folha, aparece a que se paga no mês atual.</span>
-              </div>
+              <p className="self-end text-xs text-faint sm:pb-2.5">
+                O mês da folha é o mês em que o salário é pago: a folha de dezembro é paga em dezembro, com os holerites e as vendas de novembro.
+              </p>
             </div>
             <div className="flex items-start gap-3 rounded-lg bg-accent-soft/50 px-3.5 py-3">
               <CalendarCheck className="mt-0.5 size-4 shrink-0 text-accent" />
               <p className="text-sm">
-                A folha de <b>{MONTHS_PT[Number(nextRef.slice(5)) - 1].toLowerCase()}/{nextRef.slice(0, 4)}</b> vence em <b className="tnum">{formatDateBR(defaultPayDate(nextRef, f.payDay, f.payMonth))}</b>.
+                A folha de <b>{MONTHS_PT[Number(nextRef.slice(5)) - 1].toLowerCase()}/{nextRef.slice(0, 4)}</b> vence em <b className="tnum">{formatDateBR(defaultPayDate(nextRef, f.payDay))}</b> (holerites de {MONTHS_PT[Number(addMonthsRef(nextRef, -1).slice(5)) - 1].toLowerCase()}).
                 {f.payDay === 0 && <span className="mt-0.5 block text-xs text-muted">O 5º dia útil conta de segunda a sábado e não desconta feriados.</span>}
               </p>
             </div>

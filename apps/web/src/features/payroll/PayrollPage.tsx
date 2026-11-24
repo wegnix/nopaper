@@ -38,7 +38,7 @@ export function PayrollPage() {
   const [sp, setSp] = useSearchParams();
   const tab = (['mes', 'funcionarios', 'ferias', 'historico'].includes(sp.get('aba') ?? '') ? sp.get('aba') : 'mes') as Tab;
   const meta = usePayrollMeta();
-  const ref = /^\d{4}-\d{2}$/.test(sp.get('mes') ?? '') ? sp.get('mes')! : currentPayrollRef(meta.data?.settings.payMonth);
+  const ref = /^\d{4}-\d{2}$/.test(sp.get('mes') ?? '') ? sp.get('mes')! : todayISO().slice(0, 7);
   const set = (patch: Record<string, string | null>) => { const n = new URLSearchParams(sp); for (const [k, v] of Object.entries(patch)) v === null ? n.delete(k) : n.set(k, v); setSp(n, { replace: true }); };
   const periods = usePeriods();
   const [settingsOpen, setSettingsOpen] = useState<SettingsTab | null>(null);
@@ -97,24 +97,15 @@ export function PayrollPage() {
 
       <SettingsDialog open={!!settingsOpen} initialTab={settingsOpen ?? 'bills'} onClose={() => setSettingsOpen(null)} settings={settings} rubrics={rubrics} employees={employees} />
       <CommissionsDialog open={salesOpen} onClose={() => setSalesOpen(false)} periods={periods.data ?? []} currentRef={ref} employees={employees} rubrics={rubrics}
-        commissions={settings.commissions} payMonth={settings.payMonth} canManage={canManage} onConfigure={() => setSettingsOpen('commissions')} onDone={(r) => set({ aba: null, mes: r })} />
+        commissions={settings.commissions} canManage={canManage} onConfigure={() => setSettingsOpen('commissions')} onDone={(r) => set({ aba: null, mes: r })} />
       <PayslipsDialog open={slipsOpen} docId={slipsDoc} onClose={() => setSlipsOpen(false)} periods={periods.data ?? []} currentRef={ref} employees={employees} rubrics={rubrics}
-        costs={settings.costs} payslips={settings.payslips} payMonth={settings.payMonth} canManage={canManage} onDone={(r) => set({ aba: null, mes: r })} />
+        costs={settings.costs} payslips={settings.payslips} canManage={canManage} onDone={(r) => set({ aba: null, mes: r })} />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} rubrics={rubrics} existingRefs={(periods.data ?? []).map((p) => p.ref)} onDone={(r) => set({ aba: 'historico', mes: r })} />
     </div>
   );
 }
 
 // ------------------------------------------------------------------ mês
-/**
- * Folha "atual" = a que se paga neste mês. No "trabalhado" é a do mês anterior (em dezembro chegam os
- * holerites de novembro, pagos até o 5º dia útil de dezembro); no "do pagamento", a do próprio mês.
- */
-function currentPayrollRef(payMonth: 'same' | 'next' | undefined) {
-  const thisMonth = todayISO().slice(0, 7);
-  return payMonth === 'next' ? addMonthsRef(thisMonth, -1) : thisMonth;
-}
-
 function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure }: { refStr: string; onRef: (r: string) => void; openEntryId: string | null; onEntryOpened: () => void; onConfigure: () => void }) {
   const can = useCan();
   const qc = useQueryClient();
@@ -244,7 +235,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
           <span className="min-w-[110px] text-center font-display font-semibold">{refLabelPT(ref)}</span>
           <button className="grid size-10 place-items-center text-muted hover:text-ink" onClick={() => onRef(addMonthsRef(ref, 1))} aria-label="Próximo mês"><ChevronRight className="size-4" /></button>
         </div>
-        {ref !== currentPayrollRef(meta.settings.payMonth) && <button className="text-xs text-accent hover:underline" onClick={() => onRef(currentPayrollRef(meta.settings.payMonth))}>ir para o mês atual</button>}
+        {ref !== today.slice(0, 7) && <button className="text-xs text-accent hover:underline" onClick={() => onRef(today.slice(0, 7))}>ir para o mês atual</button>}
         {period && (
           <span className="flex items-center gap-1.5 text-sm text-muted"><CalendarDays className="size-4 text-faint" />
             {period.billsEnabled ? <>Pagamento em <b className="font-medium text-ink">{formatDateBR(period.payDate)}</b></> : 'Importado do histórico'}
@@ -409,9 +400,9 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
       <OpenMonthDialog open={openDlg} refStr={ref} suggested={m?.suggestedPayDate ?? null} onClose={() => setOpenDlg(false)} />
       {period && rows.length > 0 && <PayrollPrint period={period} rows={rows} rubrics={meta.rubrics} print={printCfg} />}
       {period && rows.length > 0 && <PrintDialog open={printOpen} refStr={ref} rows={rows} rubrics={meta.rubrics} print={printCfg} onClose={() => setPrintOpen(false)} onPrint={doPrint} />}
-      {period && <SignaturesDialog open={signOpen} onClose={() => setSignOpen(false)} periodId={period.id} refStr={ref} payMonth={meta.settings.payMonth} />}
+      {period && <SignaturesDialog open={signOpen} onClose={() => setSignOpen(false)} periodId={period.id} refStr={ref} />}
       {period && commImport && <CommissionsDialog open={commOpen} onClose={() => setCommOpen(false)} periods={periodsList} currentRef={ref} employees={meta.employees} rubrics={meta.rubrics}
-        commissions={meta.settings.commissions} payMonth={meta.settings.payMonth} canManage={can('payroll.manage')} canEdit={canEdit} initial={{ ...commImport, ref }}
+        commissions={meta.settings.commissions} canManage={can('payroll.manage')} canEdit={canEdit} initial={{ ...commImport, ref }}
         onConfigure={onConfigure} onDone={() => undefined} />}
       {period && <EditPeriodDialog open={editPeriod} period={period} onClose={() => setEditPeriod(false)} />}
       {pay && <PayDialog bill={pay.bill} proofOnly={pay.proofOnly} onClose={() => setPay(null)} onView={view} />}

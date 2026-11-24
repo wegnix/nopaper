@@ -58,9 +58,9 @@ test('holerite detalhado confere com o valor líquido do papel (salário + difer
 });
 
 test('5º dia útil conta sábado e pula domingo', () => {
-  assert.equal(defaultPayDate('2026-11', 0, 'next'), '2026-12-05'); // ter 1 … sáb 5
-  assert.equal(defaultPayDate('2026-01', 0, 'next'), '2026-02-06'); // dom 1 fica de fora
-  assert.equal(defaultPayDate('2026-02', 31, 'same'), '2026-02-28');
+  assert.equal(defaultPayDate('2026-12', 0), '2026-12-05'); // ter 1 … sáb 5
+  assert.equal(defaultPayDate('2026-02', 0), '2026-02-06'); // dom 1 fica de fora
+  assert.equal(defaultPayDate('2026-02', 31), '2026-02-28');
 });
 
 const rows = [

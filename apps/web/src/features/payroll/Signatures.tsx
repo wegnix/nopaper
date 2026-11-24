@@ -33,7 +33,7 @@ export function useSignatureTerms(enabled: boolean) {
  * Assinatura eletrônica dos holerites do mês: envia o PDF do contador, cada funcionário recebe um
  * link pessoal (abre com o CPF) e assina no celular; a via assinada fica aqui e pode ir ao contador.
  */
-export function SignaturesDialog({ open, onClose, periodId, refStr, payMonth }: { open: boolean; onClose: () => void; periodId: string; refStr: string; payMonth: 'same' | 'next' }) {
+export function SignaturesDialog({ open, onClose, periodId, refStr }: { open: boolean; onClose: () => void; periodId: string; refStr: string }) {
   const can = useCan();
   const qc = useQueryClient();
   const orgId = useSession((s) => s.orgId);
@@ -184,7 +184,7 @@ export function SignaturesDialog({ open, onClose, periodId, refStr, payMonth }: 
             <Button variant="primary" className="max-sm:w-full" loading={busy && !fromDoc} disabled={busy} icon={<FileUp className="size-4" />} onClick={() => input.current?.click()}>Escolher o PDF</Button>
           </div>
         )}
-        {canEdit && !wrong && <AccountantPayslipDocs kinds={['payslip', 'thirteenth', 'vacation_slip']} enabled={open} folhaRef={refStr} payMonth={payMonth} busy={busy ? fromDoc ?? 'x' : null} action="Enviar para assinatura" onPick={(d) => upload(undefined, d)} />}
+        {canEdit && !wrong && <AccountantPayslipDocs kinds={['payslip', 'thirteenth', 'vacation_slip']} enabled={open} folhaRef={refStr} busy={busy ? fromDoc ?? 'x' : null} action="Enviar para assinatura" onPick={(d) => upload(undefined, d)} />}
         {skipped.length > 0 && (
           <div className="rounded-xl border border-warn/40 bg-warn/10 p-3.5 text-sm">
             <p className="flex items-center gap-2 font-medium"><AlertTriangle className="size-4 text-warn" />Ficaram de fora</p>

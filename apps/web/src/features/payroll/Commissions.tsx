@@ -173,9 +173,8 @@ interface ApplyResult {
   missing: string[];
 }
 
-export function CommissionsDialog({ open, onClose, periods, currentRef, employees, rubrics, commissions, canManage, canEdit = true, onConfigure, onDone, initial , payMonth = 'next' }: {
+export function CommissionsDialog({ open, onClose, periods, currentRef, employees, rubrics, commissions, canManage, canEdit = true, onConfigure, onDone, initial }: {
   /** Como o espaço conta a folha: 'same' = pelo mês do pagamento (vendas de um mês entram na folha do seguinte). */
-  payMonth?: 'same' | 'next';
   open: boolean; onClose: () => void; periods: PeriodSummary[]; currentRef: string; employees: Employee[]; rubrics: Rubric[]; commissions: PayrollCommissions;
   canManage: boolean; canEdit?: boolean; onConfigure: () => void; onDone: (ref: string) => void;
   /** Rever uma importação já feita (sem enviar o PDF de novo). */
@@ -202,7 +201,8 @@ export function CommissionsDialog({ open, onClose, periods, currentRef, employee
   }, [open, initial?.id]);
   const hasRef = (r: string) => periods.some((p) => p.ref === r);
   /** Folha que paga as vendas de um mês: quem vende num mês recebe no seguinte (mesma regra dos holerites). */
-  const folhaOf = (salesRef: string) => (payMonth === 'same' ? addMonthsRef(salesRef, 1) : salesRef);
+  /** Vendas do mês V entram na folha V+1 (a folha leva o nome do mês do pagamento). */
+  const folhaOf = (salesRef: string) => addMonthsRef(salesRef, 1);
 
   const rules = commissions.rules.filter((r) => r.active);
   const rname = useMemo(() => new Map(rubrics.map((r) => [r.id, r.name])), [rubrics]);

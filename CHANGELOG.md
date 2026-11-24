@@ -8,6 +8,11 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.36.3] - 2026-11-24
+
+### Alterado
+- **Folha de pagamento sem a opção "A folha leva o nome do mês…"**: o mês da folha passa a ser sempre o mês em que o salário é pago. A folha de dezembro é paga em dezembro (até o 5º dia útil ou no dia configurado), com os holerites e as vendas de novembro que o contador envia no começo do mês. Quem usava "trabalhado": os meses já abertos não mudam; ao abrir o próximo mês, confira a data de pagamento sugerida para não ficar com duas folhas pagas no mesmo mês.
+
 ## [1.36.2] - 2026-11-24
 
 ### Corrigido
