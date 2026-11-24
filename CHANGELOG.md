@@ -8,6 +8,11 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.36.2] - 2026-11-24
+
+### Corrigido
+- **Folha de pagamento abre no mês certo**: com "A folha leva o nome do mês… trabalhado", a tela agora abre na folha que se paga no mês atual (em dezembro, a de novembro, com os holerites que o contador manda no começo do mês e pagamento até o 5º dia útil de dezembro), em vez da folha de dezembro, que só se paga em janeiro. O atalho "ir para o mês atual" segue a mesma regra. Com "do pagamento" nada muda.
+
 ## [1.36.1] - 2026-11-24
 
 ### Corrigido

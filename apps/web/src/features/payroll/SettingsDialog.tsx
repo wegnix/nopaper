@@ -97,8 +97,9 @@ export function SettingsDialog({ open, onClose, settings, rubrics, employees, in
                 <Segmented className="w-full" value={f.payMonth} onChange={(payMonth) => setF({ ...f, payMonth })}
                   options={[{ value: 'same', label: 'do pagamento' }, { value: 'next', label: 'trabalhado' }]} />
                 <span className="text-xs text-faint">{f.payMonth === 'same'
-                  ? 'Folha de novembro = paga em novembro (trabalho, holerites e vendas de outubro).'
-                  : 'Folha de outubro = trabalho de outubro, paga em novembro (holerites e vendas de outubro).'}</span>
+                  ? 'Folha de dezembro = paga em dezembro (trabalho, holerites e vendas de novembro).'
+                  : 'Folha de novembro = trabalho de novembro, paga em dezembro (holerites e vendas de novembro).'}
+                  {' '}Ao abrir a Folha, aparece a que se paga no mês atual.</span>
               </div>
             </div>
             <div className="flex items-start gap-3 rounded-lg bg-accent-soft/50 px-3.5 py-3">

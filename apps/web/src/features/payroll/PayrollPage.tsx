@@ -37,9 +37,9 @@ export function PayrollPage() {
   const can = useCan();
   const [sp, setSp] = useSearchParams();
   const tab = (['mes', 'funcionarios', 'ferias', 'historico'].includes(sp.get('aba') ?? '') ? sp.get('aba') : 'mes') as Tab;
-  const ref = /^\d{4}-\d{2}$/.test(sp.get('mes') ?? '') ? sp.get('mes')! : todayISO().slice(0, 7);
-  const set = (patch: Record<string, string | null>) => { const n = new URLSearchParams(sp); for (const [k, v] of Object.entries(patch)) v === null ? n.delete(k) : n.set(k, v); setSp(n, { replace: true }); };
   const meta = usePayrollMeta();
+  const ref = /^\d{4}-\d{2}$/.test(sp.get('mes') ?? '') ? sp.get('mes')! : currentPayrollRef(meta.data?.settings.payMonth);
+  const set = (patch: Record<string, string | null>) => { const n = new URLSearchParams(sp); for (const [k, v] of Object.entries(patch)) v === null ? n.delete(k) : n.set(k, v); setSp(n, { replace: true }); };
   const periods = usePeriods();
   const [settingsOpen, setSettingsOpen] = useState<SettingsTab | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -106,6 +106,15 @@ export function PayrollPage() {
 }
 
 // ------------------------------------------------------------------ mês
+/**
+ * Folha "atual" = a que se paga neste mês. No "trabalhado" é a do mês anterior (em dezembro chegam os
+ * holerites de novembro, pagos até o 5º dia útil de dezembro); no "do pagamento", a do próprio mês.
+ */
+function currentPayrollRef(payMonth: 'same' | 'next' | undefined) {
+  const thisMonth = todayISO().slice(0, 7);
+  return payMonth === 'next' ? addMonthsRef(thisMonth, -1) : thisMonth;
+}
+
 function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure }: { refStr: string; onRef: (r: string) => void; openEntryId: string | null; onEntryOpened: () => void; onConfigure: () => void }) {
   const can = useCan();
   const qc = useQueryClient();
@@ -235,7 +244,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
           <span className="min-w-[110px] text-center font-display font-semibold">{refLabelPT(ref)}</span>
           <button className="grid size-10 place-items-center text-muted hover:text-ink" onClick={() => onRef(addMonthsRef(ref, 1))} aria-label="Próximo mês"><ChevronRight className="size-4" /></button>
         </div>
-        {ref !== today.slice(0, 7) && <button className="text-xs text-accent hover:underline" onClick={() => onRef(today.slice(0, 7))}>ir para o mês atual</button>}
+        {ref !== currentPayrollRef(meta.settings.payMonth) && <button className="text-xs text-accent hover:underline" onClick={() => onRef(currentPayrollRef(meta.settings.payMonth))}>ir para o mês atual</button>}
         {period && (
           <span className="flex items-center gap-1.5 text-sm text-muted"><CalendarDays className="size-4 text-faint" />
             {period.billsEnabled ? <>Pagamento em <b className="font-medium text-ink">{formatDateBR(period.payDate)}</b></> : 'Importado do histórico'}
