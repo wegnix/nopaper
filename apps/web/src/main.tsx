@@ -70,7 +70,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Já entrou e está em /login: segue para a página pedida pelo link do e-mail (ou o Início). */
+/** Já entrou e está em /login: segue para a tela pedida antes do login (ou o Início). */
 function AfterLogin() {
   return <Navigate to={afterLoginPath(useLocation().state)} replace />;
 }

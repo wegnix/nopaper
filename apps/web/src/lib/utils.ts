@@ -35,10 +35,12 @@ export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 
 export const isTouch = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
 /**
- * Para onde ir depois de entrar: só os links do e-mail de alertas (`/pagar?codigo=…`) voltam para a
- * página pedida; qualquer outro caso cai no Início, como sempre foi.
+ * Para onde ir depois de entrar: a tela pedida antes do login (guardada pelo `RequireAuth`), inclusive
+ * os links do e-mail de alertas (`/pagar?codigo=…`) e as telas abertas pelo modo embutido. Só aceita
+ * caminho interno (começa com "/", mas não "//" nem "/\", que levariam a outro site); sem tela pedida → Início.
+ * A permissão da tela é conferida depois pelo `AppShell` (`screenAllowed` → `NoAccess`).
  */
 export function afterLoginPath(state: unknown): string {
   const from = (state as { from?: unknown } | null)?.from;
-  return typeof from === 'string' && /^\/(pagar|receber)\?[^#]*\bcodigo=[0-9a-f-]{36}\b/.test(from) ? from : '/';
+  return typeof from === 'string' && /^\/(?![\/\\])/.test(from) && !/^\/login(?:[/?#]|$)/.test(from) ? from : '/';
 }

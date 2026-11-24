@@ -8,6 +8,11 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.36.1] - 2026-11-24
+
+### Corrigido
+- **Depois do login, abre a tela que foi pedida**: quem abre um endereço do NoPaper sem estar logado (por exemplo Contas a pagar, Folha ou Contador, por favorito ou pelo menu de outro sistema em que o NoPaper aparece integrado) volta para essa tela depois de entrar, em vez de cair no Início. Entrar pela tela de login continua abrindo o Início.
+
 ## [1.36.0] - 2026-11-23
 
 ### Corrigido
