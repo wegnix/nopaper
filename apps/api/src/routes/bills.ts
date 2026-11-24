@@ -14,7 +14,7 @@ import { audit } from '../lib/audit.js';
 import {
   loadBill, assertCategoryUsable, assertFolder, createBills, listBills, summary, serialize, serializeMany,
   attachmentsFor, viewPerm, createPerm, orgToday, seriesRows, headIdOf, deleteBillsWithFiles,
-  planOccurrences, recurrenceDayFor, restrictedCategoryIds, type BillRow,
+  planOccurrences, recurrenceDayFor, restrictedCategoryIds, hiddenCategoryIds, type BillRow,
 } from '../services/bills.js';
 
 const typeLabel = (t: string) => (t === 'payable' ? 'conta a pagar' : 'conta a receber');
@@ -33,8 +33,8 @@ export default async function billRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireOrg);
 
   const isRestricted = async (orgId: string, categoryId: string) => (await restrictedCategoryIds(orgId)).includes(categoryId);
-  /** Categorias que este usuário não pode ver (vazio para quem vê restritas). */
-  const hiddenFor = async (req: FastifyRequest): Promise<string[]> => (req.org!.can('bills.view_restricted') ? [] : restrictedCategoryIds(req.org!.id));
+  /** Categorias que este usuário não pode ver (vazio para quem vê todas as restritas). */
+  const hiddenFor = (req: FastifyRequest): Promise<string[]> => hiddenCategoryIds(req);
   /**
    * Série com ocorrências em categoria restrita (acontece quando a categoria foi trocada só "daqui
    * para a frente"): quem não vê restritas pode mexer na ocorrência que enxerga, mas não em ações
@@ -191,7 +191,7 @@ export default async function billRoutes(app: FastifyInstance) {
     const body = parse(bulkPaySchema, req.body);
     const paidAt = body.paidAt ?? orgToday(req);
     const restrictedAll = await restrictedCategoryIds(req.org!.id);
-    const hidden = req.org!.can('bills.view_restricted') ? [] : restrictedAll;
+    const hidden = await hiddenCategoryIds(req);
     const rows = await db.select().from(schema.bills).where(and(eq(schema.bills.orgId, req.org!.id), inArray(schema.bills.id, body.ids), eq(schema.bills.status, 'pending')));
     const allowed = rows.filter((r) => req.org!.can(billPerm(r.type as BillType, 'pay')) && !hidden.includes(r.categoryId));
     await db.transaction(async (tx) => {

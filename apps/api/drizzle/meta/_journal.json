@@ -323,6 +323,13 @@
       "when": 1794947742003,
       "tag": "0045_manuals",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795539595684,
+      "tag": "0046_group_categories",
+      "breakpoints": true
     }
   ]
 }

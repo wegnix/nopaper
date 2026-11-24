@@ -8,6 +8,11 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.37.0] - 2026-11-24
+
+### Adicionado
+- **Categorias restritas liberadas por grupo**: em Configurações → Grupos, cada grupo ganhou a seção "Categorias restritas", para liberar só as que ele precisa ver (por exemplo, Salário para quem paga os salários), sem abrir as outras (como o pró-labore dos sócios). A permissão "Ver e mexer em categorias restritas" continua abrindo todas. Vale para listas, totais, relatórios, exportação, importação, conciliação bancária e fatura do cartão. Quem não é administrador só libera as categorias que ele mesmo vê e não mexe em grupos que liberam outras. Marcar ou tirar a restrição de uma categoria, configurar a categoria da Folha, o "incluir restritas" dos alertas e as ações de categorias restritas na Auditoria continuam exigindo a permissão geral.
+
 ## [1.36.3] - 2026-11-24
 
 ### Alterado

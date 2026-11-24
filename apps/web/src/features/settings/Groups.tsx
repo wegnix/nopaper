@@ -1,15 +1,23 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { Lock, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { ALL_PERMISSIONS, DEFAULT_OPERATOR_PERMISSIONS, DEFAULT_READONLY_PERMISSIONS, PERMISSIONS, billTerms, permissionRequires, withRequired, type Permission } from '@nopaper/shared';
 import { Button, Card, Checkbox, Field, IconButton, Input, Switch, Tooltip } from '@/components/ui/base';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { del, get, post, put, errMsg } from '@/lib/api';
 import { useCan, useOrg, useSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
+import { useCategories } from '@/lib/queries';
+import { CategoryChip } from '@/components/ui/chips';
 
-export interface Group { id: string; name: string; description: string | null; isAdmin: boolean; permissions: Permission[]; members: number }
+export interface Group {
+  id: string; name: string; description: string | null; isAdmin: boolean; permissions: Permission[]; members: number;
+  /** Categorias restritas liberadas para o grupo (só as que quem pergunta vê). */
+  categoryIds: string[];
+  /** Liberadas que quem pergunta não vê (só a contagem). */
+  hiddenCategories: number;
+}
 
 type Def = { group: string; label: string; hint?: string; requires?: readonly string[] };
 const byGroup = Object.entries(PERMISSIONS as Record<Permission, Def>).reduce<Record<string, Array<[Permission, Def]>>>((acc, [k, v]) => {
@@ -34,7 +42,10 @@ function GroupForm({ group, onClose, onSaved }: { group: Partial<Group>; onClose
   const org = useOrg();
   const can = useCan();
   const iAmAdmin = !!org?.isAdmin;
-  const [f, setF, form] = useFormState({ name: group.name ?? '', description: group.description ?? '', isAdmin: group.isAdmin ?? false, permissions: new Set(group.permissions ?? []) });
+  const [f, setF, form] = useFormState({ name: group.name ?? '', description: group.description ?? '', isAdmin: group.isAdmin ?? false, permissions: new Set(group.permissions ?? []), categoryIds: new Set(group.categoryIds ?? []) });
+  const restrictedCats = (useCategories().data ?? []).filter((c) => c.isRestricted);
+  const toggleCat = (id: string, v: boolean) => { const s = new Set(f.categoryIds); if (v) s.add(id); else s.delete(id); setF((cur) => ({ ...cur, categoryIds: s })); };
+  const allRestricted = f.permissions.has('bills.view_restricted');
   const [busy, setBusy] = useState(false);
   // quem não é admin só concede o que já tem (o que o grupo já tinha pode ficar)
   const grantable = (p: Permission) => iAmAdmin || can(p) || !!group.permissions?.includes(p);
@@ -52,11 +63,11 @@ function GroupForm({ group, onClose, onSaved }: { group: Partial<Group>; onClose
   };
   const save = async () => {
     setBusy(true);
-    const body = { ...f, permissions: [...f.permissions] };
+    const body = { ...f, permissions: [...f.permissions], categoryIds: [...f.categoryIds] };
     try {
       const g = group.id ? await put<Group>(`/api/groups/${group.id}`, body) : await post<Group>('/api/groups', body);
       qc.invalidateQueries({ queryKey: ['groups'] }); toast.success(group.id ? 'Grupo salvo' : 'Grupo criado');
-      form.markSaved(f); onSaved({ ...group, ...g, permissions: body.permissions });
+      form.markSaved(f); onSaved({ ...group, ...g, permissions: body.permissions, categoryIds: body.categoryIds });
     } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   };
   const count = f.permissions.size;
@@ -111,6 +122,31 @@ function GroupForm({ group, onClose, onSaved }: { group: Partial<Group>; onClose
                 );
               })}
             </div>
+            <section className="rounded-xl border border-line p-3.5">
+              <div className="mb-1 flex items-center gap-2">
+                <Lock className="size-4 text-muted" />
+                <span className="text-[13px] font-semibold">Categorias restritas</span>
+              </div>
+              {allRestricted ? (
+                <p className="text-xs text-faint">Este grupo vê todas as categorias restritas, porque “{PERMISSIONS['bills.view_restricted'].label}” está marcada acima.</p>
+              ) : (
+                <>
+                  <p className="mb-3 text-xs text-faint leading-snug">
+                    Libere só as que este grupo precisa ver; as outras continuam escondidas. Para ver as contas dessas categorias, o grupo também precisa de “{billTerms('Ver contas a pagar', org?.kind)}” (ou a receber).
+                  </p>
+                  {restrictedCats.length ? (
+                    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                      {restrictedCats.map((c) => (
+                        <Checkbox key={c.id} checked={f.categoryIds.has(c.id)} onChange={(v) => toggleCat(c.id, v)} label={<CategoryChip category={c} />} />
+                      ))}
+                    </div>
+                  ) : <p className="text-sm text-muted">Este espaço não tem categorias restritas que você veja.</p>}
+                  {!!group.hiddenCategories && (
+                    <p className="mt-2.5 text-xs text-faint">E mais {group.hiddenCategories} que você não vê — só um administrador do espaço pode mudar este grupo.</p>
+                  )}
+                </>
+              )}
+            </section>
             <p className="text-xs text-faint">Criar espaços novos não é uma permissão do espaço: fica na conta da pessoa, em Plataforma → Usuários.</p>
           </>
         )}
@@ -122,6 +158,7 @@ function GroupForm({ group, onClose, onSaved }: { group: Partial<Group>; onClose
 export function GroupsPage() {
   const orgKind = useOrg()?.kind;
   const { data = [] } = useGroups();
+  const catLabel = new Map((useCategories().data ?? []).map((c) => [c.id, c.label]));
   const [editing, setEditing] = useState<Partial<Group> | null>(null);
   const confirm = useConfirm();
   const qc = useQueryClient();
@@ -148,6 +185,12 @@ export function GroupsPage() {
                     const n = perms.filter(([p]) => g.permissions.includes(p)).length;
                     return n ? <span key={sec} className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">{billTerms(sec, orgKind)} {n === perms.length ? '· tudo' : `${n}/${perms.length}`}</span> : null;
                   })}
+                  {!g.permissions.includes('bills.view_restricted') && (g.categoryIds.length > 0 || g.hiddenCategories > 0) && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-muted">
+                      <Lock className="size-3" />
+                      {[...g.categoryIds.map((id) => catLabel.get(id)).filter(Boolean), ...(g.hiddenCategories ? [`+${g.hiddenCategories}`] : [])].join(', ')}
+                    </span>
+                  )}
                 </div>
               )}
             </div>

@@ -158,6 +158,15 @@ export const categories = pgTable('categories', {
   updatedAt: updatedAt(),
 }, (t) => [uniqueIndex('categories_org_label_uq').on(t.orgId, sql`lower(${t.label})`)]);
 
+/**
+ * Categorias restritas liberadas para um grupo (sem precisar de "Ver e mexer em categorias restritas",
+ * que abre todas). Só vale para categorias restritas; ao tirar a restrição, as linhas são apagadas.
+ */
+export const groupCategories = pgTable('group_categories', {
+  groupId: uuid('group_id').notNull().references(() => groups.id, { onDelete: 'cascade' }),
+  categoryId: uuid('category_id').notNull().references(() => categories.id, { onDelete: 'cascade' }),
+}, (t) => [primaryKey({ columns: [t.groupId, t.categoryId] }), index('group_categories_category_idx').on(t.categoryId)]);
+
 export const folders = pgTable('folders', {
   id: id(),
   orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),

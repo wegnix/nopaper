@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import archiver from 'archiver';
-import { and, eq, gte, lte, inArray } from 'drizzle-orm';
+import { and, eq, gte, lte, inArray, notInArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { billListQuerySchema, billNames, exportSchema, MONTHS_PT, monthRange, formatDateBR, ATTACHMENT_SLOT_LABEL, type AttachmentSlot } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
@@ -9,7 +9,7 @@ import { forbidden } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
 import { fileExists, storedFilePath } from '../lib/storage.js';
-import { listBills, orgToday, visibilityCond, viewPerm } from '../services/bills.js';
+import { hiddenCategoryIds, listBills, orgToday, visibilityCond, viewPerm } from '../services/bills.js';
 import { billsCsv, billsWorkbook } from '../services/xlsx.js';
 
 const SLOT_FILE_LABEL: Record<AttachmentSlot, string> = { boleto: 'Boleto', invoice: 'Nota Fiscal', payment_proof: 'Comprovante' };
@@ -98,10 +98,11 @@ export default async function exportRoutes(app: FastifyInstance) {
     if (!req.org!.can(viewPerm(q.type))) throw forbidden();
     const bills = await listBills(req, q);
     const today = orgToday(req);
+    const hiddenCats = await hiddenCategoryIds(req);
     const [cats, folders] = await Promise.all([
       // sem as restritas para quem não as vê: nem o nome delas sai no subtítulo/registro
       db.select({ id: schema.categories.id, label: schema.categories.label }).from(schema.categories)
-        .where(and(eq(schema.categories.orgId, req.org!.id), req.org!.can('bills.view_restricted') ? undefined : eq(schema.categories.isRestricted, false))),
+        .where(and(eq(schema.categories.orgId, req.org!.id), hiddenCats.length ? notInArray(schema.categories.id, hiddenCats) : undefined)),
       db.select({ id: schema.folders.id, label: schema.folders.name }).from(schema.folders).where(eq(schema.folders.orgId, req.org!.id)),
     ]);
     const cat = new Map(cats.map((c) => [c.id, c.label])), fol = new Map(folders.map((f) => [f.id, f.label]));

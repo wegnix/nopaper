@@ -11,7 +11,7 @@ import { parse } from '../lib/validate.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
-import { createBills, deleteBillsWithFiles, assertFolder, restrictedCategoryIds } from '../services/bills.js';
+import { createBills, deleteBillsWithFiles, assertFolder, canSeeCategory, hiddenCategoryIds, restrictedCategoryIds } from '../services/bills.js';
 
 const MAX_ROWS = 5000;
 const MAX_COLS = 40;
@@ -137,7 +137,7 @@ export default async function importRoutes(app: FastifyInstance) {
     if (!body.rows.length) return { duplicates: [], suggestions: {} };
     const dates = [...new Set(body.rows.map((r) => r.dueDate))];
     // quem não vê categorias restritas não pode usar a conferência para descobrir contas delas
-    const hidden = req.org!.can('bills.view_restricted') ? [] : await restrictedCategoryIds(req.org!.id);
+    const hidden = await hiddenCategoryIds(req);
     const existing = await db.select({ d: schema.bills.description, due: schema.bills.dueDate, a: schema.bills.amount }).from(schema.bills)
       .where(and(eq(schema.bills.orgId, req.org!.id), eq(schema.bills.type, body.type), inArray(schema.bills.dueDate, dates), hidden.length ? notInArray(schema.bills.categoryId, hidden) : undefined));
     const keys = new Set(existing.map((e) => dupKey(e.d, e.due, e.a)));
@@ -163,7 +163,7 @@ export default async function importRoutes(app: FastifyInstance) {
     const cats = await db.select().from(schema.categories).where(and(eq(schema.categories.orgId, req.org!.id), inArray(schema.categories.id, catIds)));
     if (cats.length !== catIds.length) throw badRequest('Há linhas com categoria inválida');
     for (const c of cats) {
-      if (c.isRestricted && !req.org!.can('bills.view_restricted')) throw forbidden('Categoria não permitida');
+      if (!(await canSeeCategory(req, c))) throw forbidden('Categoria não permitida');
       if (c.kind !== 'both' && c.kind !== body.type) throw badRequest(`A categoria "${c.label}" não é de ${body.type === 'payable' ? 'contas a pagar' : 'contas a receber'}`);
     }
     const batchId = randomUUID();
@@ -192,16 +192,20 @@ export default async function importRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/import/batches', guard, async (req) => {
+    const hidden = await hiddenCategoryIds(req);
     const rows = await db.select({
       b: schema.importBatches, userName: schema.users.name,
       remaining: sql<number>`(select count(*)::int from bills where bills.import_batch_id = ${schema.importBatches.id})`,
-      restricted: sql<boolean>`exists (select 1 from bills join categories c on c.id = bills.category_id where bills.import_batch_id = ${schema.importBatches.id} and c.is_restricted)`,
+      // lote com conta de categoria restrita que a pessoa não vê: some da lista
+      restricted: hidden.length
+        ? sql<boolean>`exists (select 1 from bills where bills.import_batch_id = ${schema.importBatches.id} and bills.category_id in (${sql.join(hidden.map((h) => sql`${h}::uuid`), sql`, `)}))`
+        : sql<boolean>`false`,
     }).from(schema.importBatches)
       .leftJoin(schema.users, eq(schema.users.id, schema.importBatches.createdBy))
       .where(and(eq(schema.importBatches.orgId, req.org!.id), notInArray(schema.importBatches.type, ['payroll', 'card'])))
       .orderBy(desc(schema.importBatches.createdAt)).limit(50);
     return {
-      items: rows.filter((r) => req.org!.can(billPerm(r.b.type as BillType, 'view')) && (!r.restricted || req.org!.can('bills.view_restricted'))).map((r) => ({
+      items: rows.filter((r) => req.org!.can(billPerm(r.b.type as BillType, 'view')) && !r.restricted).map((r) => ({
         id: r.b.id, type: r.b.type, fileName: r.b.fileName, rowCount: r.b.rowCount, totalAmount: r.b.totalAmount,
         createdAt: r.b.createdAt, undoneAt: r.b.undoneAt, createdBy: r.userName, remaining: r.remaining,
       })),
@@ -213,10 +217,13 @@ export default async function importRoutes(app: FastifyInstance) {
     const [b] = await db.select().from(schema.importBatches).where(and(eq(schema.importBatches.id, req.params.id), eq(schema.importBatches.orgId, req.org!.id), isNull(schema.importBatches.undoneAt)));
     if (!b || b.type === 'payroll' || b.type === 'card') throw notFound('Importação não encontrada');
     assertType(req, b.type as BillType, 'delete');
+    const hiddenIds = await hiddenCategoryIds(req);
+    const hasHidden = hiddenIds.length > 0 && (await db.select({ id: schema.bills.id }).from(schema.bills)
+      .where(and(eq(schema.bills.orgId, req.org!.id), eq(schema.bills.importBatchId, b.id), inArray(schema.bills.categoryId, hiddenIds))).limit(1)).length > 0;
+    if (hasHidden) throw notFound('Importação não encontrada');
     const restrictedIds = await restrictedCategoryIds(req.org!.id);
     const hasRestricted = restrictedIds.length > 0 && (await db.select({ id: schema.bills.id }).from(schema.bills)
       .where(and(eq(schema.bills.orgId, req.org!.id), eq(schema.bills.importBatchId, b.id), inArray(schema.bills.categoryId, restrictedIds))).limit(1)).length > 0;
-    if (hasRestricted && !req.org!.can('bills.view_restricted')) throw notFound('Importação não encontrada');
     const removed = await db.transaction(async (tx) => {
       const ids = (await tx.select({ id: schema.bills.id }).from(schema.bills)
         .where(and(eq(schema.bills.orgId, req.org!.id), eq(schema.bills.importBatchId, b.id)))).map((r) => r.id);

@@ -10,6 +10,7 @@ import { parse } from '../lib/validate.js';
 import { badRequest, forbidden, notFound } from '../lib/errors.js';
 import { requireAuth, requirePerm, requireOrg, hashPassword, membershipsOf } from '../lib/auth.js';
 import { createOrganization } from '../services/orgs.js';
+import { hiddenCategoryIds } from '../services/bills.js';
 import { audit, auditAreasFor, auditUsers, queryAudit, type AuditQuery } from '../lib/audit.js';
 
 /** Primeiro nome de usuário livre: base, base2, base3… */
@@ -226,39 +227,63 @@ export default async function orgRoutes(app: FastifyInstance) {
       id: schema.groups.id, name: schema.groups.name, description: schema.groups.description,
       isAdmin: schema.groups.isAdmin, permissions: schema.groups.permissions,
       members: sql<number>`(select count(*)::int from ${schema.membershipGroups} mg where mg.group_id = ${schema.groups.id})`,
+      categoryIds: sql<string[]>`(select coalesce(array_agg(gc.category_id::text), '{}') from group_categories gc where gc.group_id = groups.id)`,
     }).from(schema.groups).where(eq(schema.groups.orgId, req.org!.id)).orderBy(schema.groups.name);
-    return { items: rows };
+    // categoria restrita que quem pergunta não vê: nem o id sai (conta só quantas são)
+    const hidden = new Set(await hiddenCategoryIds(req));
+    return { items: rows.map((g) => ({ ...g, categoryIds: g.categoryIds.filter((c) => !hidden.has(c)), hiddenCategories: g.categoryIds.filter((c) => hidden.has(c)).length })) };
   });
 
   app.post('/api/groups', { preHandler: requirePerm('groups.manage') }, async (req) => {
-    const body = parse(groupSchema, req.body);
+    const { categoryIds, ...body } = parse(groupSchema, req.body);
     assertCanGrant(req, body, null);
+    const cats = await assertGrantableCategories(req, categoryIds, []);
     const [dup] = await db.select().from(schema.groups).where(and(eq(schema.groups.orgId, req.org!.id), eq(schema.groups.name, body.name)));
     if (dup) throw badRequest('Já existe um grupo com este nome');
-    const [g] = await db.insert(schema.groups).values({ ...body, orgId: req.org!.id }).returning();
-    await audit(req, { action: 'group.create', entityType: 'group', entityId: g.id, description: `Criou grupo ${g.name}`, details: body });
-    return g;
+    const g = await db.transaction(async (tx) => {
+      const [g] = await tx.insert(schema.groups).values({ ...body, orgId: req.org!.id }).returning();
+      if (categoryIds.length) await tx.insert(schema.groupCategories).values(categoryIds.map((categoryId) => ({ groupId: g.id, categoryId })));
+      return g;
+    });
+    await audit(req, { action: 'group.create', entityType: 'group', entityId: g.id, description: `Criou grupo ${g.name}`, details: { ...body, restrictedCategories: cats.map((c) => c.label), restricted: cats.length > 0 || undefined } });
+    return { ...g, categoryIds };
   });
 
   app.put<{ Params: { id: string } }>('/api/groups/:id', { preHandler: requirePerm('groups.manage') }, async (req) => {
-    const body = parse(groupSchema, req.body);
+    const { categoryIds, ...body } = parse(groupSchema, req.body);
     const [before] = await db.select().from(schema.groups).where(and(eq(schema.groups.id, req.params.id), eq(schema.groups.orgId, req.org!.id)));
     if (!before) throw notFound('Grupo não encontrado');
     assertCanGrant(req, body, before);
-    const [g] = await db.update(schema.groups).set(body).where(eq(schema.groups.id, before.id)).returning();
+    const beforeCats = (await db.select({ id: schema.groupCategories.categoryId }).from(schema.groupCategories).where(eq(schema.groupCategories.groupId, before.id))).map((r) => r.id);
+    await assertGrantableCategories(req, categoryIds, beforeCats);
+    const g = await db.transaction(async (tx) => {
+      const [g] = await tx.update(schema.groups).set(body).where(eq(schema.groups.id, before.id)).returning();
+      await tx.delete(schema.groupCategories).where(eq(schema.groupCategories.groupId, before.id));
+      if (categoryIds.length) await tx.insert(schema.groupCategories).values(categoryIds.map((categoryId) => ({ groupId: before.id, categoryId })));
+      return g;
+    });
     const added = body.permissions.filter((p) => !before.permissions.includes(p));
     const removed = before.permissions.filter((p) => !(body.permissions as string[]).includes(p));
+    const catsChanged = [...categoryIds.filter((c) => !beforeCats.includes(c)), ...beforeCats.filter((c) => !categoryIds.includes(c))];
+    const labels = await categoryLabels(catsChanged);
     await audit(req, {
       action: 'group.update', entityType: 'group', entityId: g.id, description: `Editou o grupo ${g.name}`,
-      details: { changes: diff(before, g, ['name', 'description', 'isAdmin']), permissionsAdded: added, permissionsRemoved: removed },
+      details: {
+        changes: diff(before, g, ['name', 'description', 'isAdmin']), permissionsAdded: added, permissionsRemoved: removed,
+        ...(catsChanged.length ? {
+          restrictedCategoriesAdded: categoryIds.filter((c) => !beforeCats.includes(c)).map((c) => labels.get(c) ?? c),
+          restrictedCategoriesRemoved: beforeCats.filter((c) => !categoryIds.includes(c)).map((c) => labels.get(c) ?? c),
+          restricted: true,
+        } : {}),
+      },
     });
-    return g;
+    return { ...g, categoryIds };
   });
 
   app.delete<{ Params: { id: string } }>('/api/groups/:id', { preHandler: requirePerm('groups.manage') }, async (req) => {
     const [before] = await db.select().from(schema.groups).where(and(eq(schema.groups.id, req.params.id), eq(schema.groups.orgId, req.org!.id)));
     if (!before) throw notFound('Grupo não encontrado');
-    if (!req.org!.isAdmin && (before.isAdmin || before.permissions.some((p) => !req.org!.can(p as Permission)))) throw forbidden('Só um administrador do espaço pode apagar um grupo com permissões que você não tem');
+    if (!req.org!.isAdmin && (before.isAdmin || before.permissions.some((p) => !req.org!.can(p as Permission)) || await grantsHiddenCategories(req, [before.id]))) throw forbidden('Só um administrador do espaço pode apagar um grupo com permissões que você não tem');
     const [g] = await db.delete(schema.groups).where(eq(schema.groups.id, before.id)).returning();
     await audit(req, { action: 'group.delete', entityType: 'group', entityId: g.id, description: `Apagou grupo ${g.name}`, details: { isAdmin: g.isAdmin, permissions: g.permissions } });
     return { ok: true };
@@ -299,6 +324,40 @@ function assertCanGrant(req: FastifyRequest, body: { isAdmin: boolean; permissio
   if (extra.length) throw forbidden(`Você não pode conceder permissões que não tem: ${extra.map((p) => PERMISSIONS[p as Permission]?.label ?? p).join('; ')}`);
 }
 
+/**
+ * Categorias restritas liberadas para um grupo: só restritas deste espaço, e quem não é administrador só
+ * libera as que ele mesmo vê — nem mexe num grupo que já libera alguma que ele não vê.
+ */
+async function assertGrantableCategories(req: FastifyRequest, next: string[], before: string[]) {
+  const rows = next.length
+    ? await db.select({ id: schema.categories.id, label: schema.categories.label, isRestricted: schema.categories.isRestricted }).from(schema.categories)
+      .where(and(eq(schema.categories.orgId, req.org!.id), inArray(schema.categories.id, next)))
+    : [];
+  if (rows.length !== next.length || rows.some((c) => !c.isRestricted)) throw badRequest('Só dá para liberar categorias restritas deste espaço');
+  if (!req.org!.isAdmin) {
+    const hidden = new Set(await hiddenCategoryIds(req));
+    if (before.some((c) => hidden.has(c))) throw forbidden('Só um administrador do espaço pode alterar um grupo que libera categorias restritas que você não vê');
+    if (next.some((c) => hidden.has(c))) throw forbidden('Você não pode liberar uma categoria restrita que você não vê');
+  }
+  return rows;
+}
+
+/** Algum destes grupos libera categoria restrita que quem pede não vê? */
+async function grantsHiddenCategories(req: FastifyRequest, groupIds: string[]) {
+  if (req.org!.isAdmin || !groupIds.length) return false;
+  const hidden = await hiddenCategoryIds(req);
+  if (!hidden.length) return false;
+  const rows = await db.select({ id: schema.groupCategories.categoryId }).from(schema.groupCategories)
+    .where(and(inArray(schema.groupCategories.groupId, groupIds), inArray(schema.groupCategories.categoryId, hidden))).limit(1);
+  return rows.length > 0;
+}
+
+async function categoryLabels(ids: string[]) {
+  if (!ids.length) return new Map<string, string>();
+  const rows = await db.select({ id: schema.categories.id, label: schema.categories.label }).from(schema.categories).where(inArray(schema.categories.id, ids));
+  return new Map(rows.map((r) => [r.id, r.label]));
+}
+
 async function assertCanAssignGroups(req: FastifyRequest, next: string[], current: string[]) {
   if (req.org!.isAdmin) return;
   const changed = [...next.filter((g) => !current.includes(g)), ...current.filter((g) => !next.includes(g))];
@@ -308,6 +367,7 @@ async function assertCanAssignGroups(req: FastifyRequest, next: string[], curren
     if (g.isAdmin || g.permissions.some((p) => !req.org!.can(p as Permission))) {
       throw forbidden(`Só um administrador do espaço pode colocar ou tirar alguém do grupo "${g.name}" (ele dá permissões que você não tem)`);
     }
+    if (await grantsHiddenCategories(req, [g.id])) throw forbidden(`Só um administrador do espaço pode colocar ou tirar alguém do grupo "${g.name}" (ele libera categorias restritas que você não vê)`);
   }
 }
 
@@ -319,6 +379,7 @@ async function assertCanManageMember(req: FastifyRequest, m: { isOwner: boolean 
   if (rows.some((g) => g.isAdmin)) throw forbidden('Só um administrador do espaço pode alterar outro administrador');
   // quem tem mais permissões que você não pode ser desativado, removido nem rebaixado por você
   if (rows.some((g) => g.permissions.some((p) => !req.org!.can(p as Permission)))) throw forbidden('Só um administrador do espaço pode alterar um membro que tem permissões que você não tem');
+  if (await grantsHiddenCategories(req, groupIds)) throw forbidden('Só um administrador do espaço pode alterar um membro que vê categorias restritas que você não vê');
 }
 
 async function assertGroupsInOrg(orgId: string, ids: string[]) {

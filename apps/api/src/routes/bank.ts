@@ -10,7 +10,7 @@ import { parse } from '../lib/validate.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
-import { assertCategoryUsable, assertFolder, createBills, deleteBillsWithFiles, loadBill, restrictedCategoryIds, serialize } from '../services/bills.js';
+import { assertCategoryUsable, assertFolder, createBills, deleteBillsWithFiles, loadBill, restrictedCategoryIds, hiddenCategoryIds, serialize } from '../services/bills.js';
 import { checkBankSpace } from '../services/spaceCheck.js';
 
 const view = { preHandler: requirePerm('bank.view') };
@@ -203,7 +203,7 @@ export default async function bankRoutes(app: FastifyInstance) {
       .where(and(eq(schema.bankTransactions.accountId, a.id), between(schema.bankTransactions.postedAt, from, to)))
       .orderBy(desc(schema.bankTransactions.postedAt), desc(schema.bankTransactions.amount));
     const types = (['payable', 'receivable'] as const).filter((t) => req.org!.can(billPerm(t, 'view')));
-    const hidden = req.org!.can('bills.view_restricted') ? [] : await restrictedCategoryIds(req.org!.id);
+    const hidden = await hiddenCategoryIds(req);
     const linkedBills = txs.map((t) => t.billId).filter((x): x is string => !!x);
     const bills = types.length ? await db.select().from(schema.bills).where(and(
       eq(schema.bills.orgId, req.org!.id), inArray(schema.bills.type, types),

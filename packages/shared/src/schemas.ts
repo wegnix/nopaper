@@ -170,6 +170,8 @@ export const groupSchema = z.object({
   description: optText(255),
   isAdmin: z.boolean().default(false),
   permissions: z.array(z.enum(ALL_PERMISSIONS as [string, ...string[]])).default([]).transform((p) => withRequired(p as Permission[])),
+  /** Categorias restritas que o grupo vê sem ter "Ver e mexer em categorias restritas" (que abre todas). */
+  categoryIds: z.array(z.string().uuid()).max(200).default([]).transform((ids) => [...new Set(ids)]),
 });
 
 // ---------------------------------------------------------------- plataforma: usuários

@@ -8,7 +8,7 @@ import {
 import { db, schema } from '../db/client.js';
 import { parse } from '../lib/validate.js';
 import { HttpError } from '../lib/errors.js';
-import { attachmentsFor, deleteBillsWithFiles, loadBill, orgToday, restrictedCategoryIds, seriesRows, visibilityCond, type AttachmentSummary, type BillRow } from '../services/bills.js';
+import { attachmentsFor, deleteBillsWithFiles, hiddenCategoryIds, loadBill, orgToday, restrictedCategoryIds, seriesRows, visibilityCond, type AttachmentSummary, type BillRow } from '../services/bills.js';
 import { createForward } from '../lib/forward.js';
 import { audit } from '../lib/audit.js';
 import { claimIdempotencyKey, finishIdempotencyKey, releaseIdempotencyKey } from '../services/integrations.js';
@@ -130,7 +130,7 @@ export function registerV1Writes(app: FastifyInstance, api: FastifyInstance, h: 
     // já existe conta com este externalId: devolve a que existe (e a série dela), sem criar outra
     // a série devolvida passa pelo mesmo filtro de quem lê: sem irmãs de categoria restrita que o token não vê
     const seriesOf = async (b: BillRow) => {
-      const hidden = req.org!.can('bills.view_restricted') ? [] : await restrictedCategoryIds(req.org!.id);
+      const hidden = await hiddenCategoryIds(req);
       return (await seriesRows(db, b)).filter((r) => !hidden.includes(r.categoryId)).map((r) => r.id);
     };
     const found = await findByExternalId(req, wanted);
@@ -219,8 +219,7 @@ export function registerV1Writes(app: FastifyInstance, api: FastifyInstance, h: 
   // ------------------------------------------------------------ série e exclusão
   api.get<{ Params: { id: string } }>('/api/v1/bills/:id/series', h.limited, async (req) => {
     const b = await loadBill(req, req.params.id);
-    const hidden = req.org!.can('bills.view_restricted') ? [] : (await db.select({ id: schema.categories.id }).from(schema.categories)
-      .where(and(eq(schema.categories.orgId, b.orgId), eq(schema.categories.isRestricted, true)))).map((c) => c.id);
+    const hidden = await hiddenCategoryIds(req);
     const rows = (await seriesRows(db, b)).filter((r) => !hidden.includes(r.categoryId));
     return { seriesId: b.parentId ?? (b.recurrenceType !== 'once' ? b.id : null), items: await billsOut(req, rows.map((r) => r.id)) };
   });

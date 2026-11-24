@@ -12,7 +12,7 @@ import { parse } from '../lib/validate.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { requirePerm } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
-import { assertCategoryUsable, assertFolder, attachmentsFor, deleteBillsWithFiles, restrictedCategoryIds, serialize } from '../services/bills.js';
+import { assertCategoryUsable, assertFolder, attachmentsFor, deleteBillsWithFiles, hiddenCategoryIds, serialize } from '../services/bills.js';
 import { assertCardCategories, categoryForRule, ensureCardCategories } from '../services/cardCategories.js';
 import {
   loadCard, ensureStatement, createPurchase, deleteTransactions, limitUsed, statementStatus, statementsOf, syncStatementBill,
@@ -138,7 +138,7 @@ export default async function cardRoutes(app: FastifyInstance) {
     return {
       card: c, ref, statement: st, status: statementStatus(st, bill, today), total,
       // a conta da fatura é de Contas a pagar: só vai para quem pode vê-la lá (e a categoria, se restrita)
-      bill: bill && req.org!.can('payable.view') && (req.org!.can('bills.view_restricted') || !(await restrictedCategoryIds(req.org!.id)).includes(bill.categoryId))
+      bill: bill && req.org!.can('payable.view') && !(await hiddenCategoryIds(req)).includes(bill.categoryId)
         ? serialize(bill, (await attachmentsFor([bill.id])).get(bill.id)) : null,
       items, refs: all.map((s) => s.ref),
     };

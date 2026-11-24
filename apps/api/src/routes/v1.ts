@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { and, asc, eq, gte, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, lte, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { BILL_TYPES, isoDate, type AttachmentSlot, type BillType, type Permission } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
@@ -9,7 +9,7 @@ import { APP_VERSION } from '../lib/version.js';
 import { parse } from '../lib/validate.js';
 import { HttpError, notFound } from '../lib/errors.js';
 import { signFileToken } from '../lib/storage.js';
-import { attachmentsFor, loadBill, orgToday, summary, viewPerm, visibilityCond, type AttachmentSummary, type BillRow } from '../services/bills.js';
+import { attachmentsFor, hiddenCategoryIds, loadBill, orgToday, summary, viewPerm, visibilityCond, type AttachmentSummary, type BillRow } from '../services/bills.js';
 import { openApiDocument } from '../lib/openapi.js';
 import { registerV1Writes } from './v1write.js';
 import { registerV1Areas } from './v1areas.js';
@@ -208,12 +208,12 @@ export default async function v1Routes(app: FastifyInstance) {
     // ------------------------------------------------------------ categorias e pastas
     api.get('/api/v1/categories', limited, async (req) => {
       need(req, 'payable.view', 'receivable.view', 'cards.view', 'reports.view');
-      const seeRestricted = req.org!.can('bills.view_restricted');
+      const hidden = await hiddenCategoryIds(req);
       const rows = await db.select({
         id: schema.categories.id, name: schema.categories.label, color: schema.categories.color, kind: schema.categories.kind,
         restricted: schema.categories.isRestricted, updatedAt: schema.categories.updatedAt,
       }).from(schema.categories)
-        .where(and(eq(schema.categories.orgId, req.org!.id), seeRestricted ? undefined : eq(schema.categories.isRestricted, false)));
+        .where(and(eq(schema.categories.orgId, req.org!.id), hidden.length ? notInArray(schema.categories.id, hidden) : undefined));
       return { items: rows.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' })) };
     });
 

@@ -29,6 +29,8 @@ export interface OrgContext {
   isAdmin: boolean;
   permissions: Set<Permission>;
   can(p: Permission): boolean;
+  /** Grupos da pessoa neste espaço (token de integração: nenhum). Usado nas categorias restritas liberadas por grupo. */
+  groupIds: string[];
   /** Arquivado: só leitura. */
   archived?: boolean;
   /** Remoção agendada (só o dono ainda entra): só leitura. */
@@ -88,7 +90,7 @@ export async function authenticate(req: FastifyRequest) {
     if (!r.ok) { req.tokenFailure = r.reason; return; }
     const perms = new Set<Permission>(r.permissions);
     req.integration = r.integration;
-    req.org = { ...r.org, membershipId: '', isOwner: false, isAdmin: false, permissions: perms, can: (p) => perms.has(p) }; // r.org traz `archived`
+    req.org = { ...r.org, membershipId: '', isOwner: false, isAdmin: false, permissions: perms, can: (p) => perms.has(p), groupIds: [] }; // r.org traz `archived`
     // repasse da API pública para uma rota interna: lá o token age como uma "pessoa" (id = o do token),
     // para "criado por", "enviado por" e a auditoria funcionarem sem um usuário de verdade
     if (internal) req.user = { id: r.integration.id, email: '', name: `Integração ${r.integration.name}`.slice(0, 120), isSuperadmin: false, sessionId: '' };
@@ -136,7 +138,7 @@ export async function loadOrgContext(userId: string, orgId: string): Promise<Org
   if (!m || !m.active) return null;
   // remoção agendada: o espaço some para todos, menos para o dono (que pode cancelar)
   if (m.deletionDueAt && !m.isOwner) return null;
-  const gs = await db.select({ isAdmin: schema.groups.isAdmin, permissions: schema.groups.permissions })
+  const gs = await db.select({ id: schema.groups.id, isAdmin: schema.groups.isAdmin, permissions: schema.groups.permissions })
     .from(schema.membershipGroups)
     .innerJoin(schema.groups, eq(schema.groups.id, schema.membershipGroups.groupId))
     .where(eq(schema.membershipGroups.membershipId, m.membershipId));
@@ -144,7 +146,7 @@ export async function loadOrgContext(userId: string, orgId: string): Promise<Org
   const perms = new Set<Permission>(isAdmin ? ALL_PERMISSIONS : (gs.flatMap((g) => g.permissions) as Permission[]));
   return {
     id: m.orgId, name: m.name, kind: m.kind, timezone: m.timezone, membershipId: m.membershipId,
-    isOwner: m.isOwner, isAdmin, permissions: perms, can: (p) => perms.has(p),
+    isOwner: m.isOwner, isAdmin, permissions: perms, can: (p) => perms.has(p), groupIds: gs.map((g) => g.id),
     archived: !!m.archivedAt, deleting: !!m.deletionDueAt,
   };
 }

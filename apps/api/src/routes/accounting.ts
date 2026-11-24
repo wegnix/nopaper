@@ -14,7 +14,7 @@ import { ALLOWED_UPLOADS, ARCHIVE_UPLOADS, deleteFile, readStoredFile, saveUploa
 import { classifyDocument } from '../services/classifier.js';
 import { pdfToCells } from '../services/pdf.js';
 import { loadAlertConfig } from '../services/alerts.js';
-import { loadBill, restrictedCategoryIds } from '../services/bills.js';
+import { hiddenCategoryIds, loadBill } from '../services/bills.js';
 import { accountantsOf, resolveRecipients } from '../services/accounting.js';
 import { readVacationReport } from '../services/vacations.js';
 import { assertStorageRoom, storageInfo } from '../services/storageQuota.js';
@@ -154,7 +154,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
     const users = userIds.length ? await db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users).where(inArray(schema.users.id, userIds)) : [];
     const uname = new Map(users.map((u) => [u.id, u.name]));
     // a conta ligada só aparece para quem confere (o contador não vê as contas do espaço)
-    const hiddenCats = req.org!.can('bills.view_restricted') ? [] : await restrictedCategoryIds(req.org!.id);
+    const hiddenCats = await hiddenCategoryIds(req);
     const billIds = !outbound && side === 'recipient' ? rows.map((r) => r.billId).filter((x): x is string => !!x) : [];
     const bills = billIds.length ? await db.select({ id: schema.bills.id, description: schema.bills.description, status: schema.bills.status, dueDate: schema.bills.dueDate, amount: schema.bills.amount, categoryId: schema.bills.categoryId })
       .from(schema.bills).where(and(eq(schema.bills.orgId, req.org!.id), inArray(schema.bills.id, billIds),

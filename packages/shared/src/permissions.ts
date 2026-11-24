@@ -24,7 +24,7 @@ export const PERMISSIONS = {
   'receivable.pay': { group: 'Contas a receber', label: 'Dar baixa (receber e reverter)', hint: 'Inclui o comprovante e a baixa em massa.', requires: ['receivable.view'] },
   'receivable.delete': { group: 'Contas a receber', label: 'Apagar contas a receber', requires: ['receivable.view'] },
 
-  'bills.view_restricted': { group: 'Financeiro', label: 'Ver e mexer em categorias restritas', hint: 'Sem esta, as contas dessas categorias ficam invisíveis.' },
+  'bills.view_restricted': { group: 'Financeiro', label: 'Ver e mexer em categorias restritas', hint: 'Abre todas as restritas. Para liberar só algumas, marque-as em “Categorias restritas”, mais abaixo.' },
   'bills.categories': { group: 'Financeiro', label: 'Gerenciar categorias' },
   'bills.folders': { group: 'Financeiro', label: 'Gerenciar pastas' },
   'bills.export': { group: 'Financeiro', label: 'Exportar planilhas e ZIP para a contabilidade' },

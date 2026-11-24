@@ -35,10 +35,29 @@ export async function restrictedCategoryIds(orgId: string, conn: DBOrTx = db): P
   return rows.map((r) => r.id);
 }
 
-/** Condição SQL que esconde contas de categorias restritas para quem não tem permissão. */
+/**
+ * Categorias restritas que esta pessoa NÃO vê. "Ver e mexer em categorias restritas" abre todas; sem ela,
+ * vê só as liberadas para algum grupo seu (`group_categories`). Token de integração: só a permissão vale.
+ */
+export async function hiddenCategoryIds(req: FastifyRequest, conn: DBOrTx = db): Promise<string[]> {
+  const o = req.org!;
+  if (o.can('bills.view_restricted')) return [];
+  const granted = o.groupIds.length
+    ? sql`and not exists (select 1 from group_categories gc where gc.category_id = categories.id and gc.group_id in (${sql.join(o.groupIds.map((g) => sql`${g}::uuid`), sql`, `)}))`
+    : sql``;
+  const rows = await conn.execute<{ id: string }>(sql`select id from categories where org_id = ${o.id} and is_restricted ${granted}`);
+  return rows.rows.map((r) => r.id);
+}
+
+/** A pessoa vê esta categoria? (não restrita, permissão geral ou liberada para um grupo dela) */
+export async function canSeeCategory(req: FastifyRequest, c: { id: string; isRestricted: boolean }, conn: DBOrTx = db): Promise<boolean> {
+  if (!c.isRestricted || req.org!.can('bills.view_restricted')) return true;
+  return !(await hiddenCategoryIds(req, conn)).includes(c.id);
+}
+
+/** Condição SQL que esconde as contas das categorias restritas que a pessoa não vê. */
 export async function visibilityCond(req: FastifyRequest): Promise<SQL | undefined> {
-  if (req.org!.can('bills.view_restricted')) return undefined;
-  const ids = await restrictedCategoryIds(req.org!.id);
+  const ids = await hiddenCategoryIds(req);
   return ids.length ? notInArray(schema.bills.categoryId, ids) : undefined;
 }
 
@@ -52,17 +71,14 @@ export async function loadBill(req: FastifyRequest, id: string, need: BillAction
   if (!req.org!.can(viewPerm(t))) throw notFound('Conta não encontrada');
   const needs = Array.isArray(need) ? need : [need];
   if (!needs.some((a) => req.org!.can(billPerm(t, a)))) throw forbidden('Sem permissão para esta ação');
-  if (!req.org!.can('bills.view_restricted')) {
-    const ids = await restrictedCategoryIds(req.org!.id, conn);
-    if (ids.includes(b.categoryId)) throw notFound('Conta não encontrada');
-  }
+  if ((await hiddenCategoryIds(req, conn)).includes(b.categoryId)) throw notFound('Conta não encontrada');
   return b;
 }
 
 export async function assertCategoryUsable(req: FastifyRequest, categoryId: string, type: BillType, conn: DBOrTx = db) {
   const [c] = await conn.select().from(schema.categories).where(and(eq(schema.categories.id, categoryId), eq(schema.categories.orgId, req.org!.id)));
   if (!c) throw badRequest('Categoria inválida');
-  if (c.isRestricted && !req.org!.can('bills.view_restricted')) throw forbidden('Categoria não permitida');
+  if (!(await canSeeCategory(req, c, conn))) throw forbidden('Categoria não permitida');
   if (c.kind !== 'both' && c.kind !== type) throw badRequest(`A categoria "${c.label}" não é de ${type === 'payable' ? 'contas a pagar' : 'contas a receber'}`);
   return c;
 }
