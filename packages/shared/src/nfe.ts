@@ -16,8 +16,8 @@ export const UF_CODES: Record<string, number> = {
 
 /** Hora padrão da consulta diária (o usuário escolhe; consulta 1 vez por dia). */
 export const FISCAL_DEFAULT_HOUR = 6;
-/** Intervalo mínimo entre duas consultas que chegaram ao fim da fila (regra da SEFAZ: 1 hora; usamos folga). */
-export const FISCAL_MIN_GAP_MS = 2 * 60 * 60 * 1000;
+/** Intervalo mínimo entre duas consultas e depois de um bloqueio (a SEFAZ pede 1 hora; 5 min de folga para o relógio). */
+export const FISCAL_MIN_GAP_MS = 65 * 60 * 1000;
 /** Lotes de até 50 documentos; teto de lotes numa consulta (o restante fica para o dia seguinte). */
 export const FISCAL_MAX_BATCHES = 40;
 export const FISCAL_CERT_MAX_BYTES = 64 * 1024;

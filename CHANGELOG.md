@@ -8,6 +8,16 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.38.2] - 2026-11-25
+
+### Alterado
+- Notas fiscais: quando a SEFAZ recusa a consulta por excesso (656) e informa que o CNPJ já foi consultado mais adiante na fila, o aviso explica que outro sistema (do contador, de gestão ou de emissão de notas) também consulta as notas recebidas daquele CNPJ.
+
+- Notas fiscais: o intervalo entre consultas caiu de 2 horas para 1 hora (o que a SEFAZ pede, com 5 minutos de folga), inclusive depois de um bloqueio.
+
+### Corrigido
+- Notas fiscais: o bloqueio temporário da SEFAZ (consumo indevido) não desliga mais a consulta automática nem aparece como "consulta automática desligada": a tela mostra que a SEFAZ bloqueou e a hora em que a consulta fica liberada, e a consulta automática tenta de novo sozinha no mesmo dia. A consulta seguinte que dá certo tira o aviso.
+
 ## [1.38.1] - 2026-11-25
 
 ### Corrigido

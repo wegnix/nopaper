@@ -72,15 +72,16 @@ export function FiscalPage() {
       title: 'Consultar a SEFAZ agora?',
       body: <div className="space-y-2 text-sm text-muted">
         <p>A SEFAZ bloqueia por cerca de 1 hora o CNPJ que consulta mais de uma vez na mesma hora. O bloqueio vale para todos os sistemas que consultam as notas deste CNPJ — inclusive o sistema de gestão (ERP) da empresa, se ele também faz essa consulta.</p>
-        <p>Depois desta consulta, a próxima (automática ou por este botão) só sai daqui a 2 horas. Se a SEFAZ recusar, a consulta automática se desliga sozinha.</p>
+        <p>Depois desta consulta, a próxima (automática ou por este botão) só sai daqui a 1 hora. Se a SEFAZ bloquear, o NoPaper espera o bloqueio acabar antes de tentar de novo.</p>
       </div>,
       confirmLabel: 'Consultar agora',
     });
     if (!ok) return;
     setQuerying(true);
     try {
-      const r = await post<{ result: { status: string; message: string; notes: number; paused: boolean } }>('/api/fiscal/query');
-      if (r.result.paused) toast.error(`A SEFAZ recusou: ${r.result.message}. A consulta automática foi desligada.`);
+      const r = await post<{ result: { status: string; message: string; notes: number; paused: boolean; blocked: boolean; nextAllowedAt: string } }>('/api/fiscal/query');
+      if (r.result.blocked) toast.error(`A SEFAZ bloqueou a consulta por excesso de consultas deste CNPJ. Liberada a partir de ${timeOf(r.result.nextAllowedAt)}.`);
+      else if (r.result.paused) toast.error(`A SEFAZ recusou: ${r.result.message}`);
       else if (r.result.status === 'error') toast.error(`Não foi possível consultar: ${r.result.message}`);
       else toast.success(r.result.notes ? `${plural(r.result.notes, 'documento recebido', 'documentos recebidos')}` : 'Nenhuma nota nova na SEFAZ.');
       refresh();
@@ -258,6 +259,8 @@ function SearchField({ onChange }: { onChange: (v: string) => void }) {
   );
 }
 
+const timeOf = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
 function StatusStrip({ cfg, waitUntil, manage, onSetup }: { cfg: Config; waitUntil: string | null; manage: boolean; onSetup: () => void }) {
   if (!cfg.certificate && cfg.docCount > 0) {
     return (
@@ -279,15 +282,28 @@ function StatusStrip({ cfg, waitUntil, manage, onSetup }: { cfg: Config; waitUnt
       </Card>
     );
   }
+  const blockedUntil = cfg.lastStatus === '656' && cfg.nextAllowedAt && new Date(cfg.nextAllowedAt).getTime() > Date.now() ? cfg.nextAllowedAt : null;
   const exp = new Date(cfg.certificate.notAfter).getTime();
   const days = Math.ceil((exp - Date.now()) / 86_400_000);
   return (
     <div className="flex flex-col gap-2">
+      {blockedUntil && (
+        <div className="flex items-start gap-3 rounded-xl border border-warn/40 bg-warn/10 p-3.5 text-sm">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />
+          <div className="min-w-0 flex-1">
+            <b>A SEFAZ bloqueou a consulta em {dateTime(cfg.lastQueryAt)}. Liberada a partir de {timeOf(blockedUntil)}.</b>{' '}
+            {cfg.lastMessage}{cfg.enabled && !cfg.pausedAt ? ' A consulta automática continua ligada e tenta de novo sozinha.' : ''}
+          </div>
+        </div>
+      )}
       {cfg.pausedAt && (
         <div className="flex items-start gap-3 rounded-xl border border-warn/40 bg-warn/10 p-3.5 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />
-          <div className="min-w-0 flex-1"><b>Consulta automática desligada em {dateTime(cfg.pausedAt)}.</b> {cfg.pausedReason}</div>
-          {manage && <Button size="sm" variant="secondary" onClick={onSetup}>Religar</Button>}
+          <div className="min-w-0 flex-1">
+            <b>Consulta automática suspensa em {dateTime(cfg.pausedAt)}.</b> {cfg.pausedReason}{' '}
+            Uma consulta pelo "Consultar agora" que dê certo, ou salvar a configuração com a consulta ligada, tira a suspensão.
+          </div>
+          {manage && <Button size="sm" variant="secondary" onClick={onSetup}>Configurar</Button>}
         </div>
       )}
       {days <= 30 && (
@@ -404,7 +420,7 @@ function SetupDialog({ open, onClose, cfg, isAdmin, onSaved }: { open: boolean; 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Switch checked={f.enabled} disabled={!cfg.certificate} onChange={(v) => set({ enabled: v })} label="Consultar a SEFAZ todo dia"
-              hint={cfg.certificate ? 'Uma consulta por dia, com 2 horas de folga entre consultas. Se a SEFAZ recusar, desliga sozinha.' : 'Envie o certificado primeiro.'} />
+              hint={cfg.certificate ? 'Uma consulta por dia, com pelo menos 1 hora entre consultas. Se a SEFAZ bloquear, tenta de novo quando o bloqueio acabar.' : 'Envie o certificado primeiro.'} />
           </div>
           <Field label="Horário da consulta" hint="Depois do horário de compras: as notas do dia já estarão na SEFAZ.">
             <Select value={String(f.queryHour)} onChange={(e) => set({ queryHour: Number(e.target.value) })}>

@@ -142,16 +142,16 @@ export async function ingestDocument(org: Org, nsu: number, schemaName: string, 
 }
 
 // ------------------------------------------------------------------ consulta
-export interface QueryResult { status: string; message: string; notes: number; events: number; batches: number; paused: boolean }
+export interface QueryResult { status: string; message: string; notes: number; events: number; batches: number; paused: boolean; blocked: boolean; nextAllowedAt: string }
 
 const running = new Set<string>();
 
 async function pause(orgId: string, orgName: string, reason: string) {
   await db.update(schema.fiscalConfigs).set({ pausedAt: new Date(), pausedReason: reason }).where(eq(schema.fiscalConfigs.orgId, orgId));
-  await notifyAdmins(await orgAdmins(orgId), `NoPaper: consulta de notas fiscais pausada em ${orgName}`, [
-    `A consulta automática de notas fiscais na SEFAZ do espaço "${orgName}" foi desligada por segurança.`,
+  await notifyAdmins(await orgAdmins(orgId), `NoPaper: consulta de notas fiscais suspensa em ${orgName}`, [
+    `A SEFAZ deu uma resposta inesperada à consulta de notas fiscais do espaço "${orgName}", e a consulta automática ficou suspensa até alguém conferir.`,
     `Motivo: ${reason}`,
-    'Nada foi perdido: as notas continuam na SEFAZ. Para voltar, religue a consulta em Configuração do espaço → Notas fiscais (SEFAZ).',
+    'Nada foi perdido: as notas continuam na SEFAZ. Uma consulta pelo botão "Consultar agora" que dê certo, ou salvar a configuração com a consulta automática ligada, tira a suspensão.',
   ]).catch(() => undefined);
 }
 
@@ -197,6 +197,7 @@ async function query(orgId: string, trigger: 'auto' | 'manual'): Promise<QueryRe
   let notes = 0; let events = 0; let batches = 0;
   let status = 'error'; let message = '';
   let paused = false;
+  let blocked = false;
   const today = todayISO(org.timezone);
   // marca antes de chamar: mesmo que o processo caia no meio, a próxima não sai em seguida
   await db.update(t).set({ nextAllowedAt: new Date(Date.now() + FISCAL_MIN_GAP_MS), ...(trigger === 'auto' ? { lastAutoDate: today } : {}) }).where(eq(t.orgId, orgId));
@@ -209,13 +210,23 @@ async function query(orgId: string, trigger: 'auto' | 'manual'): Promise<QueryRe
       status = r.cStat ?? 'error';
       message = r.xMotivo ?? 'Resposta sem motivo';
       if (r.cStat === DIST_BLOCKED) {
-        paused = true;
-        await pause(orgId, org.name, `a SEFAZ respondeu "${message}" (656). O bloqueio da SEFAZ é temporário (cerca de 1 hora) e vale para todos os sistemas que consultam este CNPJ.`);
+        blocked = true;
+        // desde a NT 2014.002 v1.14 a rejeição traz o último NSU já consultado para este CNPJ (por qualquer sistema)
+        const seen = r.ultNSU ? Number(r.ultNSU) : 0;
+        const other = seen > lastNsu
+          ? ` A SEFAZ informou que as notas deste CNPJ já foram consultadas até o número ${seen} da fila, e o NoPaper estava no ${lastNsu}: outro sistema (do contador, de gestão ou de emissão de notas) também consulta as notas recebidas deste CNPJ.`
+          : '';
+        message = `A SEFAZ recusou a consulta por excesso de consultas deste CNPJ na última hora (656). O bloqueio vale para todos os sistemas que consultam as notas deste CNPJ e acaba sozinho.${other}`;
+        const until = new Date(Date.now() + FISCAL_MIN_GAP_MS).toLocaleTimeString('pt-BR', { timeZone: org.timezone, hour: '2-digit', minute: '2-digit' });
+        await notifyAdmins(await orgAdmins(orgId), `NoPaper: SEFAZ bloqueou por 1 hora a consulta de notas de ${org.name}`, [
+          message,
+          `O NoPaper tenta de novo a partir de ${until}${cfg.enabled ? ' (a consulta automática continua ligada)' : ''}. Nada foi perdido: as notas continuam na SEFAZ.`,
+        ]).catch(() => undefined);
         break;
       }
       if (r.cStat !== DIST_FOUND && r.cStat !== DIST_NONE) {
         paused = true;
-        await pause(orgId, org.name, `a SEFAZ respondeu ${r.cStat ?? 'algo inesperado'}: ${message}`);
+        await pause(orgId, org.name, `A SEFAZ respondeu ${r.cStat ?? 'algo inesperado'}: ${message}`);
         break;
       }
       for (const d of r.docs) {
@@ -233,11 +244,16 @@ async function query(orgId: string, trigger: 'auto' | 'manual'): Promise<QueryRe
     status = 'error';
     message = (e as Error).message?.slice(0, 300) || 'Falha de comunicação com a SEFAZ';
   }
+  const nextAllowedAt = new Date(Date.now() + FISCAL_MIN_GAP_MS);
   await db.update(t).set({
-    lastQueryAt: new Date(), lastStatus: status.slice(0, 16), lastMessage: message.slice(0, 500),
-    nextAllowedAt: new Date(Date.now() + (paused ? 3 : 2) * 60 * 60 * 1000),
+    lastQueryAt: new Date(), lastStatus: status.slice(0, 16), lastMessage: message.slice(0, 1000),
+    nextAllowedAt,
+    // bloqueio da consulta automática: tenta de novo no mesmo dia quando liberar
+    ...(blocked && trigger === 'auto' ? { lastAutoDate: cfg.lastAutoDate } : {}),
+    // consulta que passou tira o aviso de uma pausa antiga (a chave da automática continua como a pessoa deixou)
+    ...(!paused && (status === DIST_FOUND || status === DIST_NONE) ? { pausedAt: null, pausedReason: null } : {}),
   }).where(eq(t.orgId, orgId));
-  return { status, message, notes, events, batches, paused };
+  return { status, message, notes, events, batches, paused, blocked, nextAllowedAt: nextAllowedAt.toISOString() };
 }
 
 // ------------------------------------------------------------------ job diário
