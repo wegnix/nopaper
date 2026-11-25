@@ -8,6 +8,11 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.38.1] - 2026-11-25
+
+### Corrigido
+- Notas fiscais: os avisos sobre o bloqueio da SEFAZ e sobre notas que chegam só como resumo falavam em "sistema da farmácia". Agora citam o sistema de gestão (ERP) da empresa, em qualquer espaço.
+
 ## [1.38.0] - 2026-11-25
 
 ### Adicionado

@@ -71,7 +71,7 @@ export function FiscalPage() {
     const ok = await confirm({
       title: 'Consultar a SEFAZ agora?',
       body: <div className="space-y-2 text-sm text-muted">
-        <p>A SEFAZ bloqueia por cerca de 1 hora o CNPJ que consulta mais de uma vez na mesma hora — e o bloqueio vale também para o sistema da farmácia (ERP).</p>
+        <p>A SEFAZ bloqueia por cerca de 1 hora o CNPJ que consulta mais de uma vez na mesma hora. O bloqueio vale para todos os sistemas que consultam as notas deste CNPJ — inclusive o sistema de gestão (ERP) da empresa, se ele também faz essa consulta.</p>
         <p>Depois desta consulta, a próxima (automática ou por este botão) só sai daqui a 2 horas. Se a SEFAZ recusar, a consulta automática se desliga sozinha.</p>
       </div>,
       confirmLabel: 'Consultar agora',
@@ -342,7 +342,7 @@ const DocCard = memo(function DocCard({ d, canLaunch, onLaunch: launch, onStatus
       </div>
       <div className="flex flex-wrap gap-1.5 text-xs">
         {canceled && <span className="rounded-full bg-danger/15 px-2 py-0.5 font-medium text-danger">{d.situation === 'canceled' ? 'Cancelada pelo fornecedor' : 'Denegada'}</span>}
-        {d.kind === 'summary' && <span className="rounded-full bg-warn/15 px-2 py-0.5 text-warn" title="A SEFAZ só libera o XML completo depois da manifestação do destinatário (o sistema da farmácia costuma fazer).">Só o resumo · duplicatas ainda não liberadas</span>}
+        {d.kind === 'summary' && <span className="rounded-full bg-warn/15 px-2 py-0.5 text-warn" title="A SEFAZ só libera o XML completo depois da manifestação do destinatário (o sistema de gestão (ERP) da empresa costuma fazer).">Só o resumo · duplicatas ainda não liberadas</span>}
         {d.duplicates.length > 0 && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-muted">{plural(d.duplicates.length, 'duplicata', 'duplicatas')} · 1ª em {formatDateBR(first)}</span>}
         {d.paymentKinds.map((k) => <span key={k} className="rounded-full bg-surface-2 px-2 py-0.5 text-muted">{NFE_PAYMENT_LABELS[k] ?? `Pagamento ${k}`}</span>)}
         {d.status === 'done' && d.billIds.length > 0 && (
