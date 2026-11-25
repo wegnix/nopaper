@@ -757,3 +757,80 @@ export const manuals = pgTable('manuals', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Consulta de NF-e na SEFAZ (distribuição DF-e) por espaço. O certificado A1 (.pfx) e a senha dele
+ * ficam cifrados (`lib/secrets.ts`, chave própria de certificados) e nunca voltam para a tela.
+ */
+export const fiscalConfigs = pgTable('fiscal_configs', {
+  orgId: uuid('org_id').primaryKey().references(() => organizations.id, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').notNull().default(false),
+  queryHour: integer('query_hour').notNull().default(6),
+  /** Notas emitidas antes deste dia ficam fora da lista (continuam guardadas). */
+  startDate: date('start_date'),
+  uf: varchar('uf', { length: 2 }),
+  categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+  folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'set null' }),
+  certEnc: text('cert_enc'),
+  certPassEnc: text('cert_pass_enc'),
+  certSubject: varchar('cert_subject', { length: 300 }),
+  certDocument: varchar('cert_document', { length: 20 }),
+  certNotBefore: timestamp('cert_not_before', { withTimezone: true }),
+  certNotAfter: timestamp('cert_not_after', { withTimezone: true }),
+  certFingerprint: varchar('cert_fingerprint', { length: 120 }),
+  certUploadedBy: uuid('cert_uploaded_by'),
+  certUploadedByName: varchar('cert_uploaded_by_name', { length: 120 }),
+  certUploadedAt: timestamp('cert_uploaded_at', { withTimezone: true }),
+  /** Último NSU recebido (a próxima consulta continua dele). */
+  lastNsu: bigint('last_nsu', { mode: 'number' }).notNull().default(0),
+  maxNsu: bigint('max_nsu', { mode: 'number' }),
+  lastQueryAt: timestamp('last_query_at', { withTimezone: true }),
+  /** cStat da última resposta (ou "error"). */
+  lastStatus: varchar('last_status', { length: 16 }),
+  lastMessage: text('last_message'),
+  /** Dia (fuso do espaço) da última consulta automática: 1 por dia. */
+  lastAutoDate: date('last_auto_date'),
+  /** Antes disso nenhuma consulta sai (regra de 1 hora da SEFAZ, com folga). */
+  nextAllowedAt: timestamp('next_allowed_at', { withTimezone: true }),
+  /** A consulta automática se desliga sozinha (ex.: 656 consumo indevido) até alguém religar. */
+  pausedAt: timestamp('paused_at', { withTimezone: true }),
+  pausedReason: text('paused_reason'),
+  /** Aviso de certificado perto de vencer já enviado (data de validade a que se refere). */
+  expiryWarnedFor: timestamp('expiry_warned_for', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Nota recebida. kind: summary (só o resumo) | full (XML completo). status: new | done (lançada) | dismissed.
+ * situation: authorized | canceled | denied. role: recipient (destinatário = o espaço) | other.
+ */
+export const fiscalDocuments = pgTable('fiscal_documents', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  accessKey: varchar('access_key', { length: 44 }).notNull(),
+  nsu: bigint('nsu', { mode: 'number' }),
+  kind: varchar('kind', { length: 16 }).notNull().default('summary'),
+  status: varchar('status', { length: 16 }).notNull().default('new'),
+  situation: varchar('situation', { length: 16 }).notNull().default('authorized'),
+  role: varchar('role', { length: 16 }).notNull().default('recipient'),
+  number: varchar('number', { length: 20 }),
+  series: varchar('series', { length: 5 }),
+  issuedAt: date('issued_at'),
+  emitterDocument: varchar('emitter_document', { length: 20 }),
+  emitterName: varchar('emitter_name', { length: 200 }),
+  total: numeric('total', { precision: 14, scale: 2 }),
+  nature: varchar('nature', { length: 120 }),
+  duplicates: jsonb('duplicates').$type<{ number: string | null; dueDate: string | null; amount: string }[]>().notNull().default([]),
+  paymentKinds: text('payment_kinds').array().notNull().default(sql`'{}'::text[]`),
+  /** XML completo (ou o do resumo) como veio da SEFAZ. */
+  xml: text('xml'),
+  billIds: uuid('bill_ids').array().notNull().default(sql`'{}'::uuid[]`),
+  handledBy: uuid('handled_by'),
+  handledByName: varchar('handled_by_name', { length: 120 }),
+  handledAt: timestamp('handled_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  uniqueIndex('fiscal_documents_key_uq').on(t.orgId, t.accessKey),
+  index('fiscal_documents_list_idx').on(t.orgId, t.status, t.issuedAt),
+]);

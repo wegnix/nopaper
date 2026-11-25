@@ -34,3 +34,29 @@ export function nextSecret(incoming: string | null | undefined, current: string 
   if (incoming === undefined || incoming === '') return current ?? null;
   return encryptSecret(incoming);
 }
+
+/**
+ * Certificados digitais (A1) e a senha deles: mesma cifra, com chave derivada à parte (`certificates-v1`),
+ * para um vazamento de outro segredo nunca servir para abrir um certificado. Prefixo "c1".
+ */
+const certKey = Buffer.from(hkdfSync('sha256', env.SECRETS_KEY ?? env.JWT_SECRET, 'nopaper', 'certificates-v1', 32));
+
+export function sealCertificate(data: Buffer): string {
+  const iv = randomBytes(12);
+  const c = createCipheriv('aes-256-gcm', certKey, iv);
+  const enc = Buffer.concat([c.update(data), c.final()]);
+  return `c1.${iv.toString('base64url')}.${c.getAuthTag().toString('base64url')}.${enc.toString('base64url')}`;
+}
+
+export function openCertificate(blob: string | null | undefined): Buffer | null {
+  if (!blob) return null;
+  const [v, iv, tag, data] = blob.split('.');
+  if (v !== 'c1' || !iv || !tag || !data) return null;
+  try {
+    const d = createDecipheriv('aes-256-gcm', certKey, Buffer.from(iv, 'base64url'));
+    d.setAuthTag(Buffer.from(tag, 'base64url'));
+    return Buffer.concat([d.update(Buffer.from(data, 'base64url')), d.final()]);
+  } catch {
+    return null;
+  }
+}

@@ -8,6 +8,14 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.38.0] - 2026-11-25
+
+### Adicionado
+- **Notas fiscais da SEFAZ** (menu "Notas fiscais", só em espaço Empresa): as NF-e emitidas contra o CNPJ da empresa chegam sozinhas da SEFAZ, uma vez por dia, no horário escolhido. Cada nota mostra o fornecedor, o valor e as duplicatas. Pelo botão "Lançar contas", as duplicatas viram contas a pagar parceladas, com a categoria e a pasta padrão. Notas canceladas pelo fornecedor ficam marcadas e não podem ser lançadas. Em "Notas a partir de" se escolhe a data de início: as notas emitidas antes dela ficam guardadas, mas fora da lista, e dá para mudar a data depois. As notas podem ser vistas em cartões ou em lista (tabela no computador, linhas compactas no celular), com o total das notas da aba. Também dá para dispensar uma nota, marcá-la como já lançada e baixar o XML.
+- Para ligar a consulta, o administrador do espaço envia o **certificado digital A1 (e-CNPJ)** com a senha dele. O arquivo é conferido (senha, validade e CNPJ igual ao do espaço) e guardado cifrado no servidor: nunca volta para a tela e só é aberto na memória, na hora da consulta. Enviar, trocar ou remover o certificado pede a senha da conta e fica registrado na Auditoria. Os administradores recebem um aviso 30 dias antes de o certificado vencer.
+- **Proteção contra o bloqueio da SEFAZ**: a consulta acontece no máximo uma vez por dia, com 2 horas de intervalo entre consultas (inclusive pelo botão "Consultar agora"). Se a SEFAZ recusar por excesso de consultas, a consulta automática se desliga sozinha e os administradores recebem um aviso. O NoPaper só lê as notas e não envia manifestação (ciência, confirmação), que continua com o sistema da empresa.
+- Permissões novas: "Ver as notas fiscais recebidas (SEFAZ)" e "Configurar a consulta à SEFAZ". Elas não entram sozinhas nos grupos existentes. Lançar as contas de uma nota usa "Cadastrar contas a pagar".
+
 ## [1.37.0] - 2026-11-24
 
 ### Adicionado

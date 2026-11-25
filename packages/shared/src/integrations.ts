@@ -16,7 +16,7 @@ export const API_RATE_LIMIT_MIN = 60;
 export const API_RATE_LIMIT_MAX = 3000;
 
 /** O que nenhum token pode fazer: gestão do espaço continua só pela tela, com uma pessoa logada. */
-export const INTEGRATION_FORBIDDEN_PERMISSIONS: Permission[] = ['members.manage', 'groups.manage', 'org.settings', 'alerts.manage', 'integrations.manage'];
+export const INTEGRATION_FORBIDDEN_PERMISSIONS: Permission[] = ['members.manage', 'groups.manage', 'org.settings', 'alerts.manage', 'integrations.manage', 'fiscal.view', 'fiscal.manage'];
 export const INTEGRATION_PERMISSIONS: Permission[] = ALL_PERMISSIONS.filter((p) => !INTEGRATION_FORBIDDEN_PERMISSIONS.includes(p));
 
 /** Modelo "Só leitura": ver as áreas, sem categorias restritas (essa é marcada à parte). */

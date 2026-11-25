@@ -69,7 +69,7 @@ export async function hasActiveOwner(orgId: string) {
 type Admin = Awaited<ReturnType<typeof orgAdmins>>[number];
 
 /** Aviso por e-mail (SMTP da plataforma) e Telegram (quem ligou o próprio chat). Falha de envio não interrompe nada. */
-async function notifyAdmins(admins: Admin[], subject: string, lines: string[]) {
+export async function notifyAdmins(admins: Admin[], subject: string, lines: string[]) {
   const text = lines.join('\n\n');
   const html = `<div style="font-family:system-ui,sans-serif;font-size:14px;line-height:1.5">${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join('')}</div>`;
   const emails = admins.map((a) => a.email).filter((e) => e && !e.endsWith('.invalid'));

@@ -18,6 +18,7 @@ import { DashboardPage } from './pages/Dashboard';
 import { BillsPage } from './features/bills/BillsPage';
 import { CardsPage } from './features/cards/CardsPage';
 import { BankPage } from './features/bank/BankPage';
+import { FiscalPage } from '@/features/fiscal/FiscalPage';
 import { AccountingPage } from '@/features/accounting/AccountingPage';
 import { AccountantInboxPage } from '@/features/accounting/Exchange';
 import { PayrollPage } from './features/payroll/PayrollPage';
@@ -93,6 +94,7 @@ function App() {
           <Route path="receber" element={<BillsPage type="receivable" />} />
           <Route path="cartoes" element={<CardsPage />} />
           <Route path="bancos" element={<BankPage />} />
+          <Route path="notas" element={<FiscalPage />} />
           <Route path="folha" element={<PayrollPage />} />
           <Route path="contador" element={<AccountingPage />} />
           <Route path="recebidos" element={<AccountantInboxPage />} />

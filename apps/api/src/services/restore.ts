@@ -27,7 +27,7 @@ import { pool } from '../db/client.js';
 import { latestMigration, migrateDatabase } from '../db/migrate.js';
 import { env } from '../env.js';
 import { drainRequests, enterMaintenance, exitMaintenance } from '../lib/maintenance.js';
-import { decryptSecret } from '../lib/secrets.js';
+import { openCertificate, decryptSecret } from '../lib/secrets.js';
 import { getSystemSetting } from '../lib/settings.js';
 import { startJobs, stopJobs } from '../jobs/index.js';
 import {
@@ -161,6 +161,12 @@ async function restoreIntoTemp(dump: string, warnings: string[]) {
     const settings = await c.query<{ key: string; value: unknown }>(`select key, value from system_settings where key <> 'backup'`);
     const bad = settings.rows.filter((r) => hasUnreadableSecret(r.value)).map((r) => r.key);
     if (bad.length) warnings.push(`Alguns segredos do backup (${bad.join(', ')}) foram cifrados com outra SECRETS_KEY e não podem ser lidos neste servidor: cadastre-os de novo em Plataforma.`);
+    // certificados digitais (notas fiscais da SEFAZ) cifrados com outra chave: precisam ser enviados de novo
+    try {
+      const certs = await c.query<{ cert_enc: string }>('select cert_enc from fiscal_configs where cert_enc is not null');
+      const lost = certs.rows.filter((r) => openCertificate(r.cert_enc) === null).length;
+      if (lost) warnings.push(`${lost} certificado(s) digital(is) das notas fiscais foram cifrados com outra SECRETS_KEY: envie de novo em Configuração do espaço → Notas fiscais (SEFAZ).`);
+    } catch { /* backup de antes do módulo */ }
   });
 }
 function hasUnreadableSecret(v: unknown): boolean {

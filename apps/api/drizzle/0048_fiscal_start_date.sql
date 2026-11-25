@@ -1,0 +1,1 @@
+ALTER TABLE "fiscal_configs" ADD COLUMN "start_date" date;

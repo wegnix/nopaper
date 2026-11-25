@@ -55,7 +55,7 @@ const AREA_PERMS: Record<string, Permission[]> = {
   category: ['payable.view', 'receivable.view'], folder: ['payable.view', 'receivable.view'],
   card: ['cards.view'], bank: ['bank.view'], payroll: ['payroll.view'],
   accounting: ['accounting.review', 'accounting.send'],
-  integration: ['integrations.manage'],
+  integration: ['integrations.manage'], fiscal: ['fiscal.view'],
   member: ['members.manage'], group: ['groups.manage', 'members.manage'], org: ['org.settings'], alerts: ['alerts.manage'],
 };
 export function auditAreasFor(org: { isAdmin: boolean; can(p: Permission): boolean }): string[] | null {

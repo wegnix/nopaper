@@ -7,6 +7,7 @@ import { runBackupTick } from '../services/backup.js';
 import { deliverWebhooks } from '../services/webhooks.js';
 import { cleanIdempotencyKeys } from '../services/integrations.js';
 import { runOrgPurgeTick } from '../services/orgRemoval.js';
+import { runFiscalTick } from '../services/fiscal.js';
 
 let boss: PgBoss | null = null;
 
@@ -22,6 +23,8 @@ const handlers: Record<string, { cron: string; run: Handler }> = {
   'backup.tick': { cron: '7,22,37,52 * * * *', run: runBackupTick },
   // espaços com remoção pedida: aviso de 1 dia antes e remoção quando o prazo vence (fora dos minutos do backup)
   'orgs.purge': { cron: '12,42 * * * *', run: runOrgPurgeTick },
+  // notas fiscais da SEFAZ: confere a hora de cada espaço (consulta no máximo 1 vez por dia)
+  'fiscal.tick': { cron: '3,18,33,48 * * * *', run: runFiscalTick },
 };
 
 /** Registra handlers extras (alertas, backups) — chamado pelos módulos antes do start. */

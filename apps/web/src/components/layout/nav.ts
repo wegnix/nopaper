@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, BarChart3, CreditCard, FileUp, Inbox, Landmark, LayoutDashboard, Settings, UsersRound, type LucideIcon } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, BarChart3, CreditCard, FileText, FileUp, Inbox, Landmark, LayoutDashboard, Settings, UsersRound, type LucideIcon } from 'lucide-react';
 import { billNames, type Permission } from '@nopaper/shared';
 
 /** `companyOnly`: só aparece em espaço do tipo Empresa. */
@@ -10,6 +10,7 @@ export const NAV: NavItem[] = [
   { to: '/receber', label: 'Contas a receber', icon: ArrowDownLeft, perm: 'receivable.view' },
   { to: '/cartoes', label: 'Cartões', icon: CreditCard, perm: 'cards.view' },
   { to: '/bancos', label: 'Contas bancárias', icon: Landmark, perm: 'bank.view' },
+  { to: '/notas', label: 'Notas fiscais', icon: FileText, perm: 'fiscal.view', companyOnly: true },
   { to: '/folha', label: 'Folha de pagamento', icon: UsersRound, perm: 'payroll.view', companyOnly: true },
   { to: '/contador', label: 'Contador', icon: FileUp, anyPerm: ['accounting.upload', 'accounting.review', 'accounting.send'] },
   { to: '/relatorios', label: 'Relatórios', icon: BarChart3, perm: 'reports.view' },

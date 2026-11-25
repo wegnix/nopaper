@@ -26,3 +26,4 @@ export * from './integrations.js';
 export * from './spaceCheck.js';
 export * from './vacations.js';
 export * from './manuals.js';
+export * from './nfe.js';

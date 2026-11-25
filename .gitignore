@@ -22,3 +22,7 @@ pre-restore-*.dump
 /amostras-*/
 # scripts temporários de teste
 apps/api/src/scripts/_tmp-*
+
+# certificados digitais
+*.pfx
+*.p12

@@ -330,6 +330,20 @@
       "when": 1795539595684,
       "tag": "0046_group_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795609306350,
+      "tag": "0047_fiscal_nfe",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795611375457,
+      "tag": "0048_fiscal_start_date",
+      "breakpoints": true
     }
   ]
 }

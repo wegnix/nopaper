@@ -29,6 +29,7 @@ import accountingRoutes from './routes/accounting.js';
 import manualRoutes from './routes/manuals.js';
 import esignRoutes from './routes/esign.js';
 import vacationRoutes from './routes/vacations.js';
+import { fiscalRoutes } from './routes/fiscal.js';
 import integrationRoutes from './routes/integrations.js';
 import v1Routes from './routes/v1.js';
 
@@ -113,6 +114,7 @@ export async function buildApp() {
   await app.register(manualRoutes);
   await app.register(esignRoutes);
   await app.register(vacationRoutes);
+  await app.register(fiscalRoutes);
   await app.register(integrationRoutes);
   await app.register(v1Routes);
   return app;
