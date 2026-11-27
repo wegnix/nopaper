@@ -344,6 +344,20 @@
       "when": 1795611375457,
       "tag": "0048_fiscal_start_date",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795792708347,
+      "tag": "0049_fiscal_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795794145379,
+      "tag": "0050_fiscal_links",
+      "breakpoints": true
     }
   ]
 }

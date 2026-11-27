@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import type { NfeDetails } from '@nopaper/shared';
 import {
   pgTable, uuid, text, varchar, boolean, timestamp, date, numeric, integer, smallint,
   jsonb, bigserial, bigint, primaryKey, uniqueIndex, index, type AnyPgColumn,
@@ -824,7 +825,11 @@ export const fiscalDocuments = pgTable('fiscal_documents', {
   paymentKinds: text('payment_kinds').array().notNull().default(sql`'{}'::text[]`),
   /** XML completo (ou o do resumo) como veio da SEFAZ. */
   xml: text('xml'),
+  /** Itens e veículo lidos do XML completo (`parseNfeDetails`); null = resumo ou ainda não lido. */
+  details: jsonb('details').$type<NfeDetails>(),
   billIds: uuid('bill_ids').array().notNull().default(sql`'{}'::uuid[]`),
+  /** Parte de `bill_ids` que veio do botão Vincular (conta já existente); o resto foi criado pelo Lançar. */
+  linkedBillIds: uuid('linked_bill_ids').array().notNull().default(sql`'{}'::uuid[]`),
   handledBy: uuid('handled_by'),
   handledByName: varchar('handled_by_name', { length: 120 }),
   handledAt: timestamp('handled_at', { withTimezone: true }),

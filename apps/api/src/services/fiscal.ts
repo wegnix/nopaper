@@ -113,7 +113,7 @@ export async function ingestDocument(org: Org, nsu: number, schemaName: string, 
     const data = {
       nsu, kind: 'full', role, number: n.number, series: n.series, issuedAt: n.issuedAt, emitterDocument: n.emitterDocument,
       emitterName: n.emitterName?.slice(0, 200) ?? null, total: n.total, nature: n.nature?.slice(0, 120) ?? null,
-      duplicates: n.duplicates, paymentKinds: n.paymentKinds, xml,
+      duplicates: n.duplicates, paymentKinds: n.paymentKinds, xml, details: n.details,
     };
     await db.insert(t).values({ orgId: org.id, accessKey: n.key, ...data })
       .onConflictDoUpdate({ target: [t.orgId, t.accessKey], set: { ...data, updatedAt: new Date() } });

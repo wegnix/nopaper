@@ -1,0 +1,1 @@
+ALTER TABLE "fiscal_documents" ADD COLUMN "details" jsonb;

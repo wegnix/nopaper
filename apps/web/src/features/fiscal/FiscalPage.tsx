@@ -3,13 +3,13 @@ import { Link } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  AlertTriangle, BadgeCheck, LayoutGrid, List, CalendarClock, Download, FileBadge, FileCheck2, FileText, KeyRound, Plus, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, Trash2, Undo2, X,
+  AlertTriangle, BadgeCheck, Car, Fuel, LayoutGrid, Link2, Package, Unlink, List, CalendarClock, Download, FileBadge, FileCheck2, FileText, KeyRound, Plus, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, Trash2, Undo2, X,
 } from 'lucide-react';
 import {
-  BR_STATES, NFE_PAYMENT_LABELS, formatBRL, formatDateBR, formatDocument, fromCents, nfeBillDescription, toCents, todayISO,
-  type FiscalConfigView, type FiscalDocumentRow,
+  BR_STATES, NFE_PAYMENT_LABELS, formatBRL, formatDateBR, formatDocument, fromCents, nfeBillDescription, nfeBillNotes, nfeItemCalc, nfeVehicleLabel, toCents, todayISO,
+  type FiscalConfigView, type FiscalDocumentRow, type NfeDetails, type NfeItem,
 } from '@nopaper/shared';
-import { Button, Card, Empty, Field, IconButton, Input, PageHeader, Segmented, Select, Spinner, Switch } from '@/components/ui/base';
+import { Button, Card, Empty, Field, IconButton, Input, PageHeader, Segmented, Select, Spinner, Switch, Textarea, Tooltip } from '@/components/ui/base';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { DatePicker } from '@/components/ui/date-picker';
 import { MoneyInput } from '@/features/bills/MoneyInput';
@@ -19,6 +19,7 @@ import { useCan, useOrg, useSession } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
 import { useMedia } from '@/lib/useMedia';
 import { useProgressive } from '@/lib/useProgressive';
+import { LinkDialog } from './LinkDialog';
 
 type Config = FiscalConfigView & { orgDocument: string | null };
 type Tab = 'new' | 'done' | 'dismissed' | 'other';
@@ -50,6 +51,7 @@ export function FiscalPage() {
   const [q, setQ] = useState('');
   const [setupOpen, setSetupOpen] = useState(false);
   const [launch, setLaunch] = useState<FiscalDocumentRow | null>(null);
+  const [linking, setLinking] = useState<FiscalDocumentRow | null>(null);
   const [querying, setQuerying] = useState(false);
   const [view, setViewState] = useState<View>(readView);
   const setView = (v: View) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* sem armazenamento */ } };
@@ -91,6 +93,26 @@ export function FiscalPage() {
   async function setStatus(d: FiscalDocumentRow, status: FiscalDocumentRow['status']) {
     try { await put(`/api/fiscal/documents/${d.id}`, { status }); refresh(); } catch (e) { toast.error(errMsg(e)); }
   }
+  /** Desfaz o vínculo com uma conta (ou com todas as vinculadas, se `billId` faltar). A conta não muda. */
+  async function unlink(d: FiscalDocumentRow, billId?: string) {
+    const bills = d.bills.filter((b) => b.linked && (!billId || b.id === billId));
+    const ids = billId ? [billId] : bills.map((b) => b.id);
+    if (!ids.length) return;
+    const ok = await confirm({
+      title: ids.length > 1 ? `Desvincular ${ids.length} contas?` : 'Desvincular a conta?',
+      body: <div className="space-y-2 text-sm text-muted">
+        <p>A nota deixa de apontar para {ids.length > 1 ? 'estas contas' : bills[0] ? `"${bills[0].description}"` : 'esta conta'}{d.billIds.length === ids.length ? ' e volta para "A lançar"' : ''}.</p>
+        <p>A conta continua lançada como está, inclusive as observações.</p>
+      </div>,
+      confirmLabel: 'Desvincular',
+    });
+    if (!ok) return;
+    try {
+      for (const id of ids) await del(`/api/fiscal/documents/${d.id}/link/${id}`);
+      toast.success(ids.length > 1 ? 'Contas desvinculadas' : 'Conta desvinculada');
+      refresh();
+    } catch (e) { toast.error(errMsg(e)); refresh(); }
+  }
   async function downloadXml(d: FiscalDocumentRow) {
     try {
       const r = await api<Response>('GET', `/api/fiscal/documents/${d.id}/xml`, undefined, { raw: true });
@@ -131,27 +153,33 @@ export function FiscalPage() {
                   : tab === 'other' ? 'Notas em que a empresa aparece sem ser a destinatária (transporte, autorizada a baixar o XML…).' : 'Nenhuma nota nesta lista.'}
               </Empty>
             ) : (
-              <DocList docs={docsQ.data} view={view} resetKey={`${tab}|${q}|${view}`} canLaunch={can('payable.create')}
-                onLaunch={setLaunch} onStatus={setStatus} onXml={downloadXml} />
+              <DocList docs={docsQ.data} view={view} resetKey={`${tab}|${q}|${view}`} canLaunch={can('payable.create')} canLink={can('payable.view')}
+                onLaunch={setLaunch} onLink={setLinking} onUnlink={unlink} onStatus={setStatus} onXml={downloadXml} />
             )}
         </Card>
       )}
 
       {manage && <SetupDialog open={setupOpen} onClose={() => setSetupOpen(false)} cfg={cfg} isAdmin={!!org?.isAdmin} onSaved={refresh} />}
       <LaunchDialog doc={launch} defaults={cfg} onClose={() => setLaunch(null)} onDone={refresh} />
+      <LinkDialog doc={linking} onClose={() => setLinking(null)} onDone={refresh} />
     </div>
   );
 }
 
-type DocActions = { canLaunch: boolean; onLaunch: (d: FiscalDocumentRow) => void; onStatus: (d: FiscalDocumentRow, s: FiscalDocumentRow['status']) => void; onXml: (d: FiscalDocumentRow) => void };
+type DocActions = {
+  canLaunch: boolean; canLink: boolean;
+  onLaunch: (d: FiscalDocumentRow) => void; onLink: (d: FiscalDocumentRow) => void; onUnlink: (d: FiscalDocumentRow, billId?: string) => void;
+  onStatus: (d: FiscalDocumentRow, s: FiscalDocumentRow['status']) => void; onXml: (d: FiscalDocumentRow) => void;
+};
 
 /** Cartões ou lista; montada aos poucos (centenas de notas no 1º dia). Ações com identidade fixa para as linhas com `memo`. */
 function DocList({ docs, view, resetKey, ...actions }: { docs: FiscalDocumentRow[]; view: View; resetKey: string } & DocActions) {
   const wide = useMedia('(min-width: 1024px)');
   const ref = useRef(actions);
   ref.current = actions;
-  const stable = useMemo<Omit<DocActions, 'canLaunch'>>(() => ({
-    onLaunch: (d) => ref.current.onLaunch(d), onStatus: (d, s) => ref.current.onStatus(d, s), onXml: (d) => ref.current.onXml(d),
+  const stable = useMemo<Omit<DocActions, 'canLaunch' | 'canLink'>>(() => ({
+    onLaunch: (d) => ref.current.onLaunch(d), onLink: (d) => ref.current.onLink(d), onUnlink: (d, b) => ref.current.onUnlink(d, b),
+    onStatus: (d, s) => ref.current.onStatus(d, s), onXml: (d) => ref.current.onXml(d),
   }), []);
   const list = useProgressive(docs, resetKey, 40, 40);
   const total = useMemo(() => fromCents(docs.reduce((t, d) => t + (d.total ? toCents(d.total) : 0), 0)), [docs]);
@@ -160,7 +188,7 @@ function DocList({ docs, view, resetKey, ...actions }: { docs: FiscalDocumentRow
       <div className="text-xs text-faint">{plural(docs.length, 'nota', 'notas')} · {formatBRL(total)}</div>
       {view === 'cards' ? (
         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-          {list.visible.map((d) => <DocCard key={d.id} d={d} canLaunch={actions.canLaunch} {...stable} />)}
+          {list.visible.map((d) => <DocCard key={d.id} d={d} canLaunch={actions.canLaunch} canLink={actions.canLink} {...stable} />)}
         </div>
       ) : wide ? (
         <div className="overflow-x-auto rounded-xl border border-line">
@@ -169,21 +197,22 @@ function DocList({ docs, view, resetKey, ...actions }: { docs: FiscalDocumentRow
               <tr>
                 <th className="px-3 py-2 font-medium">Emissão</th>
                 <th className="px-3 py-2 font-medium">Fornecedor</th>
+                <th className="px-3 py-2 font-medium">Produtos / veículo</th>
                 <th className="px-3 py-2 font-medium">NF</th>
                 <th className="px-3 py-2 font-medium">Duplicatas</th>
-                <th className="px-3 py-2 font-medium">Pagamento</th>
+                <th className="hidden px-3 py-2 font-medium 2xl:table-cell">Pagamento</th>
                 <th className="px-3 py-2 text-right font-medium">Total</th>
                 <th className="px-3 py-2 text-right font-medium"><span className="sr-only">Ações</span></th>
               </tr>
             </thead>
             <tbody>
-              {list.visible.map((d) => <DocTableRow key={d.id} d={d} canLaunch={actions.canLaunch} {...stable} />)}
+              {list.visible.map((d) => <DocTableRow key={d.id} d={d} canLaunch={actions.canLaunch} canLink={actions.canLink} {...stable} />)}
             </tbody>
           </table>
         </div>
       ) : (
         <div className="divide-y divide-line overflow-hidden rounded-xl border border-line">
-          {list.visible.map((d) => <DocLine key={d.id} d={d} canLaunch={actions.canLaunch} {...stable} />)}
+          {list.visible.map((d) => <DocLine key={d.id} d={d} canLaunch={actions.canLaunch} canLink={actions.canLink} {...stable} />)}
         </div>
       )}
       {list.sentinel}
@@ -196,17 +225,75 @@ const dupSummary = (d: FiscalDocumentRow) => (d.duplicates.length
   : d.kind === 'summary' ? 'Só o resumo' : 'Sem duplicata');
 const payLabel = (d: FiscalDocumentRow) => d.paymentKinds.map((k) => NFE_PAYMENT_LABELS[k] ?? k).join(', ') || '—';
 
+/** Placa · modelo · km (o que o fornecedor escreveu nas informações complementares). */
+function VehicleChip({ d, className }: { d: NfeDetails | null; className?: string }) {
+  if (!d?.vehicle) return null;
+  return (
+    <span className={cn('inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent', className)} title="Veículo informado na nota">
+      <Car className="size-3.5" />{nfeVehicleLabel(d.vehicle).replace(/^Placa /, '')}
+    </span>
+  );
+}
+
+/** Todos os itens (dica ao passar o mouse). */
+function ItemsTip({ d }: { d: NfeDetails }) {
+  return (
+    <div className="flex max-w-sm flex-col gap-1 py-0.5 text-left">
+      {d.items.map((i, n) => <div key={n}><div className="font-medium">{i.name}</div>{nfeItemCalc(i) && <div className="opacity-80 tabular-nums">{nfeItemCalc(i)}</div>}</div>)}
+      {d.itemCount > d.items.length && <div className="opacity-80">… e mais {d.itemCount - d.items.length} (no XML)</div>}
+    </div>
+  );
+}
+
+function ItemRow({ i }: { i: NfeItem }) {
+  const calc = nfeItemCalc(i);
+  return (
+    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
+      <span className="flex min-w-[11rem] flex-1 items-center gap-2">
+        {i.fuel ? <Fuel className="size-3.5 shrink-0 text-muted" /> : <Package className="size-3.5 shrink-0 text-muted" />}
+        <span className="min-w-0 truncate font-medium" title={i.name}>{i.name}</span>
+      </span>
+      {calc && <span className="ml-auto whitespace-nowrap text-xs text-muted tabular-nums">{calc}</span>}
+    </div>
+  );
+}
+
+/** 1º item (nome numa linha, quantidade × preço = total na outra) e "+N"; todos aparecem ao passar o mouse. */
+function ItemsSummary({ d, className }: { d: NfeDetails | null; className?: string }) {
+  const first = d?.items[0];
+  if (!d || !first) return null;
+  const calc = nfeItemCalc(first);
+  const more = d.itemCount - 1;
+  return (
+    <Tooltip content={<ItemsTip d={d} />}>
+      <div className={cn('flex min-w-0 flex-col text-xs', className)} tabIndex={0}>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {first.fuel ? <Fuel className="size-3.5 shrink-0 text-muted" /> : <Package className="size-3.5 shrink-0 text-muted" />}
+          <span className="truncate font-medium text-ink">{first.name}</span>
+          {more > 0 && <span className="shrink-0 rounded-full bg-surface-2 px-1.5 text-[11px] text-muted">+{plural(more, 'item', 'itens')}</span>}
+        </div>
+        {calc && <div className="truncate pl-5 text-muted tabular-nums">{calc}</div>}
+      </div>
+    </Tooltip>
+  );
+}
+
 function SituationTag({ d }: { d: FiscalDocumentRow }) {
   if (d.situation !== 'authorized') return <span className="rounded-full bg-danger/15 px-1.5 py-0.5 text-[11px] font-medium text-danger">{d.situation === 'canceled' ? 'Cancelada' : 'Denegada'}</span>;
-  if (d.status === 'done' && d.billIds.length) return <span className="rounded-full bg-ok/15 px-1.5 py-0.5 text-[11px] font-medium text-ok">{plural(d.billIds.length, 'conta', 'contas')}</span>;
+  if (d.status === 'done' && d.billIds.length) {
+    const tag = <span className="rounded-full bg-ok/15 px-1.5 py-0.5 text-[11px] font-medium text-ok" tabIndex={d.bills.length ? 0 : undefined}>{d.linkedBillIds.length ? 'vinculada' : plural(d.billIds.length, 'conta', 'contas')}</span>;
+    return d.bills.length ? <Tooltip content={<div className="flex flex-col gap-0.5">{d.bills.map((b) => <div key={b.id}>{b.description} · {formatBRL(b.amount)} · {formatDateBR(b.dueDate)}</div>)}</div>}>{tag}</Tooltip> : tag;
+  }
   return null;
 }
 
-function RowActions({ d, canLaunch, onLaunch, onStatus, onXml }: { d: FiscalDocumentRow } & DocActions) {
+function RowActions({ d, canLaunch, canLink, onLaunch, onLink, onUnlink, onStatus, onXml }: { d: FiscalDocumentRow } & DocActions) {
   const canceled = d.situation !== 'authorized';
   return (
     <div className="flex items-center justify-end gap-1">
       {d.status === 'new' && !canceled && canLaunch && <Button size="sm" variant="primary" onClick={() => onLaunch(d)}>Lançar</Button>}
+      {(d.status === 'new' || d.linkedBillIds.length > 0) && !canceled && canLink && <IconButton label={d.linkedBillIds.length ? 'Vincular outra conta' : 'Vincular a uma conta já lançada'} onClick={() => onLink(d)}><Link2 className="size-4" /></IconButton>}
+      {d.linkedBillIds.length > 0 && <IconButton label="Desvincular" onClick={() => onUnlink(d)}><Unlink className="size-4" /></IconButton>}
       {d.status === 'new' && !canceled && <IconButton label="Já lancei" onClick={() => onStatus(d, 'done')}><FileCheck2 className="size-4" /></IconButton>}
       {d.status === 'new' && <IconButton label="Dispensar" onClick={() => onStatus(d, 'dismissed')}><X className="size-4" /></IconButton>}
       {d.status !== 'new' && !(d.status === 'done' && d.billIds.length) && <IconButton label='Voltar para "a lançar"' onClick={() => onStatus(d, 'new')}><Undo2 className="size-4" /></IconButton>}
@@ -219,13 +306,20 @@ const DocTableRow = memo(function DocTableRow({ d, ...a }: { d: FiscalDocumentRo
   return (
     <tr className={cn('border-t border-line align-middle hover:bg-surface-2/60', d.situation !== 'authorized' && 'bg-danger/5')}>
       <td className="whitespace-nowrap px-3 py-2 tabular-nums">{formatDateBR(d.issuedAt)}</td>
-      <td className="max-w-[28rem] px-3 py-2">
-        <div className="flex items-center gap-2"><span className="truncate font-medium" title={d.emitterName ?? ''}>{d.emitterName ?? 'Fornecedor'}</span><SituationTag d={d} /></div>
+      <td className="px-3 py-2">
+        <div className="flex w-[11rem] items-center gap-2 2xl:w-[20rem]"><span className="truncate font-medium" title={d.emitterName ?? ''}>{d.emitterName ?? 'Fornecedor'}</span><SituationTag d={d} /></div>
         <div className="text-xs text-faint">{d.emitterDocument ? formatDocument(d.emitterDocument) : ''}</div>
+      </td>
+      <td className="px-3 py-2">
+        <div className="flex w-[14.5rem] min-w-0 flex-col items-start gap-1 2xl:w-[24rem]">
+          <ItemsSummary d={d.details} className="max-w-full" />
+          <VehicleChip d={d.details} />
+          {!d.details && <span className="text-xs text-faint">{d.kind === 'summary' ? 'Só o resumo' : '—'}</span>}
+        </div>
       </td>
       <td className="whitespace-nowrap px-3 py-2 tabular-nums">{d.number ?? '—'}{d.series ? <span className="text-faint">-{d.series}</span> : null}</td>
       <td className="whitespace-nowrap px-3 py-2 text-muted">{dupSummary(d)}</td>
-      <td className="max-w-[10rem] truncate px-3 py-2 text-muted" title={payLabel(d)}>{payLabel(d)}</td>
+      <td className="hidden max-w-[10rem] truncate px-3 py-2 text-muted 2xl:table-cell" title={payLabel(d)}>{payLabel(d)}</td>
       <td className="whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums">{d.total ? formatBRL(d.total) : '—'}</td>
       <td className="px-3 py-1.5"><RowActions d={d} {...a} /></td>
     </tr>
@@ -239,6 +333,8 @@ const DocLine = memo(function DocLine({ d, ...a }: { d: FiscalDocumentRow } & Do
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{d.emitterName ?? 'Fornecedor'}</span><SituationTag d={d} /></div>
           <div className="truncate text-xs text-faint">{formatDateBR(d.issuedAt)}{d.number ? ` · NF ${d.number}` : ''} · {dupSummary(d)}</div>
+          <ItemsSummary d={d.details} className="mt-0.5" />
+          <VehicleChip d={d.details} className="mt-1" />
         </div>
         <div className="text-sm font-semibold tabular-nums">{d.total ? formatBRL(d.total) : '—'}</div>
       </div>
@@ -254,7 +350,7 @@ function SearchField({ onChange }: { onChange: (v: string) => void }) {
   return (
     <div className="relative min-w-0 flex-1 sm:max-w-sm">
       <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-      <Input value={v} onChange={(e) => setV(e.target.value)} placeholder="Fornecedor, número, CNPJ ou chave" className="pl-9" aria-label="Buscar notas" />
+      <Input value={v} onChange={(e) => setV(e.target.value)} placeholder="Fornecedor, produto, placa, número ou chave" className="pl-9" aria-label="Buscar notas" />
     </div>
   );
 }
@@ -338,7 +434,7 @@ function Info({ icon, label, value, sub, tone }: { icon: React.ReactNode; label:
   );
 }
 
-const DocCard = memo(function DocCard({ d, canLaunch, onLaunch: launch, onStatus: status, onXml: xml }: { d: FiscalDocumentRow } & DocActions) {
+const DocCard = memo(function DocCard({ d, canLaunch, canLink, onLaunch: launch, onLink: link, onUnlink: unlink, onStatus: status, onXml: xml }: { d: FiscalDocumentRow } & DocActions) {
   const onLaunch = () => launch(d);
   const onStatus = (s: FiscalDocumentRow['status']) => status(d, s);
   const onXml = () => xml(d);
@@ -356,26 +452,50 @@ const DocCard = memo(function DocCard({ d, canLaunch, onLaunch: launch, onStatus
           <div className="font-display text-lg font-semibold tabular-nums">{d.total ? formatBRL(d.total) : '—'}</div>
         </div>
       </div>
+      {d.details && d.details.items.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-lg bg-surface-2/60 px-3 py-2">
+          {d.details.items.slice(0, 3).map((i, n) => <ItemRow key={n} i={i} />)}
+          {d.details.itemCount > 3 && (
+            <Tooltip content={<ItemsTip d={d.details} />}>
+              <span className="self-start text-xs text-muted underline decoration-dotted underline-offset-2" tabIndex={0}>+ {plural(d.details.itemCount - 3, 'item', 'itens')}</span>
+            </Tooltip>
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap gap-1.5 text-xs">
+        <VehicleChip d={d.details} />
         {canceled && <span className="rounded-full bg-danger/15 px-2 py-0.5 font-medium text-danger">{d.situation === 'canceled' ? 'Cancelada pelo fornecedor' : 'Denegada'}</span>}
         {d.kind === 'summary' && <span className="rounded-full bg-warn/15 px-2 py-0.5 text-warn" title="A SEFAZ só libera o XML completo depois da manifestação do destinatário (o sistema de gestão (ERP) da empresa costuma fazer).">Só o resumo · duplicatas ainda não liberadas</span>}
         {d.duplicates.length > 0 && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-muted">{plural(d.duplicates.length, 'duplicata', 'duplicatas')} · 1ª em {formatDateBR(first)}</span>}
         {d.paymentKinds.map((k) => <span key={k} className="rounded-full bg-surface-2 px-2 py-0.5 text-muted">{NFE_PAYMENT_LABELS[k] ?? `Pagamento ${k}`}</span>)}
-        {d.status === 'done' && d.billIds.length > 0 && (
-          <Link to={`/pagar?situacao=&busca=${encodeURIComponent(d.number ? `NF ${d.number}` : d.key)}${first ? `&ano=${first.slice(0, 4)}&mes=${Number(first.slice(5, 7))}` : ''}`}
-            className="rounded-full bg-ok/15 px-2 py-0.5 font-medium text-ok hover:underline">{plural(d.billIds.length, 'conta lançada', 'contas lançadas')}</Link>
-        )}
+        {d.status === 'done' && d.billIds.length > 0 && !d.bills.length && <span className="rounded-full bg-ok/15 px-2 py-0.5 font-medium text-ok">{plural(d.billIds.length, 'conta', 'contas')}</span>}
       </div>
+      {d.bills.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {d.bills.map((b) => (
+            <div key={b.id} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg bg-ok/10 px-2.5 py-1.5 text-xs">
+              <span className="flex min-w-[11rem] flex-1 items-center gap-2">
+                {b.linked ? <Link2 className="size-3.5 shrink-0 text-ok" /> : <FileCheck2 className="size-3.5 shrink-0 text-ok" />}
+                <Link to={`/pagar?situacao=&busca=${encodeURIComponent(b.description)}&ano=${b.dueDate.slice(0, 4)}&mes=${Number(b.dueDate.slice(5, 7))}`}
+                  className="min-w-0 truncate font-medium text-ink hover:underline" title={b.linked ? 'Conta vinculada' : 'Conta lançada pela nota'}>{b.description}</Link>
+              </span>
+              <span className="ml-auto shrink-0 whitespace-nowrap text-muted tabular-nums">{formatBRL(b.amount)} · {formatDateBR(b.dueDate)}{b.status === 'paid' ? ' · paga' : ''}</span>
+              {b.linked && <IconButton label="Desvincular esta conta" className="-my-1" onClick={() => unlink(d, b.id)}><Unlink className="size-3.5" /></IconButton>}
+            </div>
+          ))}
+        </div>
+      )}
       {canceled && d.status === 'done' && <p className="text-xs text-danger">A nota foi cancelada depois de lançada: confira e apague as contas, se for o caso.</p>}
       <div className="mt-auto flex flex-wrap items-center gap-2">
         {d.status === 'new' && !canceled && canLaunch && <Button size="sm" variant="primary" icon={<Plus className="size-4" />} onClick={onLaunch}>Lançar contas</Button>}
+        {(d.status === 'new' || d.linkedBillIds.length > 0) && !canceled && canLink && <Button size="sm" variant={d.status === 'new' ? 'secondary' : 'ghost'} icon={<Link2 className="size-4" />} onClick={() => link(d)}>{d.status === 'new' ? 'Vincular' : 'Vincular outra'}</Button>}
         {d.status === 'new' && <Button size="sm" variant="ghost" icon={<X className="size-4" />} onClick={() => onStatus('dismissed')}>Dispensar</Button>}
         {d.status === 'new' && !canceled && <Button size="sm" variant="ghost" icon={<FileCheck2 className="size-4" />} onClick={() => onStatus('done')}>Já lancei</Button>}
         {d.status !== 'new' && !(d.status === 'done' && d.billIds.length) && <Button size="sm" variant="ghost" icon={<Undo2 className="size-4" />} onClick={() => onStatus('new')}>Voltar para "a lançar"</Button>}
         <span className="ml-auto" />
         <IconButton label="Baixar o XML" onClick={onXml}><Download className="size-4" /></IconButton>
       </div>
-      {d.handledByName && d.status !== 'new' && <div className="-mt-1 text-xs text-faint">{d.status === 'done' ? 'Lançada' : 'Dispensada'} por {d.handledByName} em {dateTime(d.handledAt)}</div>}
+      {d.handledByName && d.status !== 'new' && <div className="-mt-1 text-xs text-faint">{d.status === 'done' ? (d.linkedBillIds.length && d.linkedBillIds.length === d.billIds.length ? 'Vinculada' : 'Lançada') : 'Dispensada'} por {d.handledByName} em {dateTime(d.handledAt)}</div>}
     </div>
   );
 });
@@ -557,12 +677,14 @@ function LaunchDialog({ doc, defaults, onClose, onDone }: { doc: FiscalDocumentR
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [folderId, setFolderId] = useState('');
+  const [notes, setNotes] = useState('');
   const [parts, setParts] = useState<Part[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!doc) return;
     setDescription(nfeBillDescription(doc));
+    setNotes(nfeBillNotes(doc.details));
     setCategoryId(defaults.categoryId && cats.some((c) => c.id === defaults.categoryId) ? defaults.categoryId : '');
     setFolderId(defaults.folderId ?? '');
     setParts(doc.duplicates.length
@@ -579,7 +701,7 @@ function LaunchDialog({ doc, defaults, onClose, onDone }: { doc: FiscalDocumentR
     if (!doc) return;
     setSaving(true);
     try {
-      await post(`/api/fiscal/documents/${doc.id}/launch`, { description: description.trim(), categoryId, folderId: folderId || null, relatedPerson: doc.emitterName?.slice(0, 128) ?? null, installments: parts });
+      await post(`/api/fiscal/documents/${doc.id}/launch`, { description: description.trim(), categoryId, folderId: folderId || null, relatedPerson: doc.emitterName?.slice(0, 128) ?? null, notes: notes.trim() || null, installments: parts });
       toast.success(parts.length > 1 ? `${parts.length} parcelas lançadas em Contas a pagar` : 'Conta lançada em Contas a pagar');
       onDone(); onClose();
     } catch (e) { toast.error(errMsg(e)); } finally { setSaving(false); }
@@ -592,6 +714,9 @@ function LaunchDialog({ doc, defaults, onClose, onDone }: { doc: FiscalDocumentR
       {doc && (
         <div className="flex flex-col gap-4">
           <Field label="Descrição" required><Input value={description} maxLength={255} onChange={(e) => setDescription(e.target.value)} /></Field>
+          <Field label="Observações" hint="A chave da nota é acrescentada sozinha.">
+            <Textarea value={notes} rows={Math.min(6, Math.max(2, notes.split('\n').length))} maxLength={1800} onChange={(e) => setNotes(e.target.value)} />
+          </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Categoria" required>
               <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>

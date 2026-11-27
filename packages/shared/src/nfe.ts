@@ -50,7 +50,24 @@ export interface NfeData {
   paymentKinds: string[];
   itemCount: number;
   info: string | null;
+  details: NfeDetails;
 }
+
+/** Item da nota (valores como vêm no XML: "32.808", "6.19"). */
+export interface NfeItem {
+  name: string;
+  quantity: string | null;
+  unit: string | null;
+  unitPrice: string | null;
+  total: string | null;
+  /** Item com o grupo de combustível (`<comb>`). */
+  fuel: boolean;
+}
+/** Veículo que o fornecedor escreveu nas informações complementares ("Placa:ABC1234 -CELTA -km:1234"). */
+export interface NfeVehicle { plate: string; model: string | null; km: string | null }
+export interface NfeDetails { items: NfeItem[]; itemCount: number; vehicle: NfeVehicle | null; /** Nome fantasia do emitente (`xFant`). */ tradeName?: string | null }
+/** Itens guardados por nota (o resto fica no XML). */
+export const NFE_DETAIL_ITEMS = 30;
 
 export interface NfeSummary {
   key: string;
@@ -117,6 +134,101 @@ const person = (block: string | null) => xmlText(block, 'CNPJ') ?? xmlText(block
 /** Chave de acesso de 44 dígitos (a parte do CNPJ pode ser alfanumérica). */
 export const isNfeKey = (v: string | null | undefined) => !!v && /^\d{6}[0-9A-Z]{14}\d{24}$/.test(v);
 
+const decimalText = (v: string | null) => (v && /^\d+(\.\d+)?$/.test(v) ? v : null);
+
+/**
+ * Placa escrita pelo fornecedor nas informações complementares (da nota ou do item).
+ * O `<veicTransp>` NÃO entra: é o caminhão de quem entregou, não o veículo da empresa.
+ * Formatos vistos: "-Placa:ABC1234 -GOL -km:120456", "GOL-1.0-2010-KM98.765-PLACA/ABC1234".
+ */
+export function findNfeVehicle(text: string | null | undefined): NfeVehicle | null {
+  if (!text) return null;
+  const t = text.slice(0, 6000);
+  const re = /\bPLACA\b\s*[:/\-–.]?\s*([A-Z]{3})\s?-?\s?(\d[A-Z\d]\d{2})(?![A-Z\d])/gi;
+  for (const m of t.matchAll(re)) {
+    const before = t.slice(0, m.index);
+    const after = t.slice(m.index + m[0].length);
+    // placa de transportadora ("TRANSBORDO … SAO GABRIEL TRANSPORTES PLACA: AAA1111,BBB2222") não é veículo da empresa
+    if (CARRIER.test(before.slice(-160)) || PLATE_LIST.test(after)) continue;
+    const plate = `${m[1]}${m[2]}`.toUpperCase();
+    let model: string | null = null;
+    const a = /^\s*[-–/,;]?\s*([A-ZÀ-Ú][A-ZÀ-Ú0-9 .]{1,29}?)\s*(?=[-–|,;]|$)/i.exec(after);
+    if (a && !NOT_MODEL.test(a[1]!) && !PLATE.test(a[1]!)) model = a[1]!.trim();
+    if (!model) {
+      // "CELTA-1.0-2008-KM195.163-PLACA/…": 1º trecho da palavra colada antes de "PLACA"
+      const tok = /(\S+)[-–/]\s*$/.exec(before)?.[1] ?? '';
+      const first = tok.split(/[-–/]/)[0] ?? '';
+      if (/^[A-ZÀ-Ú]{3,20}$/i.test(first) && !NOT_MODEL.test(first)) model = first;
+    }
+    const near = t.slice(Math.max(0, m.index - 60), m.index + m[0].length + 60);
+    const k = /\bKM\s*[:.]?\s*(\d{1,3}(?:\.\d{3})+|\d{2,7})\b/i.exec(near);
+    return { plate, model: model ? model.toUpperCase().slice(0, 30) : null, km: k ? k[1]!.replace(/\./g, '') : null };
+  }
+  return null;
+}
+const CARRIER = /TRANSBORDO|TRANSPORT|LOGISTIC|FRETE|MOTORISTA|CARRETA|REDESPACHO/i;
+const PLATE = /^[A-Z]{3}-?\d[A-Z\d]\d{2}$/i;
+const PLATE_LIST = /^\s*[,;/]\s*[A-Z]{3}-?\d[A-Z\d]\d{2}/i;
+const NOT_MODEL = /^(KM|MEDIA|MÉDIA|TRIB|OP|SEQ|TERMINAL|ATD|OBS|PEDIDO|NF|PED)\b/i;
+
+/** Itens e veículo de um `infNFe`. */
+function nfeDetailsOf(inf: string): NfeDetails {
+  const dets = xmlBlocks(inf, 'det');
+  const items: NfeItem[] = dets.slice(0, NFE_DETAIL_ITEMS).map((d) => {
+    const p = xmlBlock(d, 'prod') ?? '';
+    return {
+      name: (xmlText(p, 'xProd') ?? 'Item').replace(/\s+/g, ' ').slice(0, 120),
+      quantity: decimalText(xmlText(p, 'qCom')),
+      unit: xmlText(p, 'uCom')?.slice(0, 6) ?? null,
+      unitPrice: decimalText(xmlText(p, 'vUnCom')),
+      total: moneyText(xmlText(p, 'vProd')),
+      fuel: xmlBlock(p, 'comb') != null,
+    };
+  });
+  const texts = [xmlText(xmlBlock(inf, 'infAdic'), 'infCpl'), ...dets.map((d) => xmlText(d, 'infAdProd'))];
+  let vehicle: NfeVehicle | null = null;
+  for (const x of texts) { vehicle = findNfeVehicle(x); if (vehicle) break; }
+  return { items, itemCount: dets.length, vehicle, tradeName: xmlText(xmlBlock(inf, 'emit'), 'xFant')?.slice(0, 120) ?? null };
+}
+
+/** Só os detalhes (itens e veículo) de um XML completo; null se não for NF-e. */
+export function parseNfeDetails(xml: string): NfeDetails | null {
+  const inf = xmlBlock(xml, 'infNFe');
+  return inf ? nfeDetailsOf(inf) : null;
+}
+
+const qtyText = (v: string | null) => (v ? Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 4 }) : null);
+const priceText = (v: string | null) => (v ? Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : null);
+
+/** "40,5 L × R$ 6,19 = R$ 250,70" (vazio se a nota não trouxer os números). */
+export function nfeItemCalc(i: NfeItem) {
+  const q = qtyText(i.quantity);
+  const qty = q ? `${q}${i.unit ? ` ${i.unit}` : ''}` : null;
+  const price = priceText(i.unitPrice);
+  const total = i.total ? Number(i.total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null;
+  return [qty && price ? `${qty} × R$ ${price}` : qty, total ? `R$ ${total}` : null].filter(Boolean).join(' = ');
+}
+
+/** "GASOLINA COMUM — 40,5 L × R$ 6,19 = R$ 250,70" */
+export function nfeItemLine(i: NfeItem) {
+  const calc = nfeItemCalc(i);
+  return calc ? `${i.name} — ${calc}` : i.name;
+}
+
+/** "Placa ABC1234 · GOL · km 120.456" */
+export function nfeVehicleLabel(v: NfeVehicle) {
+  return [`Placa ${v.plate}`, v.model, v.km ? `km ${Number(v.km).toLocaleString('pt-BR')}` : null].filter(Boolean).join(' · ');
+}
+
+/** Observações sugeridas da conta: itens (até 10) e veículo. */
+export function nfeBillNotes(d: NfeDetails | null | undefined) {
+  if (!d) return '';
+  const lines = d.items.slice(0, 10).map(nfeItemLine);
+  if (d.itemCount > lines.length) lines.push(`… e mais ${d.itemCount - lines.length} ${d.itemCount - lines.length === 1 ? 'item' : 'itens'}`);
+  if (d.vehicle) lines.push(nfeVehicleLabel(d.vehicle));
+  return lines.join('\n');
+}
+
 /** XML completo da NF-e (`nfeProc` ou só `NFe`). null se não for uma NF-e. */
 export function parseNfe(xml: string): NfeData | null {
   const inf = xmlBlock(xml, 'infNFe');
@@ -151,6 +263,7 @@ export function parseNfe(xml: string): NfeData | null {
     paymentKinds,
     itemCount: xmlBlocks(inf, 'det').length,
     info: xmlText(xmlBlock(inf, 'infAdic'), 'infCpl')?.slice(0, 2000) ?? null,
+    details: nfeDetailsOf(inf),
   };
 }
 
@@ -302,7 +415,13 @@ export interface FiscalDocumentRow {
   duplicates: NfeDuplicate[];
   paymentKinds: string[];
   nature: string | null;
+  /** Itens (até NFE_DETAIL_ITEMS) e veículo; null = nota só com o resumo. */
+  details: NfeDetails | null;
   billIds: string[];
+  /** Parte de `billIds` vinculada pelo botão Vincular (dá para desvincular). */
+  linkedBillIds: string[];
+  /** Contas ligadas (lançadas pela nota ou vinculadas), só as que a pessoa pode ver. */
+  bills: import('./fiscalMatch.js').FiscalLinkedBill[];
   handledByName: string | null;
   handledAt: string | null;
   receivedAt: string;
@@ -315,7 +434,9 @@ export const NFE_PAYMENT_LABELS: Record<string, string> = {
 };
 
 /** Descrição sugerida da conta: "Fornecedor — NF 123". */
-export function nfeBillDescription(d: { emitterName: string | null; number: string | null }) {
+export function nfeBillDescription(d: { emitterName: string | null; number: string | null; details?: NfeDetails | null }) {
   const name = (d.emitterName ?? 'Fornecedor').replace(/\s+/g, ' ').trim().slice(0, 200);
-  return d.number ? `${name} — NF ${d.number}` : name;
+  const base = d.number ? `${name} — NF ${d.number}` : name;
+  const v = d.details?.vehicle;
+  return v ? `${base} — ${v.plate}${v.model ? ` ${v.model}` : ''}` : base;
 }

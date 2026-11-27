@@ -8,6 +8,13 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.39.0] - 2026-11-27
+
+### Novo
+- Notas fiscais: cada nota mostra os produtos (nome, quantidade × preço unitário = total; todos os itens ao passar o mouse) e o veículo que o fornecedor escreveu nas informações complementares (placa, modelo e km — ex.: notas de posto de combustível e de autopeças). Placa de transportadora não entra. Funciona nos cartões e na lista, e a busca encontra notas pela placa, pelo modelo ou pelo produto.
+- Notas fiscais: ao lançar a conta, a descrição já vem com a placa e o modelo, e as observações com os produtos e o veículo (dá para editar antes de lançar).
+- Notas fiscais: botão **Vincular** liga a nota a uma conta a pagar que já estava lançada. O NoPaper sugere as contas parecidas — mesmo valor e vencimento, mesma placa, número da NF, nome do fornecedor ou o que já foi vinculado antes a ele — separadas em "Encontradas" e "Podem ser", e dá para buscar qualquer outra conta. Nada é vinculado sozinho: você marca a conta (ou as parcelas). Uma conta pode receber várias notas (ex.: a conta do mês do posto). Opcional: acrescentar a nota nas observações da conta, vendo antes como fica. Dá para desvincular; a conta não muda.
+
 ## [1.38.2] - 2026-11-25
 
 ### Alterado

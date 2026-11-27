@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { distRequestXml, nfeBillDescription, parseDistResponse, parseNfe, parseNfeEvent, parseNfeSummary, sameCnpjRoot } from './nfe.js';
+import { distRequestXml, findNfeVehicle, nfeBillDescription, nfeBillNotes, nfeItemLine, parseNfeDetails, parseDistResponse, parseNfe, parseNfeEvent, parseNfeSummary, sameCnpjRoot } from './nfe.js';
 
 // dados fictícios no leiaute oficial (CNPJs de exemplo válidos, chave inventada)
 const KEY = '41261111222333000181550010000012341000012345';
@@ -60,4 +60,34 @@ test('retorno da distribuição e pedido', () => {
   assert.match(x, /<tpAmb>1<\/tpAmb><cUFAutor>41<\/cUFAutor><CNPJ>11444777000161<\/CNPJ><distNSU><ultNSU>000000000000012<\/ultNSU>/);
   assert.ok(sameCnpjRoot('11.444.777/0001-61', '11444777000242'));
   assert.ok(!sameCnpjRoot('11444777000161', '11222333000181'));
+});
+
+test('itens e veículo das informações complementares', () => {
+  const fuel = NFE
+    .replace('<det nItem="1"><prod><cProd>1</cProd></prod></det><det nItem="2"><prod><cProd>2</cProd></prod></det>',
+      '<det nItem="1"><prod><cProd>9</cProd><xProd>GASOLINA COMUM</xProd><uCom>L</uCom><qCom>40.5000</qCom><vUnCom>6.1900000000</vUnCom><vProd>250.70</vProd><comb><cProdANP>1</cProdANP></comb></prod><infAdProd>(ATD:FULANO)</infAdProd></det>')
+    .replace('<infCpl>PEDIDO 99</infCpl>', '<infCpl>RESUMO|Sequencia:1 -Terminal:X -Op:Y C:1 E:1 -Placa:XYZ1A23 -GOL -km:120456 -media:9.50 k/l|Trib aprox</infCpl>')
+    // caminhão de quem entregou: não é o veículo da empresa
+    .replace('<total>', '<transp><modFrete>0</modFrete><veicTransp><placa>QQQ9999</placa></veicTransp></transp><total>');
+  const d = parseNfe(fuel)!.details;
+  assert.equal(d.itemCount, 1);
+  assert.deepEqual(d.items[0], { name: 'GASOLINA COMUM', quantity: '40.5000', unit: 'L', unitPrice: '6.1900000000', total: '250.70', fuel: true });
+  assert.equal(nfeItemLine(d.items[0]!), 'GASOLINA COMUM — 40,5 L × R$ 6,19 = R$ 250,70');
+  assert.deepEqual(d.vehicle, { plate: 'XYZ1A23', model: 'GOL', km: '120456' });
+  assert.equal(nfeBillDescription({ emitterName: 'POSTO', number: '7', details: d }), 'POSTO — NF 7 — XYZ1A23 GOL');
+  assert.equal(nfeBillNotes(d), 'GASOLINA COMUM — 40,5 L × R$ 6,19 = R$ 250,70\nPlaca XYZ1A23 · GOL · km 120.456');
+  assert.deepEqual(parseNfeDetails(fuel), d);
+  assert.equal(d.tradeName, 'EXEMPLO');
+  assert.equal(parseNfe(NFE)!.details.vehicle, null);
+});
+
+test('placa em outros formatos', () => {
+  assert.deepEqual(findNfeVehicle('SIMPLES NACIONAL. UNO-1.0-2010-KM98.765-PLACA/ABC1234   (Total aproximado'), { plate: 'ABC1234', model: 'UNO', km: '98765' });
+  assert.deepEqual(findNfeVehicle('-Placa:ABC1234 -km:120147|Trib'), { plate: 'ABC1234', model: null, km: '120147' });
+  assert.deepEqual(findNfeVehicle('PLACA ABC-1D23 STRADA'), { plate: 'ABC1D23', model: 'STRADA', km: null });
+  assert.equal(findNfeVehicle('Placa de identificação do produto 123'), null);
+  assert.equal(findNfeVehicle(null), null);
+  // transportadora: não é veículo da empresa
+  assert.equal(findNfeVehicle('TRANSBORDO EM : CIDADE - PR PARA CNPJ X / EXEMPLO TRANSPORTES LTDA PLACA : ABC1234,DEF5678'), null);
+  assert.equal(findNfeVehicle('EXEMPLO LOGISTICA EXPRESS LTDA PLACA : ABC1D23. PED.FORNECEDOR 1'), null);
 });
