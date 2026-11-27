@@ -194,3 +194,38 @@ test('13º com título genérico ("Recibo de Pagamento de Salário") é reconhec
   assert.equal(payslipDocKey(payslipTitleFromItems('Salário', [e('13.SALAR. 1.PARC.')])), '13-salario-1-parcela');
   assert.notEqual(payslipDocKey('13º Salário – 1ª parcela'), payslipDocKey('13º Salário – 2ª parcela'));
 });
+
+test('13º no "Demonstrativo" em duas metades (proventos à esquerda, descontos à direita)', () => {
+  const page = (kind: string, ref: string, lines: PdfCell[][], te: string, td: string, net: string): PdfCell[][] => [
+    [c(7, '9999-EMPRESA EXEMPLO LTDA'), c(308, 'Demonstrativo de Pagamento de Salário')],
+    [c(7, 'EMPRESA EXEMPLO LTDA'), c(102, 'Cidade Exemplo - PR'), c(395, ref), c(452, kind)],
+    [c(9, 'CNPJ'), c(61, '11.222.333/0001-81'), c(304, 'CPF: 111.444.777-35')],
+    [c(12, 'Cadastro'), c(70, 'Nome do Funcionário'), c(328, 'CBO'), c(372, 'Empresa'), c(432, 'Local')],
+    [c(12, '4'), c(70, 'CARLA EXEMPLO'), c(321, '521110'), c(384, '9999'), c(446, '1')],
+    [c(73, 'ATENDENTE'), c(316, 'Data Admissão:'), c(428, '02/05/2018')],
+    [c(9, 'Ev'), c(34, 'Provento'), c(209, 'Referência'), c(279, 'Valor'), c(305, 'Ev'), c(330, 'Desconto'), c(505, 'Referência'), c(574, 'Valor')],
+    ...lines,
+    [c(141, 'Total Proventos'), c(271, te), c(470, 'Total Descontos'), c(566, td)],
+    [c(437, 'Líquido a Pagar'), c(559, net)],
+    [c(57, 'Salário Base'), c(261, 'Bas Cálc FGTS'), c(359, 'FGTS Mês')],
+    [c(71, '2.000,00'), c(288, '1.000,00'), c(374, '80,00')],
+    [c(9, 'Recebi em: ____/____/____'), c(132, 'Assinatura:______')],
+  ];
+  const first = parsePayslips(page('13o Salário Adiantamento', '11/2026', [[c(17, '250'), c(34, '13o Salário Adiantamento'), c(218, '12 Avos'), c(272, '1.000,00')]], '1.000,00', '0,00', '1.000,00'));
+  const s1 = first.slips[0]!;
+  assert.equal(s1.title, '13º Salário – 1ª parcela');
+  assert.deepEqual([s1.code, s1.net, s1.fgts, s1.items.length], ['4', '1000.00', '80.00', 1]);
+  assert.ok(payslipOk(s1));
+  const second = parsePayslips(page('13o Salário Integral', '12/2026', [
+    [c(17, '280'), c(34, '13o Salário Integral'), c(218, '12 Avos'), c(272, '2.000,00'), c(313, '299'), c(330, 'Desconto 13o Salário Adiantamento'), c(568, '1.000,00')],
+    [c(313, '951'), c(330, 'INSS S/13o Salário'), c(519, '9,00 %'), c(574, '160,00')],
+  ], '2.000,00', '1.160,00', '840,00'));
+  const s2 = second.slips[0]!;
+  assert.equal(s2.title, '13º Salário – 2ª parcela');
+  assert.deepEqual(s2.items.map((i) => [i.code, i.kind, i.amount, i.ref]), [['280', 'earning', '2000.00', '12 Avos'], ['299', 'deduction', '1000.00', null], ['951', 'deduction', '160.00', '9,00 %']]);
+  assert.deepEqual([s2.totalEarnings, s2.totalDeductions, s2.net], ['2000.00', '1160.00', '840.00']);
+  assert.ok(payslipOk(s2));
+  // "Mensal" ao lado da competência continua sendo o holerite do mês
+  assert.equal(parsePayslips(page('Mensal', '11/2026', [[c(17, '1'), c(34, 'Salario Normal'), c(218, '30 Dias'), c(272, '2.000,00')]], '2.000,00', '0,00', '2.000,00')).slips[0]!.title, 'Salário');
+  assert.equal(payslipTitleFromItems('13o Salário Adiantamento', []), '13º Salário – 1ª parcela');
+});

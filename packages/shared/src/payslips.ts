@@ -83,7 +83,10 @@ export function payslipItemKey(code: string | null, name: string) {
  *   "Total de Vantagens" + valores na linha de baixo, "Valor Líquido", "F.G.T.S"; linha sem código vale (I.N.S.S.);
  * - "Demonstrativo de Pagamento de Salário": Cadastro/Nome do Funcionário, Ev/Descrição/Referência/Proventos/Descontos,
  *   "Total" com os valores na mesma linha, "Total Líquido", "FGTS Mês", CPF no cabeçalho; linha sem
- *   código é detalhe da anterior (contratos do consignado) e não entra.
+ *   código é detalhe da anterior (contratos do consignado) e não entra;
+ * - o mesmo "Demonstrativo" em duas metades (13º): Ev/Provento/Referência/Valor à esquerda e
+ *   Ev/Desconto/Referência/Valor à direita, cada metade com o seu código; o tipo do recibo ("13o Salário
+ *   Adiantamento", "Mensal") vem ao lado da competência; "Total Proventos" / "Total Descontos".
  */
 export function parsePayslips(rows: PdfCell[][]): PayslipReport {
   const out: PayslipReport = { company: null, companyDocument: null, ref: null, slips: [], warnings: [] };
@@ -93,6 +96,8 @@ export function parsePayslips(rows: PdfCell[][]): PayslipReport {
   /** Limites das colunas (pela posição dos títulos). */
   let nameLimit = 326, refX = 290, split = 410, earnX = 346;
   let fgtsX: number | null = null;
+  /** Layout em duas metades (proventos à esquerda, descontos à direita): referência de cada metade. */
+  let dual: { refL: number; refR: number } | null = null;
   /** Só linhas com código são rubricas (as sem código detalham a anterior). */
   let codedOnly = false;
   const setTotals = (ms: PdfCell[]) => {
@@ -118,6 +123,7 @@ export function parsePayslips(rows: PdfCell[][]): PayslipReport {
       state = 'head';
       fgtsX = null;
       codedOnly = /demonstrativo/i.test(title.s);
+      dual = null;
       const comp = row.find((c) => c !== title && /^\d+\s*-\s*\S/.test(c.s));
       if (comp && !out.company) out.company = comp.s.replace(/^\d+\s*-\s*/, '').trim();
       continue;
@@ -130,6 +136,12 @@ export function parsePayslips(rows: PdfCell[][]): PayslipReport {
         const n = row.map((c) => /^(0[1-9]|1[0-2])\/(\d{4})$/.exec(c.s)).find(Boolean);
         if (m) out.ref = `${m[2]}-${String(MONTHS.indexOf(m[1]!) + 1).padStart(2, '0')}`;
         else if (n) out.ref = `${n[2]}-${n[1]}`;
+      }
+      // tipo do recibo ao lado da competência ("13o Salário Adiantamento"; "Mensal" = holerite do mês)
+      const comp = row.find((c) => /^(0[1-9]|1[0-2])\/\d{4}$/.test(c.s));
+      if (comp && !payslipDocKey(cur.title)) {
+        const kind = join(row.filter((c) => c.x > comp.x));
+        if (kind && payslipDocKey(kind)) cur.title = kind.slice(0, 60);
       }
       const cpf = /cpf:?\s*(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/i.exec(text);
       if (cpf) cur.document = cpf[1]!;
@@ -152,7 +164,18 @@ export function parsePayslips(rows: PdfCell[][]): PayslipReport {
       state = 'role';
       continue;
     }
-    if ((ntext.includes('vencimentos') || ntext.includes('proventos')) && ntext.includes('descontos')) {
+    const evs = row.filter((c) => personKey(c.s) === 'ev');
+    const halfE = row.find((c) => personKey(c.s) === 'provento'), halfD = row.find((c) => personKey(c.s) === 'desconto');
+    if (evs.length === 2 && halfE && halfD && halfD.x > evs[1]!.x) {
+      // duas metades: cada uma com Ev/descrição/referência/valor
+      const refs = row.filter((c) => /^ref(\.|er[eê]ncia)?$/i.test(c.s));
+      split = evs[1]!.x - 4; earnX = 0;
+      dual = { refL: refs.find((c) => c.x < split)?.x ?? split - 90, refR: refs.find((c) => c.x >= split)?.x ?? 9999 };
+      state = 'items';
+      continue;
+    }
+    // (no layout em duas metades, "Total Proventos … Total Descontos" não é título de coluna)
+    if (!dual && (ntext.includes('vencimentos') || ntext.includes('proventos')) && ntext.includes('descontos')) {
       const venc = row.find((c) => ['vencimentos', 'proventos'].includes(personKey(c.s))), desc = row.find((c) => personKey(c.s) === 'descontos');
       const rf = row.find((c) => /^ref(\.|er[eê]ncia)?$/i.test(c.s));
       if (venc && desc) { split = (center(venc) + center(desc)) / 2; earnX = venc.x; }
@@ -172,12 +195,27 @@ export function parsePayslips(rows: PdfCell[][]): PayslipReport {
       continue;
     }
     if (state === 'items' || state === 'totals') {
-      const totalCell = row.find((c) => /^total( de (vantagens|vencimentos|proventos))?$/.test(personKey(c.s)));
+      const totalCell = row.find((c) => /^total( de (vantagens|vencimentos|proventos))?$/.test(personKey(c.s)) || (!!dual && personKey(c.s) === 'total proventos'));
       if (totalCell || state === 'totals') {
         const ms = row.filter(isMoney);
         if (ms.length) { setTotals(ms); state = 'net'; } else state = 'totals';
         continue;
       }
+    }
+    if (state === 'items' && dual) {
+      // cada metade é uma linha própria (código, descrição, referência e valor)
+      for (const [half, kind, refSide] of [[row.filter((c) => c.x < split), 'earning', dual.refL], [row.filter((c) => c.x >= split), 'deduction', dual.refR]] as const) {
+        const amount = half.filter(isMoney).at(-1);
+        if (!amount) continue;
+        const first = half[0]!;
+        const code = /^\d+$/.test(first.s) && first !== amount ? first.s : null;
+        if (codedOnly && !code) continue;
+        const rest = half.filter((c) => c !== amount && !(code && c === first));
+        const refCells = rest.filter((c) => c.x >= refSide - 35 && /\d/.test(c.s));
+        const name = join(rest.filter((c) => !refCells.includes(c)));
+        if (name) cur.items.push({ key: payslipItemKey(code, name), code, name, ref: join(refCells) || null, kind, amount: brMoney(amount.s) });
+      }
+      continue;
     }
     if (state === 'items') {
       const amounts = row.filter((c) => isMoney(c) && c.x + c.w > earnX);
@@ -362,19 +400,27 @@ export function payslipDocKey(title: string | null | undefined): string {
 }
 const is13 = (name: string) => /(^|[^0-9])13\s*[oOº°]?\s*\.?\s*(SAL|S\/|PARC|REF|AD)|DECIMO\s+TERCEIRO/.test(
   name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase());
-const isFirstParcel = (name: string) => /\b1\s*[ªaAoOº°]?\s*\.?\s*PARC/i.test(name.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+/** 1ª parcela do 13º: "1.PARC", "1a parcela" ou o "adiantamento" do 13º. */
+const isFirstParcel = (name: string) => /\b1\s*[ªaAoOº°]?\s*\.?\s*PARC|ADIANTAMENTO/i.test(name.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
 /**
  * Recibo com título genérico ("Recibo de Pagamento de Salário") em que todos os proventos são de 13º:
  * é o recibo do 13º, não o holerite do mês. Sem isso, a 1ª parcela (competência de novembro) e a 2ª
  * (dezembro) colidiriam com o holerite do mês na assinatura e trocariam as rubricas na importação da folha.
  */
 export function payslipTitleFromItems(title: string, items: Array<{ name: string; kind: 'earning' | 'deduction' }>): string {
-  if (payslipDocKey(title)) return title;
+  const t13 = is13(title);
+  if (payslipDocKey(title) && !t13) return title;
+  // título do 13º que já diz a parcela ("13º Salário – 2ª parcela") fica como está
+  if (t13 && /\b[12]\s*[ªaAoOº°]?\s*\.?\s*parc/i.test(title.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) return title;
   const earnings = items.filter((i) => i.kind === 'earning');
-  if (!earnings.length || !earnings.every((i) => is13(i.name))) return title;
-  if (earnings.some((i) => isFirstParcel(i.name))) return '13º Salário – 1ª parcela';
-  if (items.some((i) => i.kind === 'deduction' && is13(i.name) && isFirstParcel(i.name))) return '13º Salário – 2ª parcela';
-  return '13º Salário';
+  if (earnings.length && earnings.every((i) => is13(i.name))) {
+    if (earnings.some((i) => isFirstParcel(i.name))) return '13º Salário – 1ª parcela';
+    if (items.some((i) => i.kind === 'deduction' && is13(i.name) && isFirstParcel(i.name))) return '13º Salário – 2ª parcela';
+    return '13º Salário';
+  }
+  // proventos não ajudam: decide pelo título ("13o Salário Adiantamento" = 1ª parcela)
+  if (t13) return isFirstParcel(title) ? '13º Salário – 1ª parcela' : '13º Salário';
+  return title;
 }
 
 /** Nome do tipo de recibo para mostrar ("13º Salário", "Férias"); null no holerite do mês. */

@@ -90,8 +90,16 @@ export const thirteenthUpdateSchema = z.object({
   notes,
 });
 
+/** Juntar a 1ª e a 2ª parcela numa conta só (por funcionário), com um vencimento. */
+export const thirteenthJoinSchema = z.object({
+  employeeIds: z.array(z.string().uuid()).min(1, 'Escolha ao menos um funcionário').max(300),
+  payDate: isoDate,
+});
+
 export interface ThirteenthRow {
   id: string; periodId: string; employeeId: string; installment: ThirteenthInstallment; year: number; payDate: string;
   net: string; amount: string; gross: string | null; fgts: string | null; lines: ThirteenthLine[];
   source: 'pdf' | 'manual'; fileName: string | null; notes: string | null; billId: string | null;
+  /** 1ª e 2ª parcela juntas numa conta só (as duas apontam para a mesma conta). */
+  joined: boolean;
 }

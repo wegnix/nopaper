@@ -3,7 +3,7 @@ import { Link, Navigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  ArrowDown, ArrowUp, BadgePercent, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Ghost, Gift, HandCoins, Landmark, MoreHorizontal, PenLine, Pencil, Plus, Printer,
+  ArrowDown, ArrowUp, BadgePercent, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Ghost, Gift, HandCoins, Link2, Landmark, MoreHorizontal, PenLine, Pencil, Plus, Printer,
   Receipt, RotateCcw, Settings2, Trash2, UserPlus, UsersRound, Wallet,
 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
@@ -27,7 +27,7 @@ import { SettingsDialog, type SettingsTab } from './SettingsDialog';
 import { CommissionsDialog } from './Commissions';
 import { ImportDialog } from './ImportDialog';
 import { PayslipsDialog } from './Payslips';
-import { ThirteenthDialog, ThirteenthImportDialog, ThirteenthView, type ThirteenthEdit } from './Thirteenth';
+import { ThirteenthDialog, ThirteenthImportDialog, ThirteenthJoinDialog, ThirteenthView, joinableThirteenth, thirteenthLines, type ThirteenthEdit } from './Thirteenth';
 import { KPI_STRIP, Kpi } from './Kpi';
 import { PayrollPrint, amountOf, extraColumnsOf, printColumnsOf, type PrintRow } from './PayrollPrint';
 
@@ -151,6 +151,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
   const [mview, setMview] = useState<'salaries' | 'thirteenth'>('salaries');
   const [thImport, setThImport] = useState<{ open: boolean; doc: string | null }>({ open: false, doc: null });
   const [thEdit, setThEdit] = useState<ThirteenthEdit>({ open: false, item: null });
+  const [thJoin, setThJoin] = useState(false);
   const thirteenthMonth = ref.endsWith('-11') || ref.endsWith('-12');
   const thirteenth = m?.thirteenth ?? [];
   const showToggle = !!period && (thirteenthMonth || thirteenth.length > 0 || mview === 'thirteenth');
@@ -275,7 +276,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
         {showToggle && (
           <Segmented className="max-sm:w-full" value={mview} onChange={setMview} options={[
             { value: 'salaries', label: <>Salários{rows.length ? <span className="ml-1 opacity-70">({rows.length})</span> : null}</> },
-            { value: 'thirteenth', label: <>13º salário{thirteenth.length ? <span className="ml-1 opacity-70">({thirteenth.length})</span> : null}</> },
+            { value: 'thirteenth', label: <>13º salário{thirteenth.length ? <span className="ml-1 opacity-70">({thirteenthLines(thirteenth)})</span> : null}</> },
           ]} />
         )}
         {period && !on13 && (
@@ -285,6 +286,7 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
         )}
         {on13 ? (
           <div className="ml-auto flex flex-wrap gap-2 max-sm:ml-0 max-sm:w-full max-sm:[&>button]:flex-1">
+            {canEdit && joinableThirteenth(thirteenth).length > 0 && <Button variant="ghost" icon={<Link2 className="size-4" />} onClick={() => setThJoin(true)}>Juntar parcelas</Button>}
             {canEdit && <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => setThEdit({ open: true, item: null })}>Lançar à mão</Button>}
             {canEdit && <Button variant="primary" icon={<FileText className="size-4" />} onClick={() => setThImport({ open: true, doc: null })}>Importar 13º do contador</Button>}
           </div>
@@ -458,7 +460,8 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
         commissions={meta.settings.commissions} canManage={can('payroll.manage')} canEdit={canEdit} initial={{ ...commImport, ref }}
         onConfigure={onConfigure} onDone={() => undefined} />}
       {period && <ThirteenthImportDialog open={thImport.open} docId={thImport.doc} period={period} employees={meta.employees} existing={thirteenth} onClose={() => setThImport({ open: false, doc: null })} />}
-      {period && <ThirteenthDialog open={thEdit.open} item={thEdit.item} period={period} employees={meta.employees} existing={thirteenth} canEdit={canEdit} onClose={() => setThEdit({ open: false, item: null })} />}
+      {period && <ThirteenthDialog open={thEdit.open} item={thEdit.item} period={period} employees={meta.employees} existing={thirteenth} canEdit={canEdit} onClose={() => setThEdit({ open: false, item: null })} onSwitch={(item) => setThEdit({ open: true, item })} />}
+      {period && <ThirteenthJoinDialog open={thJoin} period={period} items={thirteenth} employees={meta.employees} onClose={() => setThJoin(false)} />}
       {period && <EditPeriodDialog open={editPeriod} period={period} onClose={() => setEditPeriod(false)} />}
       {pay && <PayDialog bill={pay.bill} proofOnly={pay.proofOnly} onClose={() => setPay(null)} onView={view} />}
       <FileViewer target={viewer} onClose={() => setViewer(null)} />

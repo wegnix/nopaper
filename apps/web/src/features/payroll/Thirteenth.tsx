@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Banknote, CalendarDays, Check, FileText, Ghost, Gift, HandCoins, Landmark, Lock, MoreHorizontal, Plus, Receipt, RotateCcw, Trash2, Upload, UserRound, Wallet } from 'lucide-react';
+import { AlertTriangle, Banknote, Link2, Unlink, CalendarDays, Check, FileText, Ghost, Gift, HandCoins, Landmark, Lock, MoreHorizontal, Plus, Receipt, RotateCcw, Trash2, Upload, UserRound, Wallet } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import {
   THIRTEENTH_INSTALLMENTS, THIRTEENTH_LABEL, formatBRL, fromCents, formatDateBR, payslipEmployeeFor, refLabelPT, sumMoney, thirteenthClash, thirteenthDefaultPayDate,
   thirteenthInstallmentOf, thirteenthYearFor, titleCaseName, toCents, todayISO,
   type Payslip, type PayslipReport, type SpaceCheck, type ThirteenthInstallment,
 } from '@nopaper/shared';
-import { Button, Empty, Field, Select, Spinner, Textarea } from '@/components/ui/base';
+import { Button, Checkbox, Empty, Field, Select, Spinner, Textarea } from '@/components/ui/base';
 import { KPI_STRIP, Kpi } from './Kpi';
 import { StatusChip } from '@/components/ui/chips';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
@@ -26,6 +26,92 @@ import type { Employee, Period, Thirteenth } from './data';
 const label = (i: string) => THIRTEENTH_LABEL[i as ThirteenthInstallment] ?? i;
 
 export type ThirteenthEdit = { open: boolean; item: Thirteenth | null };
+
+/** Linha da tela: um pagamento, ou a 1ª + 2ª parcela juntas (com a soma; `pair` = a 2ª). */
+type Row = Thirteenth & { pair?: Thirteenth };
+const instLabel = (t: Row) => (t.pair ? '1ª + 2ª parcela' : label(t.installment));
+function mergeJoined(items: Thirteenth[]): Row[] {
+  const out: Row[] = [];
+  for (const t of items) {
+    if (t.joined && t.installment === 'second' && items.some((x) => x.joined && x.installment === 'first' && x.employeeId === t.employeeId && x.year === t.year)) continue;
+    const pair = t.joined && t.installment === 'first' ? items.find((x) => x.joined && x.installment === 'second' && x.employeeId === t.employeeId && x.year === t.year) : undefined;
+    out.push(pair ? {
+      ...t, pair, net: sumMoney([t.net, pair.net]), amount: sumMoney([t.amount, pair.amount]),
+      fgts: t.fgts || pair.fgts ? sumMoney([t.fgts ?? '0', pair.fgts ?? '0']) : null,
+    } : t);
+  }
+  return out;
+}
+
+/** Linhas da tela (parcelas juntas contam uma). */
+export const thirteenthLines = (items: Thirteenth[]) => mergeJoined(items).length;
+
+/** Funcionários com a 1ª e a 2ª parcela neste mês, separadas e sem pagamento: dá para juntar. */
+export function joinableThirteenth(items: Thirteenth[]) {
+  return items.filter((f) => f.installment === 'first' && !f.joined && f.bill?.status !== 'paid')
+    .map((f) => ({ first: f, second: items.find((x) => x.installment === 'second' && !x.joined && x.employeeId === f.employeeId && x.year === f.year && x.bill?.status !== 'paid') }))
+    .filter((x): x is { first: Thirteenth; second: Thirteenth } => !!x.second);
+}
+
+/** Junta a 1ª e a 2ª parcela de cada funcionário numa conta a pagar só, com um vencimento. */
+export function ThirteenthJoinDialog({ open, period, items, employees, onClose }: {
+  open: boolean; period: Period; items: Thirteenth[]; employees: Employee[]; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const empMap = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+  const pairs = useMemo(() => joinableThirteenth(items).sort((a, b) => (empMap.get(a.first.employeeId)?.name ?? '').localeCompare(empMap.get(b.first.employeeId)?.name ?? '', 'pt-BR')), [items, empMap]);
+  const [sel, setSel] = useState<string[]>([]);
+  const [payDate, setPayDate] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setSel(pairs.map((p) => p.first.employeeId));
+    // sugestão: o vencimento da 2ª parcela (o prazo do 13º inteiro)
+    const dates = pairs.map((p) => p.second.payDate).sort();
+    setPayDate(dates.at(-1) ?? period.payDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const chosen = pairs.filter((p) => sel.includes(p.first.employeeId));
+  const total = sumMoney(chosen.flatMap((p) => [p.first.amount, p.second.amount]));
+  const save = async () => {
+    setBusy(true);
+    try {
+      await post(`/api/payroll/periods/${period.id}/thirteenth/join`, { employeeIds: chosen.map((p) => p.first.employeeId), payDate });
+      qc.invalidateQueries({ queryKey: ['bills'] });
+      toast.success(`${plural(chosen.length, 'conta', 'contas')} do 13º com as duas parcelas juntas`);
+      onClose();
+    } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+  };
+  return (
+    <Dialog open={open} onClose={onClose} size="md" title="Juntar 1ª e 2ª parcela"
+      description="Para pagar o 13º de uma vez: cada funcionário fica com uma conta a pagar só, com a soma das duas parcelas. Os recibos continuam separados e dá para separar de novo depois."
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" icon={<Link2 className="size-4" />} loading={busy} disabled={!chosen.length || !payDate} onClick={save}>Juntar {chosen.length ? `(${chosen.length})` : ''}</Button></>}>
+      <div className="flex flex-col gap-4">
+        <Field label="Vencimento da conta" hint="Vale para as contas juntadas. Prazo legal do 13º inteiro: até 20/12.">
+          <DatePicker value={payDate} onChange={setPayDate} />
+        </Field>
+        <div className="rounded-xl border border-line">
+          <div className="flex items-center gap-3 border-b border-line px-3 py-2 text-[13px] font-medium text-muted">
+            <Checkbox checked={chosen.length === pairs.length && pairs.length > 0} onChange={(on) => setSel(on ? pairs.map((p) => p.first.employeeId) : [])} label="Todos" />
+            <span className="ml-auto tnum text-ink">{formatBRL(total)}</span>
+          </div>
+          <ul className="max-h-[45vh] divide-y divide-line overflow-y-auto">
+            {pairs.map(({ first, second }) => (
+              <li key={first.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                <Checkbox checked={sel.includes(first.employeeId)} onChange={(on) => setSel((p) => (on ? [...p, first.employeeId] : p.filter((x) => x !== first.employeeId)))}
+                  label={<span className="line-clamp-2 break-words">{empMap.get(first.employeeId)?.name ?? '—'}</span>} />
+                <span className="ml-auto shrink-0 text-right text-xs text-muted tnum">
+                  {formatBRL(first.amount)} + {formatBRL(second.amount)}
+                  <span className="block text-sm font-semibold text-ink">{formatBRL(sumMoney([first.amount, second.amount]))}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
 
 /**
  * Aba "13º salário" do mês da folha: números, tabela (computador) ou cartões (celular/tablet), no
@@ -44,11 +130,13 @@ export function ThirteenthView({ period, items, employees, canEdit, onPay, onUnp
   const today = todayISO();
   const empMap = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
 
-  const sorted = useMemo(() => [...items].sort((a, b) => (empMap.get(a.employeeId)?.name ?? '').localeCompare(empMap.get(b.employeeId)?.name ?? '', 'pt-BR') || a.installment.localeCompare(b.installment)), [items, empMap]);
+  // 1ª e 2ª parcela juntas aparecem numa linha só, com a soma (como a conta a pagar)
+  const sorted = useMemo(() => mergeJoined(items).sort((a, b) => (empMap.get(a.employeeId)?.name ?? '').localeCompare(empMap.get(b.employeeId)?.name ?? '', 'pt-BR') || a.installment.localeCompare(b.installment)), [items, empMap]);
+  const original = (t: Row) => items.find((x) => x.id === t.id) ?? t;
   /** Quem recebe pela empresa (totais) e quem é só holerite (no fim, sem conta). */
   const rows = sorted.filter((t) => !empMap.get(t.employeeId)?.payslipOnly);
   const ghosts = sorted.filter((t) => empMap.get(t.employeeId)?.payslipOnly);
-  const off = (t: Thirteenth) => fromCents(toCents(t.amount) - toCents(t.net));
+  const off = (t: Row) => fromCents(toCents(t.amount) - toCents(t.net));
   const dates = [...new Set(rows.map((t) => t.payDate))].sort();
   const people = new Set(rows.map((t) => t.employeeId)).size;
   const k = {
@@ -58,7 +146,7 @@ export function ThirteenthView({ period, items, employees, canEdit, onPay, onUnp
     fgts: sumMoney(rows.map((t) => t.fgts ?? '0')),
     paidN: rows.filter((t) => t.bill?.status === 'paid').length, bills: rows.filter((t) => t.bill).length,
   };
-  const parts = [...new Set(rows.map((t) => t.installment))].map(label).join(' e ');
+  const parts = THIRTEENTH_INSTALLMENTS.filter((i) => items.some((t) => t.installment === i && !empMap.get(t.employeeId)?.payslipOnly)).map(label).join(' e ');
 
   const status = (t: Thirteenth) => {
     if (!period.billsEnabled) return <StatusChip status="pending" label="Histórico" />;
@@ -69,14 +157,24 @@ export function ThirteenthView({ period, items, employees, canEdit, onPay, onUnp
     return <StatusChip status="pending" label="Pendente" />;
   };
   const ghostChip = <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-muted"><Ghost className="size-3" />só holerite</span>;
-  const remove = async (t: Thirteenth) => {
+  const remove = async (t: Row) => {
     const name = empMap.get(t.employeeId)?.name ?? '';
-    if (!(await confirm({ title: `Apagar o 13º de ${name}?`, tone: 'danger', confirmLabel: 'Apagar', body: `${label(t.installment)} de ${t.year}. A conta a pagar pendente dele também é apagada.` }))) return;
-    try { await api('DELETE', `/api/payroll/thirteenth/${t.id}`); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('13º apagado'); } catch (e) { toast.error(errMsg(e)); }
+    if (!(await confirm({ title: `Apagar o 13º de ${name}?`, tone: 'danger', confirmLabel: 'Apagar', body: `${instLabel(t)} de ${t.year}. A conta a pagar pendente também é apagada.` }))) return;
+    try {
+      for (const id of [t.id, ...(t.pair ? [t.pair.id] : [])]) await api('DELETE', `/api/payroll/thirteenth/${id}`);
+      toast.success('13º apagado');
+    } catch (e) { toast.error(errMsg(e)); } finally { qc.invalidateQueries({ queryKey: ['bills'] }); }
   };
-  const menu = (t: Thirteenth) => {
+  const split = async (t: Row) => {
+    if (!(await confirm({ title: 'Separar as parcelas?', confirmLabel: 'Separar', body: `A 1ª e a 2ª parcela de ${empMap.get(t.employeeId)?.name ?? ''} voltam a ter uma conta a pagar cada uma (a 2ª com o vencimento sugerido).` }))) return;
+    try { await post(`/api/payroll/thirteenth/${t.id}/split`); qc.invalidateQueries({ queryKey: ['bills'] }); toast.success('Parcelas separadas'); } catch (e) { toast.error(errMsg(e)); }
+  };
+  const menu = (t: Row) => {
     const b = t.bill;
     const list = [
+      t.pair && { label: 'Ver a 1ª parcela', icon: FileText, on: () => onEdit(original(t)) },
+      t.pair && { label: 'Ver a 2ª parcela', icon: FileText, on: () => onEdit(t.pair!) },
+      t.pair && canEdit && b?.status !== 'paid' && { label: 'Separar as parcelas', icon: Unlink, on: () => split(t) },
       b && b.status === 'paid' && canPay && { label: 'Comprovante', icon: Receipt, on: () => onPay(b, true) },
       b && b.status === 'paid' && canPay && { label: 'Reverter pagamento', icon: RotateCcw, on: () => onUnpay(b) },
       b && { label: 'Ver em Contas a pagar', icon: Wallet, href: `/pagar?ano=${b.dueDate.slice(0, 4)}&mes=${Number(b.dueDate.slice(5, 7))}&situacao=` },
@@ -96,11 +194,11 @@ export function ThirteenthView({ period, items, employees, canEdit, onPay, onUnp
       </DropdownMenu.Root>
     );
   };
-  const payBtn = (t: Thirteenth) => t.bill?.status === 'pending' && canPay && (
+  const payBtn = (t: Row) => t.bill?.status === 'pending' && canPay && (
     <Button size="sm" variant="ok" className="h-7 px-2.5" icon={<Check className="size-3.5" />} onClick={(ev) => { ev.stopPropagation(); onPay(t.bill!, false); }}>Pagar</Button>
   );
-  const sub = (t: Thirteenth) => `${label(t.installment)} de ${t.year}${t.source === 'pdf' ? ' · recibo do contador' : ' · lançado à mão'}`;
-  const offCell = (t: Thirteenth) => { const c = toCents(off(t)); return c ? `${c > 0 ? '' : '− '}${formatBRL(Math.abs(c) / 100)}` : '—'; };
+  const sub = (t: Row) => `${instLabel(t)} de ${t.year}${t.pair ? ' · uma conta só' : t.source === 'pdf' ? ' · recibo do contador' : ' · lançado à mão'}`;
+  const offCell = (t: Row) => { const c = toCents(off(t)); return c ? `${c > 0 ? '' : '− '}${formatBRL(Math.abs(c) / 100)}` : '—'; };
 
   if (!sorted.length) {
     return (
@@ -143,7 +241,7 @@ export function ThirteenthView({ period, items, employees, canEdit, onPay, onUnp
         </thead>
         <tbody className="divide-y divide-line">
           {rows.map((t) => (
-            <tr key={t.id} className="cursor-pointer hover:bg-surface-2/50" onClick={() => onEdit(t)}>
+            <tr key={t.id} className="cursor-pointer hover:bg-surface-2/50" onClick={() => onEdit(original(t))}>
               <td className="px-5 py-3">
                 <p className="font-medium">{empMap.get(t.employeeId)?.name ?? '—'}</p>
                 <p className="text-xs text-faint">{sub(t)}</p>
@@ -157,7 +255,7 @@ export function ThirteenthView({ period, items, employees, canEdit, onPay, onUnp
             </tr>
           ))}
           {ghosts.map((t) => (
-            <tr key={t.id} className="cursor-pointer text-muted hover:bg-surface-2/50" onClick={() => onEdit(t)}>
+            <tr key={t.id} className="cursor-pointer text-muted hover:bg-surface-2/50" onClick={() => onEdit(original(t))}>
               <td className="px-5 py-3">
                 <p className="flex items-center gap-2 font-medium">{empMap.get(t.employeeId)?.name ?? '—'}{ghostChip}</p>
                 <p className="text-xs text-faint">{sub(t)}</p>
@@ -188,11 +286,11 @@ export function ThirteenthView({ period, items, employees, canEdit, onPay, onUnp
           const ghost = !!empMap.get(t.employeeId)?.payslipOnly;
           return (
             <li key={t.id}>
-              <button type="button" onClick={() => onEdit(t)} className={cn('flex w-full min-w-0 flex-col gap-2 rounded-xl border p-3.5 text-left', ghost ? 'border-dashed border-line text-muted' : 'border-line bg-surface-2/40')}>
+              <button type="button" onClick={() => onEdit(original(t))} className={cn('flex w-full min-w-0 flex-col gap-2 rounded-xl border p-3.5 text-left', ghost ? 'border-dashed border-line text-muted' : 'border-line bg-surface-2/40')}>
                 <span className="flex items-start justify-between gap-2">
                   <span className="min-w-0">
                     <span className="block line-clamp-2 break-words font-medium leading-snug">{empMap.get(t.employeeId)?.name ?? '—'}</span>
-                    <span className="block text-xs text-faint">{label(t.installment)} · vence {formatDateBR(t.payDate)}</span>
+                    <span className="block text-xs text-faint">{instLabel(t)} · vence {formatDateBR(t.payDate)}</span>
                   </span>
                   <span className="shrink-0">{ghost ? ghostChip : status(t)}</span>
                 </span>
@@ -396,8 +494,10 @@ export function ThirteenthImportDialog({ open, docId, period, employees, existin
 }
 
 // ------------------------------------------------------------------ lançar à mão / editar
-export function ThirteenthDialog({ open, item, period, employees, existing, canEdit, onClose }: {
+export function ThirteenthDialog({ open, item, period, employees, existing, canEdit, onClose, onSwitch }: {
   open: boolean; item: Thirteenth | null; period: Period; employees: Employee[]; existing: Thirteenth[]; canEdit: boolean; onClose: () => void;
+  /** Abre a outra parcela (quando as duas estão juntas). */
+  onSwitch?: (item: Thirteenth) => void;
 }) {
   const qc = useQueryClient();
   const empty = () => {
@@ -419,6 +519,7 @@ export function ThirteenthDialog({ open, item, period, employees, existing, canE
   const clash = !item && f.employeeId ? thirteenthClash(f.installment, existing.filter((x) => x.employeeId === f.employeeId && x.year === year).map((x) => x.installment)) : null;
   const emp = employees.find((e) => e.id === (item?.employeeId ?? f.employeeId));
   const canSave = !!f.employeeId && !!f.payDate && toCents(f.net || '0') > 0 && !clash;
+  const partner = item?.joined ? existing.find((x) => x.joined && x.id !== item.id && x.employeeId === item.employeeId && x.year === item.year) ?? null : null;
 
   const save = async () => {
     setBusy(true);
@@ -439,6 +540,13 @@ export function ThirteenthDialog({ open, item, period, employees, existing, canE
       footer={<SaveFooter dirty={form.dirty} saving={busy} canSave={canSave} onSave={save} onClose={onClose} readOnly={readOnly} isNew={!item} saveLabel={item ? 'Salvar' : 'Lançar'} />}>
       <div className="flex flex-col gap-4">
         {paid && <p className="flex items-center gap-2 rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn"><Lock className="size-4 shrink-0" />Já foi pago. Para mudar, reverta o pagamento antes.</p>}
+        {partner && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-accent-soft/40 px-3 py-2.5 text-sm">
+            <Link2 className="size-4 shrink-0 text-accent" />
+            <span className="min-w-0 flex-1">Junto com a {label(partner.installment).toLowerCase()} ({formatBRL(partner.amount)}): a conta a pagar é a soma, <b className="tnum">{formatBRL(sumMoney([toCents(f.amount || '0') ? f.amount : item!.amount, partner.amount]))}</b>, com o vencimento abaixo.</span>
+            {onSwitch && <Button size="sm" variant="secondary" disabled={form.dirty} onClick={() => onSwitch(partner)}>Ver a {label(partner.installment).toLowerCase()}</Button>}
+          </div>
+        )}
         {!item && (
           <Field label="Funcionário">
             <Select value={f.employeeId} onChange={(e) => setF((p) => ({ ...p, employeeId: e.target.value }))}>
@@ -460,7 +568,7 @@ export function ThirteenthDialog({ open, item, period, employees, existing, canE
           </Field>
         </div>
         {clash && <Warn>{emp?.name} já tem o 13º de {year} lançado como {label(clash).toLowerCase()}. Parcela única não convive com 1ª/2ª parcela.</Warn>}
-        <Field label="Vencimento" hint={f.installment === 'first' ? 'Prazo legal: até 30/11.' : 'Prazo legal: até 20/12.'}>
+        <Field label="Vencimento" hint={partner ? 'Vale para as duas parcelas (uma conta só). Prazo legal do 13º inteiro: até 20/12.' : f.installment === 'first' ? 'Prazo legal: até 30/11.' : 'Prazo legal: até 20/12.'}>
           <DatePicker value={f.payDate} disabled={readOnly} onChange={(payDate) => setF((p) => ({ ...p, payDate }))} />
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">

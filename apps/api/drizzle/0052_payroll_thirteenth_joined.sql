@@ -1,0 +1,1 @@
+ALTER TABLE "payroll_thirteenth" ADD COLUMN "joined" boolean DEFAULT false NOT NULL;

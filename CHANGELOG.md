@@ -8,6 +8,14 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.41.0] - 2026-11-27
+
+### Novo
+- Folha → 13º salário: **Juntar parcelas** — a 1ª e a 2ª parcela do mesmo funcionário, no mesmo mês, viram uma conta a pagar só, com a soma e um vencimento. Os recibos continuam separados (importar de novo atualiza a soma) e dá para separar de novo pelo menu da linha.
+
+### Corrigido
+- Recibos do 13º no formato "Demonstrativo de Pagamento" em duas metades (proventos à esquerda, descontos à direita, com o tipo "13o Salário Adiantamento" / "13o Salário Integral" ao lado da competência) agora são lidos: parcela, linhas, totais, líquido e FGTS. Antes o NoPaper achava os recibos, mas sem nenhum valor.
+
 ## [1.40.0] - 2026-11-27
 
 ### Novo

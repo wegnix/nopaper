@@ -535,6 +535,8 @@ export const payrollThirteenth = pgTable('payroll_thirteenth', {
   source: varchar('source', { length: 8 }).notNull().default('manual'), // pdf | manual
   fileName: varchar('file_name', { length: 200 }),
   notes: text('notes'),
+  /** 1ª e 2ª parcela do mesmo ano juntas numa conta só (as duas linhas apontam para a mesma conta; a da 1ª é a dona). */
+  joined: boolean('joined').notNull().default(false),
   billId: uuid('bill_id').references(() => bills.id, { onDelete: 'set null' }),
   createdBy: uuid('created_by'),
   createdAt: createdAt(),

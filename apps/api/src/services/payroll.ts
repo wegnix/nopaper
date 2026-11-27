@@ -1,7 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
-  DEFAULT_PAYROLL_COMMISSIONS, DEFAULT_PAYROLL_COSTS, DEFAULT_PAYROLL_PAYSLIPS, DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, payslipCheck, payslipDocKey, refLabelPT, formatBRL, toCents, type PayrollSettings, type PayslipReport,
+  DEFAULT_PAYROLL_COMMISSIONS, DEFAULT_PAYROLL_COSTS, DEFAULT_PAYROLL_PAYSLIPS, DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, payslipCheck, payslipDocKey, refLabelPT, formatBRL, fromCents, toCents, type PayrollSettings, type PayslipReport,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import type { DBOrTx } from '../db/client.js';
@@ -288,40 +288,68 @@ export async function assertThirteenthEditable(t: ThirteenthRow, conn: DBOrTx = 
   if (b?.status === 'paid') throw conflict('Este 13º já foi pago. Para alterar, reverta o pagamento da conta antes.');
 }
 
+/** A outra parcela (1ª ↔ 2ª) do mesmo funcionário, ano e mês da folha. */
+export async function thirteenthPartner(tx: DBOrTx, t: ThirteenthRow) {
+  if (t.installment === 'single') return null;
+  const [o] = await tx.select().from(schema.payrollThirteenth).where(and(
+    eq(schema.payrollThirteenth.orgId, t.orgId), eq(schema.payrollThirteenth.employeeId, t.employeeId), eq(schema.payrollThirteenth.year, t.year),
+    eq(schema.payrollThirteenth.periodId, t.periodId), eq(schema.payrollThirteenth.installment, t.installment === 'first' ? 'second' : 'first'),
+  ));
+  return o ?? null;
+}
+
 /**
  * Conta a pagar do 13º: como a do salário (mesma categoria e pasta), com o vencimento do próprio 13º.
  * Sem conta: mês do histórico, valor zero ou funcionário "só holerite". Conta paga não é tocada.
+ * 1ª e 2ª parcela juntas ("joined"): uma conta só, com a soma, o vencimento da 1ª e a 1ª como dona.
  */
 export async function syncThirteenthBill(tx: DBOrTx, id: string, userId: string | null) {
-  const [t] = await tx.select().from(schema.payrollThirteenth).where(eq(schema.payrollThirteenth.id, id));
-  if (!t) return;
+  const [t0] = await tx.select().from(schema.payrollThirteenth).where(eq(schema.payrollThirteenth.id, id));
+  if (!t0) return;
+  let partner = t0.joined ? await thirteenthPartner(tx, t0) : null;
+  if (t0.joined && !partner?.joined) {
+    // a outra parcela sumiu (ou foi separada): volta a ser uma conta só desta parcela
+    await tx.update(schema.payrollThirteenth).set({ joined: false }).where(eq(schema.payrollThirteenth.id, t0.id));
+    t0.joined = false; partner = null;
+  }
+  const t = partner && t0.installment === 'second' ? partner : t0;
+  const second = partner ? (t === t0 ? partner : t0) : null;
   const [p] = await tx.select().from(schema.payrollPeriods).where(eq(schema.payrollPeriods.id, t.periodId));
   const [emp] = await tx.select().from(schema.employees).where(eq(schema.employees.id, t.employeeId));
   const bill = t.billId ? (await tx.select().from(schema.bills).where(eq(schema.bills.id, t.billId)))[0] : undefined;
   if (bill?.status === 'paid') return;
-  if (!p.billsEnabled || emp.payslipOnly || toCents(t.amount) <= 0) {
+  // a 2ª parcela juntada não tem conta própria: a pendente dela sai
+  const extra = second?.billId && second.billId !== t.billId ? (await tx.select().from(schema.bills).where(eq(schema.bills.id, second.billId)))[0] : undefined;
+  if (extra?.status === 'paid') return;
+  const amount = second ? fromCents(toCents(t.amount) + toCents(second.amount)) : t.amount;
+  const ids = second ? [t.id, second.id] : [t.id];
+  if (extra) {
+    await tx.update(schema.payrollThirteenth).set({ billId: null }).where(eq(schema.payrollThirteenth.id, second!.id));
+    await deleteBillsWithFiles(tx, [extra.id]);
+  }
+  if (!p.billsEnabled || emp.payslipOnly || toCents(amount) <= 0) {
     if (bill) {
-      await tx.update(schema.payrollThirteenth).set({ billId: null }).where(eq(schema.payrollThirteenth.id, t.id));
+      await tx.update(schema.payrollThirteenth).set({ billId: null }).where(inArray(schema.payrollThirteenth.id, ids));
       await deleteBillsWithFiles(tx, [bill.id]);
     }
     return;
   }
   const settings = await getPayrollSettings(t.orgId, tx);
   if (!settings.categoryId) throw badRequest('Escolha a categoria das contas de salário em Folha de pagamento → Configurar.', 'payroll_category');
-  const part = t.installment === 'first' ? ' (1ª parcela)' : t.installment === 'second' ? ' (2ª parcela)' : '';
+  const part = second ? ' (1ª e 2ª parcelas)' : t.installment === 'first' ? ' (1ª parcela)' : t.installment === 'second' ? ' (2ª parcela)' : '';
   const values = {
-    description: `13º salário${part} ${emp.name} – ${t.year}`.slice(0, 255), amount: t.amount, dueDate: t.payDate,
+    description: `13º salário${part} ${emp.name} – ${t.year}`.slice(0, 255), amount, dueDate: t.payDate,
     categoryId: settings.categoryId, folderId: settings.folderId ?? null, relatedPerson: emp.name.slice(0, 128),
-    pixKey: emp.pixKey, paymentMethod: settings.paymentMethod ?? null, notes: `13º salário ${t.year}${part}. Folha de pagamento ${refLabelPT(p.ref)}.`,
+    pixKey: emp.pixKey, paymentMethod: settings.paymentMethod ?? null, payrollThirteenthId: t.id,
+    notes: `13º salário ${t.year}${part}${second ? `: ${formatBRL(t.amount)} + ${formatBRL(second.amount)}` : ''}. Folha de pagamento ${refLabelPT(p.ref)}.`,
   };
-  if (bill) {
-    await tx.update(schema.bills).set(values).where(eq(schema.bills.id, bill.id));
-    return;
+  let billId = bill?.id;
+  if (bill) await tx.update(schema.bills).set(values).where(eq(schema.bills.id, bill.id));
+  else {
+    const [b] = await tx.insert(schema.bills).values({ ...values, orgId: t.orgId, type: 'payable', recurrenceType: 'once', createdBy: userId }).returning();
+    billId = b.id;
   }
-  const [b] = await tx.insert(schema.bills).values({
-    ...values, orgId: t.orgId, type: 'payable', recurrenceType: 'once', payrollThirteenthId: t.id, createdBy: userId,
-  }).returning();
-  await tx.update(schema.payrollThirteenth).set({ billId: b.id }).where(eq(schema.payrollThirteenth.id, t.id));
+  await tx.update(schema.payrollThirteenth).set({ billId }).where(inArray(schema.payrollThirteenth.id, ids));
 }
 
 /** 13º pagos entre os ids (bloqueiam apagar). */
@@ -338,7 +366,7 @@ export async function deleteThirteenth(tx: DBOrTx, ids: string[]) {
   if (!ids.length) return 0;
   const rows = await tx.select({ billId: schema.payrollThirteenth.billId }).from(schema.payrollThirteenth).where(inArray(schema.payrollThirteenth.id, ids));
   await tx.update(schema.payrollThirteenth).set({ billId: null }).where(inArray(schema.payrollThirteenth.id, ids));
-  await deleteBillsWithFiles(tx, rows.map((r) => r.billId).filter((x): x is string => !!x));
+  await deleteBillsWithFiles(tx, [...new Set(rows.map((r) => r.billId).filter((x): x is string => !!x))]);
   await tx.delete(schema.payrollThirteenth).where(inArray(schema.payrollThirteenth.id, ids));
   return ids.length;
 }
