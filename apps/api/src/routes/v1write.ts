@@ -180,7 +180,7 @@ export function registerV1Writes(app: FastifyInstance, api: FastifyInstance, h: 
   api.patch<{ Params: { id: string } }>('/api/v1/bills/:id', h.limited, async (req) => {
     const { applyToFollowing, externalId, source, ...fields } = parse(patchBody, req.body);
     const b = await loadBill(req, req.params.id, 'edit');
-    if ((b.statementId || b.payrollEntryId) && ((fields.amount && fields.amount !== b.amount) || (fields.dueDate && fields.dueDate !== b.dueDate))) {
+    if ((b.statementId || b.payrollEntryId || b.payrollThirteenthId) && ((fields.amount && fields.amount !== b.amount) || (fields.dueDate && fields.dueDate !== b.dueDate))) {
       throw new HttpError(409, b.statementId
         ? 'O valor e o vencimento desta conta vêm da fatura do cartão: altere as compras do cartão.'
         : 'O valor e o vencimento deste salário vêm da folha de pagamento: altere o lançamento da folha.', 'locked');

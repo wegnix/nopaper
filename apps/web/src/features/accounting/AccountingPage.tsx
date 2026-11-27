@@ -105,7 +105,13 @@ export function AccountingPage() {
       return <Button size="sm" variant="primary" icon={<UsersRound className="size-4" />} onClick={() => navigate(`/folha?holerite=${d.id}`)}>Importar na folha</Button>;
     }
     // recibos de 13º e de férias: só vão para a assinatura (importar na folha trocaria os valores do holerite do mês)
-    if ((d.kind === 'thirteenth' || d.kind === 'vacation_slip') && org?.kind === 'company' && can('payroll.edit')) {
+    if (d.kind === 'thirteenth' && org?.kind === 'company' && can('payroll.edit')) {
+      return <>
+        <Button size="sm" variant="primary" icon={<UsersRound className="size-4" />} onClick={() => navigate(`/folha?mes=${d.detected?.slipsRef ?? d.competence ?? ''}&decimo=${d.id}`)} title="Lança o 13º de cada funcionário no mês da folha, com a conta a pagar e o vencimento do 13º.">Lançar na folha</Button>
+        <Button size="sm" variant="secondary" onClick={() => navigate('/folha')} title="Na Folha, abra o mês e use o botão Assinaturas: este arquivo aparece em “Enviados pelo contador”.">Enviar para assinatura</Button>
+      </>;
+    }
+    if (d.kind === 'vacation_slip' && org?.kind === 'company' && can('payroll.edit')) {
       return <Button size="sm" variant="primary" icon={<UsersRound className="size-4" />} onClick={() => navigate('/folha')} title="Na Folha, abra o mês e use o botão Assinaturas: este arquivo aparece em “Enviados pelo contador”.">Enviar para assinatura</Button>;
     }
     if (d.kind === 'vacation' && org?.kind === 'company' && can('payroll.edit')) {

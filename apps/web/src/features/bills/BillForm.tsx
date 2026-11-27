@@ -290,12 +290,15 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
             </Select>
           </Field>
           <Field label={rec.type !== 'once' && !isEdit ? '1º vencimento' : 'Vencimento'} required>
-            <DatePicker value={f.dueDate} disabled={!!current?.statementId || !!current?.payrollEntryId} onChange={(dueDate) => setF({ ...f, dueDate })} />
+            <DatePicker value={f.dueDate} disabled={!!current?.statementId || !!current?.payrollEntryId || !!current?.payrollThirteenthId} onChange={(dueDate) => setF({ ...f, dueDate })} />
           </Field>
         </div>
 
         {isEdit && current?.payrollEntryId && (
           <p className="-mt-2 rounded-lg bg-accent-soft/60 px-3 py-2 text-xs text-accent">Este salário vem da Folha de pagamento: valor e vencimento vêm do lançamento do funcionário no mês.</p>
+        )}
+        {isEdit && current?.payrollThirteenthId && (
+          <p className="-mt-2 rounded-lg bg-accent-soft/60 px-3 py-2 text-xs text-accent">Este 13º vem da Folha de pagamento: valor e vencimento vêm do 13º do funcionário no mês.</p>
         )}
         {isEdit && current?.statementId && (
           <p className="-mt-2 rounded-lg bg-accent-soft/60 px-3 py-2 text-xs text-accent">Esta conta é a fatura de um cartão: valor e vencimento vêm dos lançamentos na tela de Cartões.</p>
@@ -303,7 +306,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
         <div className="grid sm:grid-cols-3 gap-4">
           {!hideAmount && (
             <Field label={rec.type === 'installments' && !isEdit ? 'Valor de cada parcela' : 'Valor'} required>
-              <MoneyInput value={f.amount} disabled={!!current?.statementId || !!current?.payrollEntryId} onChange={(amount) => setF({ ...f, amount })} />
+              <MoneyInput value={f.amount} disabled={!!current?.statementId || !!current?.payrollEntryId || !!current?.payrollThirteenthId} onChange={(amount) => setF({ ...f, amount })} />
             </Field>
           )}
           <Field label="Forma de pagamento">
@@ -408,7 +411,7 @@ export function BillForm({ type, bill, open, onClose, onRestructure, onStopRecur
             </div>
           </div>
         )}
-        {isEdit && current && !series && !current.statementId && !current.payrollEntryId && current.status !== 'paid' && (
+        {isEdit && current && !series && !current.statementId && !current.payrollEntryId && !current.payrollThirteenthId && current.status !== 'paid' && (
           <button type="button" className="self-start text-sm text-accent hover:underline" onClick={() => onRestructure(current)}>Transformar em conta recorrente ou parcelada</button>
         )}
       </div>

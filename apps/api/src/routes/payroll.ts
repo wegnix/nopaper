@@ -18,6 +18,7 @@ import { assertCategoryUsable, assertFolder, attachmentsFor, serialize } from '.
 import {
   assertCompany, assertEntryEditable, deleteEntries, ensurePayrollDefaults, getPayrollSettings, loadEmployee, loadEntry,
   loadPeriod, paidBillsCount, recomputeCosts, restrictPayrollCategory, rewriteOpenEntries, rubricsOf, patchPayrollSettings, syncEntries, writeEntry, assertMonthlySlips,
+  deleteThirteenth, paidThirteenthCount, syncThirteenthBill,
 } from '../services/payroll.js';
 import { checkPayslipsSpace } from '../services/spaceCheck.js';
 
@@ -335,7 +336,13 @@ export default async function payrollRoutes(app: FastifyInstance) {
       throw err;
     }
     // "só holerite" mudou: os meses em aberto passam a (não) gerar valor a pagar
-    if (u.payslipOnly !== e.payslipOnly) await db.transaction((tx) => rewriteOpenEntries(tx, req.org!.id, e.id, req.user!.id));
+    if (u.payslipOnly !== e.payslipOnly) {
+      await db.transaction(async (tx) => {
+        await rewriteOpenEntries(tx, req.org!.id, e.id, req.user!.id);
+        const ts = await tx.select({ id: schema.payrollThirteenth.id }).from(schema.payrollThirteenth).where(eq(schema.payrollThirteenth.employeeId, e.id));
+        for (const t of ts) await syncThirteenthBill(tx, t.id, req.user!.id);
+      });
+    }
     // nome/PIX novos nas contas ainda pendentes
     if (u.name !== e.name || u.pixKey !== e.pixKey) {
       const ids = await pendingEntryIds(eq(schema.payrollEntries.employeeId, e.id));
@@ -354,6 +361,8 @@ export default async function payrollRoutes(app: FastifyInstance) {
     const e = await loadEmployee(req.org!.id, req.params.id);
     const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.payrollEntries).where(eq(schema.payrollEntries.employeeId, e.id));
     if (n > 0) throw conflict(`${e.name} tem ${n} mês(es) na folha. Para manter o histórico, desative o funcionário (ou apague os lançamentos antes).`);
+    const [{ n13 }] = await db.select({ n13: sql<number>`count(*)::int` }).from(schema.payrollThirteenth).where(eq(schema.payrollThirteenth.employeeId, e.id));
+    if (n13 > 0) throw conflict(`${e.name} tem 13º salário lançado na folha. Para manter o histórico, desative o funcionário (ou apague o 13º antes).`);
     await db.delete(schema.employees).where(eq(schema.employees.id, e.id));
     await audit(req, { action: 'payroll.employee.delete', entityType: 'employee', entityId: e.id, description: `Apagou o funcionário ${e.name}` });
     return { ok: true };
@@ -370,7 +379,14 @@ export default async function payrollRoutes(app: FastifyInstance) {
       .innerJoin(schema.payrollPeriods, eq(schema.payrollPeriods.id, schema.payrollEntries.periodId))
       .leftJoin(schema.bills, eq(schema.bills.id, schema.payrollEntries.billId))
       .where(eq(schema.payrollEntries.employeeId, e.id)).orderBy(desc(schema.payrollPeriods.ref));
-    return { items: rows };
+    const thirteenth = await db.select({
+      ref: schema.payrollPeriods.ref, year: schema.payrollThirteenth.year, installment: schema.payrollThirteenth.installment, payDate: schema.payrollThirteenth.payDate,
+      net: schema.payrollThirteenth.net, amount: schema.payrollThirteenth.amount, billsEnabled: schema.payrollPeriods.billsEnabled, billStatus: schema.bills.status, paidAt: schema.bills.paidAt,
+    }).from(schema.payrollThirteenth)
+      .innerJoin(schema.payrollPeriods, eq(schema.payrollPeriods.id, schema.payrollThirteenth.periodId))
+      .leftJoin(schema.bills, eq(schema.bills.id, schema.payrollThirteenth.billId))
+      .where(eq(schema.payrollThirteenth.employeeId, e.id)).orderBy(desc(schema.payrollThirteenth.payDate));
+    return { items: rows, thirteenth };
   });
 
   app.post('/api/payroll/rubrics', manage, async (req) => {
@@ -446,6 +462,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
       companyCost: sql<string>`coalesce(sum(${schema.payrollEntries.companyCost}), 0)::text`,
       paid: sql<number>`count(*) filter (where ${schema.bills.status} = 'paid')::int`,
       bills: sql<number>`count(${schema.bills.id})::int`,
+      thirteenth: sql<string>`(select coalesce(sum(t.amount), 0)::text from payroll_thirteenth t where t.period_id = payroll_periods.id)`,
     }).from(schema.payrollPeriods)
       .leftJoin(schema.payrollEntries, eq(schema.payrollEntries.periodId, schema.payrollPeriods.id))
       .leftJoin(schema.bills, eq(schema.bills.id, schema.payrollEntries.billId))
@@ -459,10 +476,11 @@ export default async function payrollRoutes(app: FastifyInstance) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(req.params.ref)) throw badRequest('Mês inválido');
     const settings = await getPayrollSettings(req.org!.id);
     const [p] = await db.select().from(schema.payrollPeriods).where(and(eq(schema.payrollPeriods.orgId, req.org!.id), eq(schema.payrollPeriods.ref, req.params.ref)));
-    if (!p) return { period: null, suggestedPayDate: defaultPayDate(req.params.ref, settings.payDay), entries: [] };
+    if (!p) return { period: null, suggestedPayDate: defaultPayDate(req.params.ref, settings.payDay), entries: [], thirteenth: [] };
     const entries = await db.select().from(schema.payrollEntries).where(eq(schema.payrollEntries.periodId, p.id));
     const lines = entries.length ? await db.select().from(schema.payrollEntryLines).where(inArray(schema.payrollEntryLines.entryId, entries.map((e) => e.id))) : [];
-    const billIds = entries.map((e) => e.billId).filter((x): x is string => !!x);
+    const thirteenth = await db.select().from(schema.payrollThirteenth).where(eq(schema.payrollThirteenth.periodId, p.id));
+    const billIds = [...entries.map((e) => e.billId), ...thirteenth.map((t) => t.billId)].filter((x): x is string => !!x);
     const bills = billIds.length ? await db.select().from(schema.bills).where(inArray(schema.bills.id, billIds)) : [];
     const att = await attachmentsFor(billIds);
     const bmap = new Map(bills.map((b) => [b.id, serialize(b, att.get(b.id))]));
@@ -472,6 +490,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
         ...e, lines: lines.filter((l) => l.entryId === e.id).map((l) => ({ rubricId: l.rubricId, amount: l.amount, note: l.note })),
         bill: e.billId ? bmap.get(e.billId) ?? null : null,
       })),
+      thirteenth: thirteenth.map((t) => ({ ...t, bill: t.billId ? bmap.get(t.billId) ?? null : null })),
     };
   });
 
@@ -644,6 +663,8 @@ export default async function payrollRoutes(app: FastifyInstance) {
     await db.transaction(async (tx) => {
       await tx.update(schema.payrollPeriods).set({ billsEnabled: true }).where(eq(schema.payrollPeriods.id, p.id));
       await syncEntries(tx, ids, req.user!.id);
+      const ts = await tx.select({ id: schema.payrollThirteenth.id }).from(schema.payrollThirteenth).where(eq(schema.payrollThirteenth.periodId, p.id));
+      for (const t of ts) await syncThirteenthBill(tx, t.id, req.user!.id);
     });
     await audit(req, { action: 'payroll.period.enable_bills', entityType: 'payroll_period', entityId: p.id, description: `Gerou as contas a pagar da folha de ${refLabelPT(p.ref)}` });
     return { ok: true, created: ids.length };
@@ -654,10 +675,16 @@ export default async function payrollRoutes(app: FastifyInstance) {
     const ids = (await db.select({ id: schema.payrollEntries.id }).from(schema.payrollEntries).where(eq(schema.payrollEntries.periodId, p.id))).map((r) => r.id);
     const paid = await paidBillsCount(db, ids);
     if (paid) throw conflict(`${paid} salário(s) deste mês já foram pagos. Reverta os pagamentos antes de apagar o mês.`);
-    const [{ bills }] = await db.select({ bills: sql<number>`count(${schema.payrollEntries.billId})::int` }).from(schema.payrollEntries).where(eq(schema.payrollEntries.periodId, p.id));
+    const ids13 = (await db.select({ id: schema.payrollThirteenth.id }).from(schema.payrollThirteenth).where(eq(schema.payrollThirteenth.periodId, p.id))).map((r) => r.id);
+    const paid13 = await paidThirteenthCount(db, ids13);
+    if (paid13) throw conflict(`${paid13} pagamento(s) de 13º deste mês já foram pagos. Reverta os pagamentos antes de apagar o mês.`);
+    const [{ bills: salaryBills }] = await db.select({ bills: sql<number>`count(${schema.payrollEntries.billId})::int` }).from(schema.payrollEntries).where(eq(schema.payrollEntries.periodId, p.id));
+    const [{ bills13 }] = await db.select({ bills13: sql<number>`count(${schema.payrollThirteenth.billId})::int` }).from(schema.payrollThirteenth).where(eq(schema.payrollThirteenth.periodId, p.id));
+    const bills = salaryBills + bills13;
     if (bills && !req.org!.can(billPerm('payable', 'delete'))) throw forbidden('Apagar o mês remove as contas a pagar dele, e você não tem permissão para apagar contas a pagar.');
     await db.transaction(async (tx) => {
       await deleteEntries(tx, ids);
+      await deleteThirteenth(tx, ids13);
       await tx.delete(schema.payrollPeriods).where(eq(schema.payrollPeriods.id, p.id));
     });
     await audit(req, { action: 'payroll.period.delete', entityType: 'payroll_period', entityId: p.id, description: `Apagou a folha de ${refLabelPT(p.ref)} (${ids.length} lançamento(s))`, details: { entries: ids.length, bills } });

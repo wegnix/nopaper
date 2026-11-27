@@ -208,6 +208,8 @@ export const bills = pgTable('bills', {
   importBatchId: uuid('import_batch_id'),
   /** Conta gerada pela folha de pagamento (valor/vencimento vêm do lançamento). */
   payrollEntryId: uuid('payroll_entry_id'),
+  /** Conta do 13º salário da folha (valor/vencimento vêm do pagamento do 13º). */
+  payrollThirteenthId: uuid('payroll_thirteenth_id'),
   /** Identificador da conta no sistema que a criou pela API (único no espaço) e o nome desse sistema. */
   externalId: varchar('external_id', { length: 120 }),
   source: varchar('source', { length: 40 }),
@@ -221,6 +223,7 @@ export const bills = pgTable('bills', {
   index('bills_category_idx').on(t.categoryId),
   index('bills_folder_idx').on(t.folderId),
   index('bills_payroll_entry_idx').on(t.payrollEntryId).where(sql`${t.payrollEntryId} is not null`),
+  index('bills_payroll_thirteenth_idx').on(t.payrollThirteenthId).where(sql`${t.payrollThirteenthId} is not null`),
   uniqueIndex('bills_org_external_uq').on(t.orgId, t.externalId).where(sql`${t.externalId} is not null`),
   index('bills_indefinite_idx').on(t.isIndefinite).where(sql`${t.isIndefinite} = true`),
 ]);
@@ -508,6 +511,38 @@ export const payrollEntries = pgTable('payroll_entries', {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [uniqueIndex('payroll_entries_period_employee_uq').on(t.periodId, t.employeeId), index('payroll_entries_employee_idx').on(t.employeeId)]);
+
+/**
+ * 13º salário: um pagamento por funcionário e parcela, no mês da folha em que é pago, com vencimento
+ * e conta a pagar próprios (separado do salário do mês).
+ */
+export const payrollThirteenth = pgTable('payroll_thirteenth', {
+  id: id(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  periodId: uuid('period_id').notNull().references(() => payrollPeriods.id, { onDelete: 'cascade' }),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'restrict' }),
+  /** Ano a que o 13º se refere. */
+  year: smallint('year').notNull(),
+  installment: varchar('installment', { length: 8 }).notNull(), // first | second | single
+  payDate: date('pay_date').notNull(),
+  /** Líquido do recibo e valor a pagar (diferente = combinado; a diferença é por fora). */
+  net: numeric('net', { precision: 14, scale: 2 }).notNull(),
+  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+  gross: numeric('gross', { precision: 14, scale: 2 }),
+  fgts: numeric('fgts', { precision: 14, scale: 2 }),
+  /** Linhas do recibo (só para mostrar; o 13º não usa as rubricas da folha). */
+  lines: jsonb('lines').$type<Array<{ name: string; kind: 'earning' | 'deduction'; amount: string }>>().notNull().default(sql`'[]'::jsonb`),
+  source: varchar('source', { length: 8 }).notNull().default('manual'), // pdf | manual
+  fileName: varchar('file_name', { length: 200 }),
+  notes: text('notes'),
+  billId: uuid('bill_id').references(() => bills.id, { onDelete: 'set null' }),
+  createdBy: uuid('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  uniqueIndex('payroll_thirteenth_uq').on(t.orgId, t.employeeId, t.year, t.installment),
+  index('payroll_thirteenth_period_idx').on(t.periodId),
+]);
 
 export const payrollEntryLines = pgTable('payroll_entry_lines', {
   id: id(),

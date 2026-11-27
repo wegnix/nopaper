@@ -28,3 +28,4 @@ export * from './vacations.js';
 export * from './manuals.js';
 export * from './nfe.js';
 export * from './fiscalMatch.js';
+export * from './thirteenth.js';

@@ -110,6 +110,7 @@ export async function purgeOrg(orgId: string) {
     const [still] = await tx.select({ due: schema.organizations.deletionDueAt }).from(schema.organizations).where(eq(schema.organizations.id, orgId)).for('update');
     if (!still?.due || still.due > new Date()) throw new CancelledPurge();
     await tx.delete(schema.payrollEntries).where(eq(schema.payrollEntries.orgId, orgId));
+    await tx.delete(schema.payrollThirteenth).where(eq(schema.payrollThirteenth.orgId, orgId));
     await tx.delete(schema.cardTransactions).where(eq(schema.cardTransactions.orgId, orgId));
     await tx.delete(schema.bills).where(eq(schema.bills.orgId, orgId));
     await tx.delete(schema.cards).where(eq(schema.cards.orgId, orgId));

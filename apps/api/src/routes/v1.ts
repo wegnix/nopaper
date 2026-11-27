@@ -62,8 +62,8 @@ const billV1 = (b: BillRow, today: string, att: Partial<Record<AttachmentSlot, A
     indefinite: b.isIndefinite,
   },
   /** De onde a conta vem: fatura de cartão e salário da folha têm valor e vencimento controlados lá. */
-  origin: b.statementId ? 'card_statement' : b.payrollEntryId ? 'payroll' : 'manual',
-  locked: !!(b.statementId || b.payrollEntryId),
+  origin: b.statementId ? 'card_statement' : b.payrollEntryId || b.payrollThirteenthId ? 'payroll' : 'manual',
+  locked: !!(b.statementId || b.payrollEntryId || b.payrollThirteenthId),
   /** Identificador desta conta no sistema que a criou pela API, e o nome desse sistema. */
   externalId: b.externalId,
   source: b.source,

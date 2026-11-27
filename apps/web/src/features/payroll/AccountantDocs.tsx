@@ -9,7 +9,9 @@ import { useAccountingDocs, type AccountingDoc } from '@/features/accounting/dat
  * (importar os valores ou enviar para assinatura) sem baixar e subir o mesmo arquivo de novo.
  * Aparecem primeiro os do mês desta folha; só para quem confere os documentos do contador.
  */
-export function AccountantPayslipDocs({ enabled, folhaRef, onPick, busy, action, kinds = ['payslip'] }: {
+export function AccountantPayslipDocs({ enabled, folhaRef, onPick, busy, action, kinds = ['payslip'], sameMonth = false }: {
+  /** 13º: o recibo da competência C é pago no próprio mês C (não no seguinte). */
+  sameMonth?: boolean;
   /** Tipos aceitos: a importação na folha só usa holerites; a assinatura aceita também 13º e férias. */
   kinds?: AccountingKind[];
   enabled: boolean; folhaRef: string; onPick: (doc: AccountingDoc) => void; busy?: string | null; action: string;
@@ -17,7 +19,7 @@ export function AccountantPayslipDocs({ enabled, folhaRef, onPick, busy, action,
   const can = useCan();
   const q = useAccountingDocs('to_client', enabled && can('accounting.review'));
   // o holerite da competência C entra na folha C+1 quando a folha é contada pelo mês do pagamento
-  const folhaOf = (competence: string) => addMonthsRef(competence, 1);
+  const folhaOf = (competence: string) => (sameMonth ? competence : addMonthsRef(competence, 1));
   const docs = (q.data ?? []).filter((d) => kinds.includes(d.kind) && d.mime === 'application/pdf' && d.status !== 'dismissed' && !d.hiddenAt)
     .map((d) => ({ d, comp: d.detected?.slipsRef ?? d.competence ?? null }))
     .map((x) => ({ ...x, here: !!x.comp && folhaOf(x.comp) === folhaRef }))

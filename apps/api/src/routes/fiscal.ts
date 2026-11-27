@@ -254,7 +254,7 @@ export async function fiscalRoutes(app: FastifyInstance) {
     const orgId = req.org!.id;
     const b = schema.bills;
     const hidden = await hiddenCategoryIds(req);
-    const conds = [eq(b.orgId, orgId), eq(b.type, 'payable'), sql`${b.payrollEntryId} is null`];
+    const conds = [eq(b.orgId, orgId), eq(b.type, 'payable'), sql`${b.payrollEntryId} is null`, sql`${b.payrollThirteenthId} is null`];
     if (hidden.length) conds.push(sql`${b.categoryId} not in (${sql.join(hidden.map((h) => sql`${h}::uuid`), sql`, `)})`);
     const q = req.query.q?.trim().slice(0, 100) ?? '';
     const base = d.issuedAt ?? todayISO(req.org!.timezone);

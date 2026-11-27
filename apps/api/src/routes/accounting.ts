@@ -20,7 +20,7 @@ import { readVacationReport } from '../services/vacations.js';
 import { assertStorageRoom, storageInfo } from '../services/storageQuota.js';
 import { emailTarget, escapeHtml, sendEmail, telegramSend, telegramToken } from '../services/notify.js';
 import { checkPayslipsSpace } from '../services/spaceCheck.js';
-import { assertMonthlySlips } from '../services/payroll.js';
+import { assertMonthlySlips, assertThirteenthSlips } from '../services/payroll.js';
 
 type Doc = typeof schema.accountingDocuments.$inferSelect;
 const MAX_FILES = 20;
@@ -363,6 +363,20 @@ export default async function accountingRoutes(app: FastifyInstance) {
     const report = parsePayslips(cells);
     if (!report.slips.length) throw badRequest('Não achei holerites neste PDF. Ele precisa ser o PDF original do sistema de folha, não uma foto ou digitalização.', 'payslips_unknown');
     assertMonthlySlips(report);
+    return { fileName: d.originalName, report, spaceCheck: await checkPayslipsSpace(req, report) };
+  });
+
+  /** Lê o 13º salário que o contador enviou (mesma resposta de /api/payroll/thirteenth/read). */
+  app.post<{ Params: { id: string } }>('/api/accounting/documents/:id/thirteenth', { preHandler: [requirePerm('accounting.review'), requirePerm('payroll.edit')] }, async (req) => {
+    const { d, side } = await loadDoc(req, req.params.id);
+    if (side !== 'recipient' || d.direction !== 'to_client') throw notFound('Documento não encontrado');
+    if (req.org!.kind !== 'company') throw badRequest('A folha de pagamento só está disponível em espaços do tipo Empresa.', 'company_only');
+    if (d.mime !== 'application/pdf') throw badRequest('Este documento não é um PDF.');
+    let cells;
+    try { cells = await pdfToCells(await readStoredFile(d.storageKey), 200); } catch { throw badRequest('Não consegui ler este PDF.'); }
+    const report = parsePayslips(cells);
+    if (!report.slips.length) throw badRequest('Não achei recibos neste PDF. Ele precisa ser o PDF original do sistema de folha, não uma foto ou digitalização.', 'payslips_unknown');
+    assertThirteenthSlips(report);
     return { fileName: d.originalName, report, spaceCheck: await checkPayslipsSpace(req, report) };
   });
 

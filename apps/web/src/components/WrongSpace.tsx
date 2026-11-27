@@ -70,7 +70,7 @@ export function WrongSpaceAlert({ check, subject, risk, onOtherFile, onContinue,
         </>}
       </dl>
       <div className="flex flex-wrap gap-2 max-sm:flex-col">
-        {other && <Button variant="primary" icon={<ArrowRightLeft className="size-4" />} disabled={busy} onClick={goThere}>Ir para o espaço {other.name}</Button>}
+        {other && <Button variant="primary" className="h-auto min-h-10 whitespace-normal py-2 text-left" icon={<ArrowRightLeft className="size-4 shrink-0" />} disabled={busy} onClick={goThere}>Ir para o espaço {other.name}</Button>}
         <Button variant={other ? 'secondary' : 'primary'} disabled={busy} onClick={onOtherFile}>Escolher outro arquivo</Button>
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-t border-danger/30 pt-4">

@@ -158,7 +158,7 @@ export async function attachmentsFor(billIds: string[], conn: DBOrTx = db) {
 export function serialize(b: BillRow, att: Partial<Record<AttachmentSlot, AttachmentSummary>> = {}) {
   return {
     id: b.id, type: b.type, parentId: b.parentId, description: b.description,
-    categoryId: b.categoryId, folderId: b.folderId, cardId: b.cardId, statementId: b.statementId, payrollEntryId: b.payrollEntryId,
+    categoryId: b.categoryId, folderId: b.folderId, cardId: b.cardId, statementId: b.statementId, payrollEntryId: b.payrollEntryId, payrollThirteenthId: b.payrollThirteenthId,
     amount: b.amount, dueDate: b.dueDate, status: b.status, paidAt: b.paidAt, paidAmount: b.paidAmount,
     recurrenceType: b.recurrenceType, installmentNumber: b.installmentNumber, totalInstallments: b.totalInstallments,
     isIndefinite: b.isIndefinite, relatedPerson: b.relatedPerson, notes: b.notes, barcode: b.barcode,

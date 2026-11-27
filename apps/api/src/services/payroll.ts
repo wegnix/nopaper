@@ -269,5 +269,83 @@ export async function deleteEntries(tx: DBOrTx, entryIds: string[]) {
 export function assertMonthlySlips(report: PayslipReport) {
   const special = report.slips.find((s) => payslipDocKey(s.title));
   if (!special) return;
-  throw badRequest(`Este PDF é de ${special.title}, não é o holerite do mês: ele não entra em Importar holerites (trocaria as rubricas do holerite do mês). Para colher a assinatura dos funcionários, use Folha → Assinaturas.`, 'payslips_not_monthly');
+  throw badRequest(`Este PDF é de ${special.title}, não é o holerite do mês: ele não entra em Importar holerites (trocaria as rubricas do holerite do mês). Use o bloco “13º salário” no mês da folha (o 13º) ou Folha → Assinaturas (para colher a assinatura).`, 'payslips_not_monthly');
+}
+
+// ------------------------------------------------------------------ 13º salário
+export type ThirteenthRow = typeof schema.payrollThirteenth.$inferSelect;
+
+export async function loadThirteenth(orgId: string, id: string, conn: DBOrTx = db) {
+  const [t] = await conn.select().from(schema.payrollThirteenth).where(and(eq(schema.payrollThirteenth.id, id), eq(schema.payrollThirteenth.orgId, orgId)));
+  if (!t) throw notFound('13º salário não encontrado');
+  return t;
+}
+
+/** 13º com a conta já paga não muda: reverta o pagamento antes. */
+export async function assertThirteenthEditable(t: ThirteenthRow, conn: DBOrTx = db) {
+  if (!t.billId) return;
+  const [b] = await conn.select({ status: schema.bills.status }).from(schema.bills).where(eq(schema.bills.id, t.billId));
+  if (b?.status === 'paid') throw conflict('Este 13º já foi pago. Para alterar, reverta o pagamento da conta antes.');
+}
+
+/**
+ * Conta a pagar do 13º: como a do salário (mesma categoria e pasta), com o vencimento do próprio 13º.
+ * Sem conta: mês do histórico, valor zero ou funcionário "só holerite". Conta paga não é tocada.
+ */
+export async function syncThirteenthBill(tx: DBOrTx, id: string, userId: string | null) {
+  const [t] = await tx.select().from(schema.payrollThirteenth).where(eq(schema.payrollThirteenth.id, id));
+  if (!t) return;
+  const [p] = await tx.select().from(schema.payrollPeriods).where(eq(schema.payrollPeriods.id, t.periodId));
+  const [emp] = await tx.select().from(schema.employees).where(eq(schema.employees.id, t.employeeId));
+  const bill = t.billId ? (await tx.select().from(schema.bills).where(eq(schema.bills.id, t.billId)))[0] : undefined;
+  if (bill?.status === 'paid') return;
+  if (!p.billsEnabled || emp.payslipOnly || toCents(t.amount) <= 0) {
+    if (bill) {
+      await tx.update(schema.payrollThirteenth).set({ billId: null }).where(eq(schema.payrollThirteenth.id, t.id));
+      await deleteBillsWithFiles(tx, [bill.id]);
+    }
+    return;
+  }
+  const settings = await getPayrollSettings(t.orgId, tx);
+  if (!settings.categoryId) throw badRequest('Escolha a categoria das contas de salário em Folha de pagamento → Configurar.', 'payroll_category');
+  const part = t.installment === 'first' ? ' (1ª parcela)' : t.installment === 'second' ? ' (2ª parcela)' : '';
+  const values = {
+    description: `13º salário${part} ${emp.name} – ${t.year}`.slice(0, 255), amount: t.amount, dueDate: t.payDate,
+    categoryId: settings.categoryId, folderId: settings.folderId ?? null, relatedPerson: emp.name.slice(0, 128),
+    pixKey: emp.pixKey, paymentMethod: settings.paymentMethod ?? null, notes: `13º salário ${t.year}${part}. Folha de pagamento ${refLabelPT(p.ref)}.`,
+  };
+  if (bill) {
+    await tx.update(schema.bills).set(values).where(eq(schema.bills.id, bill.id));
+    return;
+  }
+  const [b] = await tx.insert(schema.bills).values({
+    ...values, orgId: t.orgId, type: 'payable', recurrenceType: 'once', payrollThirteenthId: t.id, createdBy: userId,
+  }).returning();
+  await tx.update(schema.payrollThirteenth).set({ billId: b.id }).where(eq(schema.payrollThirteenth.id, t.id));
+}
+
+/** 13º pagos entre os ids (bloqueiam apagar). */
+export async function paidThirteenthCount(tx: DBOrTx, ids: string[]) {
+  if (!ids.length) return 0;
+  const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(schema.payrollThirteenth)
+    .innerJoin(schema.bills, eq(schema.bills.id, schema.payrollThirteenth.billId))
+    .where(and(inArray(schema.payrollThirteenth.id, ids), eq(schema.bills.status, 'paid')));
+  return n;
+}
+
+/** Apaga pagamentos de 13º e as contas pendentes deles. */
+export async function deleteThirteenth(tx: DBOrTx, ids: string[]) {
+  if (!ids.length) return 0;
+  const rows = await tx.select({ billId: schema.payrollThirteenth.billId }).from(schema.payrollThirteenth).where(inArray(schema.payrollThirteenth.id, ids));
+  await tx.update(schema.payrollThirteenth).set({ billId: null }).where(inArray(schema.payrollThirteenth.id, ids));
+  await deleteBillsWithFiles(tx, rows.map((r) => r.billId).filter((x): x is string => !!x));
+  await tx.delete(schema.payrollThirteenth).where(inArray(schema.payrollThirteenth.id, ids));
+  return ids.length;
+}
+
+/** O PDF é de 13º (todos os recibos): é o que a tela do 13º aceita. */
+export function assertThirteenthSlips(report: PayslipReport) {
+  const other = report.slips.find((s) => !payslipDocKey(s.title).startsWith('13'));
+  if (!other) return;
+  throw badRequest(`Este PDF não é de 13º salário (o recibo de ${other.name} é "${other.title}"). Holerites do mês entram em Importar holerites.`, 'payslips_not_thirteenth');
 }

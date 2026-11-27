@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { BriefcaseBusiness, Check, ChevronRight, CircleHelp, Ghost, MessageCircle, NotebookPen, Search, Trash2, UserPlus, UsersRound, Wallet } from 'lucide-react';
-import { EMPLOYEE_ACCOUNT_KINDS, EMPLOYEE_ACCOUNT_KIND_LABEL, MONTHS_PT_SHORT, PIX_KEY_TYPE_LABEL, detectPixKeyType, parseBankText, pixKeyCandidates, formatBRL, formatDateBR, formatPhoneBR, fromCents, refLabelPT, toCents, whatsappLink } from '@nopaper/shared';
+import { THIRTEENTH_LABEL, type ThirteenthInstallment, EMPLOYEE_ACCOUNT_KINDS, EMPLOYEE_ACCOUNT_KIND_LABEL, MONTHS_PT_SHORT, PIX_KEY_TYPE_LABEL, detectPixKeyType, parseBankText, pixKeyCandidates, formatBRL, formatDateBR, formatPhoneBR, fromCents, refLabelPT, toCents, whatsappLink } from '@nopaper/shared';
 import { Dialog, SaveFooter, useConfirm, useFormState } from '@/components/ui/dialog';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button, Card, Empty, Field, Input, Segmented, Select, Switch, Textarea } from '@/components/ui/base';
@@ -60,6 +60,7 @@ export function EmployeesTab({ employees, canManage, onOpenMonth }: { employees:
   );
 }
 
+interface ThirteenthHistoryRow { ref: string; year: number; installment: string; payDate: string; net: string; amount: string; billsEnabled: boolean; billStatus: 'pending' | 'paid' | null; paidAt: string | null }
 interface HistoryRow { ref: string; billsEnabled: boolean; paidAt: string | null; payslipNet: string; total: string; offPayroll: string; companyCost: string; billStatus: 'pending' | 'paid' | null }
 
 /** Mês já pago: conta paga, ou mês do histórico importado (pago fora do NoPaper). */
@@ -86,7 +87,7 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
   }, [open, emp?.id]);
   const hist = useQuery({
     enabled: open && !!emp && tab === 'history', queryKey: payrollKey(orgId, 'history', emp?.id),
-    queryFn: () => get<{ items: HistoryRow[] }>(`/api/payroll/employees/${emp!.id}/history`).then((r) => r.items),
+    queryFn: () => get<{ items: HistoryRow[]; thirteenth: ThirteenthHistoryRow[] }>(`/api/payroll/employees/${emp!.id}/history`),
   });
   const ro = !canManage;
   const save = async () => {
@@ -167,10 +168,10 @@ function EmployeeDialog({ open, emp, canManage, onClose, onCreated, onOpenMonth 
             <div className="rounded-xl border border-line p-3"><Switch checked={f.payslipOnly} onChange={(payslipOnly) => setF({ ...f, payslipOnly })} label="Só holerite (não recebe pela empresa)" hint="Sócio que não trabalha, acordo… O holerite fica no mês, sem valor a pagar, sem conta e sem custo." /></div>
           </div>
         </fieldset>
-      ) : hist.isLoading ? <p className="py-10 text-center text-sm text-muted">Carregando…</p> : !hist.data?.length ? (
+      ) : hist.isLoading ? <p className="py-10 text-center text-sm text-muted">Carregando…</p> : !hist.data?.items.length && !hist.data?.thirteenth.length ? (
         <p className="py-10 text-center text-sm text-muted">Sem meses na folha.</p>
       ) : (
-        <EmployeeHistory rows={hist.data} onOpenMonth={onOpenMonth} />
+        <EmployeeHistory rows={hist.data!.items} thirteenth={hist.data!.thirteenth} onOpenMonth={onOpenMonth} />
       )}
     </Dialog>
   );
@@ -221,14 +222,14 @@ function PixKeyField({ value, onChange, cpf, phone, readOnly, className }: { val
 }
 
 /** Histórico do funcionário: total pago até hoje, por ano e mês a mês (mais recente primeiro). */
-function EmployeeHistory({ rows, onOpenMonth }: { rows: HistoryRow[]; onOpenMonth: (ref: string) => void }) {
+function EmployeeHistory({ rows, thirteenth, onOpenMonth }: { rows: HistoryRow[]; thirteenth: ThirteenthHistoryRow[]; onOpenMonth: (ref: string) => void }) {
   const paid = rows.filter(isPaid);
   const pending = rows.filter((h) => h.billStatus === 'pending');
   const paidC = sumC(paid, (h) => h.total);
   const offC = sumC(paid, (h) => h.offPayroll);
-  const years = [...new Set(rows.map((h) => h.ref.slice(0, 4)))];
+  const years = [...new Set([...rows.map((h) => h.ref.slice(0, 4)), ...thirteenth.map((t) => t.ref.slice(0, 4))])].sort().reverse();
   const max = Math.max(1, ...rows.map((h) => toCents(h.total)));
-  const first = rows.at(-1)!.ref;
+  const first = rows.at(-1)?.ref ?? thirteenth.at(-1)?.ref ?? '';
   const kpi = (label: string, value: string, sub: string, strong?: boolean) => (
     <div className="min-w-0 rounded-xl border border-line bg-surface-2/40 p-3">
       <p className="truncate text-xs text-muted">{label}</p>
@@ -259,6 +260,16 @@ function EmployeeHistory({ rows, onOpenMonth }: { rows: HistoryRow[]; onOpenMont
                 {yPend.length > 0 && <span className="text-warn tnum"> · a pagar {formatBRL(fromCents(sumC(yPend, (h) => h.total)))}</span>}
               </p>
             </summary>
+            {thirteenth.filter((t) => t.ref.startsWith(y)).map((t) => (
+              <button key={`${t.year}-${t.installment}`} type="button" onClick={() => onOpenMonth(t.ref)} className="grid w-full grid-cols-[44px_1fr_auto] items-center gap-3 rounded-md border-b border-line/60 px-1 py-2.5 text-left hover:bg-surface-2/50">
+                <span className="text-sm font-medium text-accent">13º</span>
+                <span className="min-w-0 truncate text-sm text-muted">{THIRTEENTH_LABEL[t.installment as ThirteenthInstallment] ?? t.installment} de {t.year} · vence {formatDateBR(t.payDate)}</span>
+                <span className="text-right">
+                  <span className="block text-sm font-medium tnum">{formatBRL(t.amount)}</span>
+                  <span className="block text-xs text-faint">{t.billStatus === 'paid' ? `pago${t.paidAt ? ` ${formatDateBR(t.paidAt).slice(0, 5)}` : ''}` : t.billStatus === 'pending' ? 'pendente' : t.billsEnabled ? 'sem conta' : 'histórico'}</span>
+                </span>
+              </button>
+            ))}
             <ul className="divide-y divide-line/60">
               {ys.map((h) => (
                 <li key={h.ref}>

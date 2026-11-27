@@ -3,7 +3,7 @@ import { Link, Navigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  ArrowDown, ArrowUp, BadgePercent, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Ghost, HandCoins, Landmark, MoreHorizontal, PenLine, Pencil, Plus, Printer,
+  ArrowDown, ArrowUp, BadgePercent, Banknote, CalendarDays, AlertTriangle, Check, ChevronLeft, ChevronRight, FileSpreadsheet, FileText, Ghost, Gift, HandCoins, Landmark, MoreHorizontal, PenLine, Pencil, Plus, Printer,
   Receipt, RotateCcw, Settings2, Trash2, UserPlus, UsersRound, Wallet,
 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
@@ -16,7 +16,6 @@ import { api, get, post, put, errMsg } from '@/lib/api';
 import { useCan, useOrg } from '@/lib/session';
 import { cn, plural } from '@/lib/utils';
 import type { Bill } from '@/lib/types';
-import { CountUp } from '@/features/bills/KpiRibbon';
 import { PayDialog } from '@/features/bills/dialogs';
 import { FileViewer, type FileViewerTarget } from '@/features/bills/FileViewer';
 import { useCommissionImport, useMonth, usePayrollMeta, usePeriods, type Entry, type Period, type PeriodSummary, type Rubric } from './data';
@@ -28,6 +27,8 @@ import { SettingsDialog, type SettingsTab } from './SettingsDialog';
 import { CommissionsDialog } from './Commissions';
 import { ImportDialog } from './ImportDialog';
 import { PayslipsDialog } from './Payslips';
+import { ThirteenthDialog, ThirteenthImportDialog, ThirteenthView, type ThirteenthEdit } from './Thirteenth';
+import { KPI_STRIP, Kpi } from './Kpi';
 import { PayrollPrint, amountOf, extraColumnsOf, printColumnsOf, type PrintRow } from './PayrollPrint';
 
 type Tab = 'mes' | 'funcionarios' | 'ferias' | 'historico';
@@ -54,6 +55,23 @@ export function PayrollPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slipsParam]);
   const [openEntryId, setOpenEntryId] = useState<string | null>(null);
+  /** 13º enviado pelo contador (?decimo=<id do documento>): abre a importação do 13º no mês. */
+  const [thirteenthDoc, setThirteenthDoc] = useState<string | null>(null);
+  const decimoParam = sp.get('decimo');
+  useEffect(() => {
+    if (!decimoParam) return;
+    setThirteenthDoc(decimoParam); set({ decimo: null, aba: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decimoParam]);
+  // vindo de Contas a pagar: ?decimo13=<id do 13º> → abre o mês dele
+  const decimo13 = sp.get('decimo13');
+  useEffect(() => {
+    if (!decimo13) return;
+    get<{ ref: string }>(`/api/payroll/thirteenth/${decimo13}/ref`)
+      .then((r) => set({ decimo13: null, mes: r.ref, aba: null }))
+      .catch((e) => { toast.error(errMsg(e)); set({ decimo13: null }); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decimo13]);
 
   // vindo de Contas a pagar: ?lancamento=<id> → abre o mês e o lançamento
   const target = sp.get('lancamento');
@@ -90,7 +108,8 @@ export function PayrollPage() {
         <p className="rounded-lg bg-warn/10 px-3 py-2 text-sm text-warn">Escolha a categoria das contas de salário em <button className="font-medium underline" onClick={() => setSettingsOpen('bills')}>Configurar</button> antes de abrir o primeiro mês.</p>
       )}
 
-      {tab === 'mes' && <MonthView refStr={ref} onRef={(r) => set({ mes: r })} openEntryId={openEntryId} onEntryOpened={() => setOpenEntryId(null)} onConfigure={() => setSettingsOpen('commissions')} />}
+      {tab === 'mes' && <MonthView refStr={ref} onRef={(r) => set({ mes: r })} openEntryId={openEntryId} onEntryOpened={() => setOpenEntryId(null)} onConfigure={() => setSettingsOpen('commissions')}
+        thirteenthDoc={thirteenthDoc} onThirteenthDocOpened={() => setThirteenthDoc(null)} />}
       {tab === 'funcionarios' && <EmployeesTab employees={employees} canManage={canManage} onOpenMonth={(r) => set({ aba: null, mes: r })} />}
       {tab === 'ferias' && <VacationsTab canEdit={can('payroll.edit')} canManage={canManage} reportDoc={sp.get('relatorio')} onReportOpened={() => set({ relatorio: null })} />}
       {tab === 'historico' && <HistoryView periods={periods.data ?? []} loading={periods.isLoading} onOpen={(r) => set({ aba: null, mes: r })} />}
@@ -106,7 +125,10 @@ export function PayrollPage() {
 }
 
 // ------------------------------------------------------------------ mês
-function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure }: { refStr: string; onRef: (r: string) => void; openEntryId: string | null; onEntryOpened: () => void; onConfigure: () => void }) {
+function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure, thirteenthDoc, onThirteenthDocOpened }: {
+  refStr: string; onRef: (r: string) => void; openEntryId: string | null; onEntryOpened: () => void; onConfigure: () => void;
+  thirteenthDoc: string | null; onThirteenthDocOpened: () => void;
+}) {
   const can = useCan();
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -125,6 +147,20 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
   const [viewer, setViewer] = useState<FileViewerTarget | null>(null);
   const [printOpen, setPrintOpen] = useState(false);
   const [signOpen, setSignOpen] = useState(false);
+  /** Salários × 13º salário do mês. A chave aparece em nov/dez ou quando o mês tem 13º lançado. */
+  const [mview, setMview] = useState<'salaries' | 'thirteenth'>('salaries');
+  const [thImport, setThImport] = useState<{ open: boolean; doc: string | null }>({ open: false, doc: null });
+  const [thEdit, setThEdit] = useState<ThirteenthEdit>({ open: false, item: null });
+  const thirteenthMonth = ref.endsWith('-11') || ref.endsWith('-12');
+  const thirteenth = m?.thirteenth ?? [];
+  const showToggle = !!period && (thirteenthMonth || thirteenth.length > 0 || mview === 'thirteenth');
+  const on13 = !!period && mview === 'thirteenth';
+  useEffect(() => { if (!thirteenthMonth) setMview('salaries'); }, [ref, thirteenthMonth]);
+  // vindo da área do contador: abre a aba do 13º já com a importação do documento
+  useEffect(() => {
+    if (!thirteenthDoc || !period) return;
+    setMview('thirteenth'); setThImport({ open: true, doc: thirteenthDoc }); onThirteenthDocOpened();
+  }, [thirteenthDoc, period, onThirteenthDocOpened]);
   // último relatório de vendas importado neste mês (comissões): dá para rever a tela
   const commImport = useCommissionImport(period?.id ?? null).data ?? null;
   const periodsList = usePeriods().data ?? [];
@@ -236,27 +272,44 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
           <button className="grid size-10 place-items-center text-muted hover:text-ink" onClick={() => onRef(addMonthsRef(ref, 1))} aria-label="Próximo mês"><ChevronRight className="size-4" /></button>
         </div>
         {ref !== today.slice(0, 7) && <button className="text-xs text-accent hover:underline" onClick={() => onRef(today.slice(0, 7))}>ir para o mês atual</button>}
-        {period && (
+        {showToggle && (
+          <Segmented className="max-sm:w-full" value={mview} onChange={setMview} options={[
+            { value: 'salaries', label: <>Salários{rows.length ? <span className="ml-1 opacity-70">({rows.length})</span> : null}</> },
+            { value: 'thirteenth', label: <>13º salário{thirteenth.length ? <span className="ml-1 opacity-70">({thirteenth.length})</span> : null}</> },
+          ]} />
+        )}
+        {period && !on13 && (
           <span className="flex items-center gap-1.5 text-sm text-muted"><CalendarDays className="size-4 text-faint" />
-            {period.billsEnabled ? <>Pagamento em <b className="font-medium text-ink">{formatDateBR(period.payDate)}</b></> : 'Importado do histórico'}
+            {period.billsEnabled ? <><span className={showToggle ? 'hidden 2xl:inline' : undefined}>Pagamento em </span><b title="Data de pagamento dos salários" className="font-medium text-ink">{formatDateBR(period.payDate)}</b></> : 'Importado do histórico'}
           </span>
         )}
-        <div className="ml-auto flex flex-wrap gap-2 max-sm:ml-0 max-sm:w-full max-sm:[&>button]:flex-1">
+        {on13 ? (
+          <div className="ml-auto flex flex-wrap gap-2 max-sm:ml-0 max-sm:w-full max-sm:[&>button]:flex-1">
+            {canEdit && <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => setThEdit({ open: true, item: null })}>Lançar à mão</Button>}
+            {canEdit && <Button variant="primary" icon={<FileText className="size-4" />} onClick={() => setThImport({ open: true, doc: null })}>Importar 13º do contador</Button>}
+          </div>
+        ) : <div className="ml-auto flex flex-wrap gap-2 max-sm:ml-0 max-sm:w-full max-sm:[&>button]:flex-1">
+          {period && canEdit && !showToggle && <Button variant="ghost" icon={<Gift className="size-4" />} title="13º salário pago neste mês" aria-label="13º salário" onClick={() => setMview('thirteenth')}>13º</Button>}
           {period && <Button variant="ghost" icon={<PenLine className="size-4" />} onClick={() => setSignOpen(true)}>Assinaturas</Button>}
           {period && rows.length > 0 && <Button variant="ghost" icon={<Printer className="size-4" />} onClick={() => setPrintOpen(true)}>Imprimir</Button>}
           {period && canEdit && <Button variant="ghost" icon={<Pencil className="size-4" />} onClick={() => setEditPeriod(true)}>Editar mês</Button>}
           {period && canEdit && <Button variant="primary" icon={<UserPlus className="size-4" />} onClick={() => setEntryDlg({ open: true, entry: null })}>Lançar funcionário</Button>}
-        </div>
+        </div>}
       </div>
 
       {month.isLoading ? <div className="grid place-items-center py-20"><Spinner /></div> : !period ? (
         <Empty icon={<UsersRound className="size-5" />} title={`A folha de ${MONTHS_PT[Number(ref.slice(5)) - 1].toLowerCase()} de ${ref.slice(0, 4)} ainda não foi aberta`}
           action={canEdit && <Button variant="primary" icon={<Plus className="size-4" />} disabled={!meta.settings.categoryId} onClick={() => setOpenDlg(true)}>Abrir folha de {refLabelPT(ref)}</Button>}>
           Ao abrir, os funcionários ativos entram com o líquido do holerite e as rubricas fixas do último mês de cada um. Depois é só lançar metas, comissões e descontos.
+          {thirteenthDoc && <span className="mt-2 block text-warn">Para lançar o 13º, abra antes a folha do mês em que ele é pago.</span>}
         </Empty>
+      ) : on13 ? (
+        <ThirteenthView period={period} items={thirteenth} employees={meta.employees} canEdit={canEdit}
+          onPay={(bill, proofOnly) => setPay({ bill, proofOnly })} onUnpay={unpay}
+          onImport={(doc) => setThImport({ open: true, doc })} onEdit={(item) => setThEdit({ open: true, item })} />
       ) : (
         <>
-          <div className="flex max-sm:snap-x max-sm:snap-mandatory max-sm:overflow-x-auto no-scrollbar sm:grid sm:grid-cols-3 xl:grid-cols-6 border-b border-line">
+          <div className={KPI_STRIP}>
             <Kpi icon={HandCoins} label="A pagar" value={k.total} sub={`${plural(rows.length, 'funcionário', 'funcionários')}${ghosts.length ? ` · ${ghosts.length} só holerite` : ''}`} tone="accent" first />
             <Kpi icon={Landmark} label="Líquido dos holerites" value={k.net} sub={toCents(k.netCut) > 0 ? `${formatBRL(k.netCut)} abatidos` : 'soma dos holerites'} />
             <Kpi icon={Banknote} label="Por fora" value={k.off} sub="metas, comissões…" />
@@ -404,20 +457,12 @@ function MonthView({ refStr: ref, onRef, openEntryId, onEntryOpened, onConfigure
       {period && commImport && <CommissionsDialog open={commOpen} onClose={() => setCommOpen(false)} periods={periodsList} currentRef={ref} employees={meta.employees} rubrics={meta.rubrics}
         commissions={meta.settings.commissions} canManage={can('payroll.manage')} canEdit={canEdit} initial={{ ...commImport, ref }}
         onConfigure={onConfigure} onDone={() => undefined} />}
+      {period && <ThirteenthImportDialog open={thImport.open} docId={thImport.doc} period={period} employees={meta.employees} existing={thirteenth} onClose={() => setThImport({ open: false, doc: null })} />}
+      {period && <ThirteenthDialog open={thEdit.open} item={thEdit.item} period={period} employees={meta.employees} existing={thirteenth} canEdit={canEdit} onClose={() => setThEdit({ open: false, item: null })} />}
       {period && <EditPeriodDialog open={editPeriod} period={period} onClose={() => setEditPeriod(false)} />}
       {pay && <PayDialog bill={pay.bill} proofOnly={pay.proofOnly} onClose={() => setPay(null)} onView={view} />}
       <FileViewer target={viewer} onClose={() => setViewer(null)} />
     </Card>
-  );
-}
-
-function Kpi({ icon: Icon, label, value, sub, tone, first }: { icon: typeof Wallet; label: string; value: string; sub: string; tone?: 'accent'; first?: boolean }) {
-  return (
-    <div className={cn('p-3.5 sm:p-4 md:p-5 border-line max-sm:w-[44%] max-sm:min-w-[150px] max-sm:shrink-0 max-sm:snap-start', !first && 'border-l', 'sm:max-xl:[&:nth-child(3n+1)]:border-l-0 sm:max-xl:[&:nth-child(n+4)]:border-t')}>
-      <span className="flex items-center gap-2 text-[13px] text-muted"><Icon className={cn('size-4', tone === 'accent' ? 'text-accent' : 'text-faint')} />{label}</span>
-      <CountUp value={value} className="mt-2 block font-display text-[19px] sm:text-[22px] font-semibold leading-none whitespace-nowrap" />
-      <span className="mt-1.5 block truncate text-xs text-faint">{sub}</span>
-    </div>
   );
 }
 
@@ -536,7 +581,7 @@ function HistoryView({ periods, loading, onOpen }: { periods: PeriodSummary[]; l
         <Card key={year} className="overflow-hidden">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4 py-3 md:px-5">
             <h3 className="font-display text-lg font-semibold">{year}</h3>
-            <p className="text-sm text-muted">Pago <b className="font-semibold text-ink tnum">{formatBRL(sumMoney(ps.map((p) => p.total)))}</b> · por fora <span className="tnum text-accent">{formatBRL(sumMoney(ps.map((p) => p.offPayroll)))}</span></p>
+            <p className="text-sm text-muted">Pago <b className="font-semibold text-ink tnum">{formatBRL(sumMoney(ps.map((p) => p.total)))}</b> · por fora <span className="tnum text-accent">{formatBRL(sumMoney(ps.map((p) => p.offPayroll)))}</span>{ps.some((p) => toCents(p.thirteenth) > 0) && <> · 13º <span className="tnum text-ink">{formatBRL(sumMoney(ps.map((p) => p.thirteenth)))}</span></>}</p>
           </div>
           <ul className="divide-y divide-line">
             {ps.map((p) => {
@@ -550,7 +595,7 @@ function HistoryView({ periods, loading, onOpen }: { periods: PeriodSummary[]; l
                       <span className="h-full bg-accent" style={{ width: `${(toCents(p.offPayroll) / max) * 100}%` }} />
                     </span>
                     <span className="hidden text-xs text-faint md:block">{plural(p.employees, 'funcionário', 'funcionários')}{p.imported ? ' · importado' : p.bills ? ` · ${p.paid}/${p.bills} pagos` : ''}</span>
-                    <span className="text-right text-sm font-semibold tnum">{formatBRL(p.total)}</span>
+                    <span className="text-right text-sm font-semibold tnum">{formatBRL(p.total)}{toCents(p.thirteenth) > 0 && <span className="block text-xs font-normal text-accent">+ 13º {formatBRL(p.thirteenth)}</span>}</span>
                   </button>
                 </li>
               );

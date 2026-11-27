@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { EmployeeAccountKind, PayrollKind, PayrollSection, PayrollSettings, SalesSeller } from '@nopaper/shared';
+import type { EmployeeAccountKind, PayrollKind, PayrollSection, PayrollSettings, SalesSeller, ThirteenthRow } from '@nopaper/shared';
 import { errMsg, get, put } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import type { Bill } from '@/lib/types';
@@ -14,6 +14,8 @@ export interface PayrollMeta { settings: PayrollSettings; rubrics: Rubric[]; emp
 export interface PeriodSummary {
   id: string; ref: string; payDate: string; billsEnabled: boolean; imported: boolean; employees: number;
   total: string; offPayroll: string; payslipNet: string; employerCost: string; companyCost: string; paid: number; bills: number;
+  /** Soma do 13º pago neste mês. */
+  thirteenth: string;
 }
 export interface EntryLine { rubricId: string; amount: string; note: string | null }
 export interface Entry {
@@ -21,7 +23,8 @@ export interface Entry {
   notes: string | null; billId: string | null; lines: EntryLine[]; bill: Bill | null;
 }
 export interface Period { id: string; ref: string; payDate: string; billsEnabled: boolean; notes: string | null; importBatchId: string | null }
-export interface MonthView { period: Period | null; suggestedPayDate: string | null; entries: Entry[] }
+export type Thirteenth = ThirteenthRow & { bill: Bill | null };
+export interface MonthView { period: Period | null; suggestedPayDate: string | null; entries: Entry[]; thirteenth: Thirteenth[] }
 
 /** Tudo da folha fica sob a chave 'bills' para ser invalidado junto com Contas a pagar. */
 export const payrollKey = (orgId: string | null, ...rest: unknown[]) => ['bills', orgId, 'payroll', ...rest];

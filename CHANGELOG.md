@@ -8,6 +8,13 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.40.0] - 2026-11-27
+
+### Novo
+- **13º salário na Folha de pagamento** (chave "Salários | 13º salário" no mês, com números e tabela próprios): cada funcionário e parcela vira um pagamento próprio dentro do mês da folha em que é pago, com vencimento e conta a pagar separados do salário. Funciona com 1ª parcela (prazo 30/11) e 2ª parcela (prazo 20/12) em meses diferentes, com as duas parcelas no mesmo mês ou com parcela única (geralmente em dezembro). O vencimento sugerido é o prazo legal (antecipado para sexta-feira quando cai no fim de semana) e pode ser trocado.
+- Importar o 13º pelo PDF do contador (aba "13º salário" do mês da folha, ou botão "Lançar na folha" na área do contador): a parcela é reconhecida pelo recibo, cada recibo é ligado ao funcionário pela matrícula e o valor a pagar pode ser diferente do líquido do recibo (a diferença aparece como "por fora"). Também dá para lançar à mão.
+- A conta do 13º fica travada em Contas a pagar (valor e vencimento só mudam pela Folha); 13º pago não muda nem é substituído ao importar de novo. O histórico do funcionário e a lista de meses mostram o 13º.
+
 ## [1.39.2] - 2026-11-27
 
 ### Corrigido

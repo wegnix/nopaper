@@ -104,7 +104,7 @@ export default async function billRoutes(app: FastifyInstance) {
     if (b.statementId && ((body.amount && body.amount !== b.amount) || (body.dueDate && body.dueDate !== b.dueDate))) {
       throw badRequest('O valor e o vencimento desta conta vêm da fatura do cartão. Ajuste os lançamentos na tela de Cartões.');
     }
-    if (b.payrollEntryId && ((body.amount && body.amount !== b.amount) || (body.dueDate && body.dueDate !== b.dueDate))) {
+    if ((b.payrollEntryId || b.payrollThirteenthId) && ((body.amount && body.amount !== b.amount) || (body.dueDate && body.dueDate !== b.dueDate))) {
       throw badRequest('O valor e o vencimento deste salário vêm da Folha de pagamento. Ajuste o lançamento lá.');
     }
     if (body.categoryId && body.categoryId !== b.categoryId) await assertCategoryUsable(req, body.categoryId, type);
@@ -208,7 +208,7 @@ export default async function billRoutes(app: FastifyInstance) {
     const body = parse(restructureSchema, req.body);
     const b = await loadBill(req, req.params.id, 'edit');
     if (b.statementId) throw badRequest('Conta de fatura de cartão não pode virar recorrente');
-    if (b.payrollEntryId) throw badRequest('Salário da folha não pode virar recorrente: o próximo mês é aberto na Folha de pagamento');
+    if (b.payrollEntryId || b.payrollThirteenthId) throw badRequest('Salário da folha não pode virar recorrente: o próximo mês é aberto na Folha de pagamento');
     if (b.parentId) throw badRequest('Edite a recorrência a partir da primeira ocorrência da série');
     await assertSeriesOpen(req, b);
     if (b.status === 'paid') throw badRequest('Esta conta já está paga — reverta o pagamento antes de reestruturar');
@@ -263,6 +263,7 @@ export default async function billRoutes(app: FastifyInstance) {
     const b = await loadBill(req, req.params.id, 'delete');
     if (b.statementId) throw badRequest('Esta conta é a fatura de um cartão. Apague os lançamentos na tela de Cartões.');
     if (b.payrollEntryId) throw badRequest('Este salário vem da Folha de pagamento. Tire o funcionário da folha do mês por lá.');
+    if (b.payrollThirteenthId) throw badRequest('Este 13º vem da Folha de pagamento. Apague o 13º na folha do mês.');
     if (mode !== 'one') await assertSeriesOpen(req, b);
     const restricted = await isRestricted(b.orgId, b.categoryId);
     const res = await db.transaction(async (tx) => {
