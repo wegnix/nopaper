@@ -197,7 +197,7 @@ function DocList({ docs, view, resetKey, ...actions }: { docs: FiscalDocumentRow
               <tr>
                 <th className="px-3 py-2 font-medium">Emissão</th>
                 <th className="px-3 py-2 font-medium">Fornecedor</th>
-                <th className="px-3 py-2 font-medium">Produtos / veículo</th>
+                <th className="px-3 py-2 font-medium">Produtos</th>
                 <th className="px-3 py-2 font-medium">NF</th>
                 <th className="px-3 py-2 font-medium">Duplicatas</th>
                 <th className="hidden px-3 py-2 font-medium 2xl:table-cell">Pagamento</th>

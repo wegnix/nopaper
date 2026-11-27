@@ -8,6 +8,11 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.39.1] - 2026-11-27
+
+### Alterado
+- Notas fiscais: a coluna da lista voltou a se chamar "Produtos" (a placa continua aparecendo nela).
+
 ## [1.39.0] - 2026-11-27
 
 ### Novo
