@@ -1,7 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
-  DEFAULT_PAYROLL_COMMISSIONS, DEFAULT_PAYROLL_COSTS, DEFAULT_PAYROLL_PAYSLIPS, DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, payslipCheck, refLabelPT, formatBRL, toCents, type PayrollSettings,
+  DEFAULT_PAYROLL_COMMISSIONS, DEFAULT_PAYROLL_COSTS, DEFAULT_PAYROLL_PAYSLIPS, DEFAULT_PAYROLL_RUBRICS, payrollSettingsSchema, payrollTotals, payslipCheck, payslipDocKey, refLabelPT, formatBRL, toCents, type PayrollSettings, type PayslipReport,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
 import type { DBOrTx } from '../db/client.js';
@@ -260,4 +260,14 @@ export async function deleteEntries(tx: DBOrTx, entryIds: string[]) {
   await deleteBillsWithFiles(tx, billIds);
   await tx.delete(schema.payrollEntries).where(inArray(schema.payrollEntries.id, entryIds));
   return entryIds.length;
+}
+
+/**
+ * Importar holerites substitui as rubricas do holerite do mês: recibo de 13º, férias ou outro que não é o
+ * holerite do mês nunca entra por aí (vai para a Assinatura, como documento próprio).
+ */
+export function assertMonthlySlips(report: PayslipReport) {
+  const special = report.slips.find((s) => payslipDocKey(s.title));
+  if (!special) return;
+  throw badRequest(`Este PDF é de ${special.title}, não é o holerite do mês: ele não entra em Importar holerites (trocaria as rubricas do holerite do mês). Para colher a assinatura dos funcionários, use Folha → Assinaturas.`, 'payslips_not_monthly');
 }

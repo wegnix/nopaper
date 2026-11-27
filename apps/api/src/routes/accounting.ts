@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { and, desc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import {
-  ACCOUNTING_KIND_LABEL, accountingIsPayroll, accountingIsSlips, accountingHandleSchema, accountingSendSchema, accountingUploadSchema, formatBRL, formatDateBR, parseBoleto, parsePayslips, parseVacationReport, refLabelPT,
+  ACCOUNTING_KIND_LABEL, accountingIsPayroll, accountingIsSlips, accountingHandleSchema, accountingSendSchema, accountingUploadSchema, formatBRL, formatDateBR, parseBoleto, parsePayslips, parseVacationReport, payslipDocKey, payslipDocLabel, refLabelPT,
   type AccountingDetected, type AccountingKind,
 } from '@nopaper/shared';
 import { db, schema } from '../db/client.js';
@@ -20,6 +20,7 @@ import { readVacationReport } from '../services/vacations.js';
 import { assertStorageRoom, storageInfo } from '../services/storageQuota.js';
 import { emailTarget, escapeHtml, sendEmail, telegramSend, telegramToken } from '../services/notify.js';
 import { checkPayslipsSpace } from '../services/spaceCheck.js';
+import { assertMonthlySlips } from '../services/payroll.js';
 
 type Doc = typeof schema.accountingDocuments.$inferSelect;
 const MAX_FILES = 20;
@@ -58,7 +59,8 @@ async function detect(kind: AccountingKind, buf: Buffer, mime: string, filename:
     if (accountingIsSlips(kind)) {
       if (mime !== 'application/pdf') return null;
       const r = parsePayslips(await pdfToCells(buf, 200));
-      return r.slips.length ? { slips: r.slips.length, slipsRef: r.ref, company: r.company } : null;
+      const labels = [...new Set(r.slips.map((x) => payslipDocLabel(x.title)))];
+      return r.slips.length ? { slips: r.slips.length, slipsRef: r.ref, company: r.company, slipsLabel: labels.length === 1 ? labels[0] : null } : null;
     }
     if (kind === 'vacation' || kind === 'payroll_report') {
       if (mime !== 'application/pdf') return null;
@@ -218,7 +220,11 @@ export default async function accountingRoutes(app: FastifyInstance) {
         // modelo que ainda não lemos), mas quem enviou é avisado para conferir se é o arquivo certo
         if (accountingIsSlips(sent) && !detected) unread.push(f.filename);
         // um relatório da folha que é o relatório de férias ganha o tipo próprio: aparece pronto em Folha → Férias
-        const kind = sent === 'payroll_report' && detected?.vacations ? 'vacation' : sent;
+        // holerites que são o 13º ou o recibo de férias também ganham o tipo certo (vão para a Assinatura, não para a importação)
+        const special = payslipDocKey(detected?.slipsLabel);
+        const kind = sent === 'payroll_report' && detected?.vacations ? 'vacation'
+          : sent === 'payslip' && special.startsWith('13') ? 'thirteenth'
+            : sent === 'payslip' && special.startsWith('ferias') ? 'vacation_slip' : sent;
         values.push({
           orgId, direction: 'to_client', kind, competence: body.competence ?? null, note: body.note, originalName: f.filename, mime: f.mime, size: f.size,
           storageKey: f.key, sha256: f.sha256, detected, uploadedBy: req.user!.id,
@@ -356,6 +362,7 @@ export default async function accountingRoutes(app: FastifyInstance) {
     try { cells = await pdfToCells(await readStoredFile(d.storageKey), 200); } catch { throw badRequest('Não consegui ler este PDF.'); }
     const report = parsePayslips(cells);
     if (!report.slips.length) throw badRequest('Não achei holerites neste PDF. Ele precisa ser o PDF original do sistema de folha, não uma foto ou digitalização.', 'payslips_unknown');
+    assertMonthlySlips(report);
     return { fileName: d.originalName, report, spaceCheck: await checkPayslipsSpace(req, report) };
   });
 

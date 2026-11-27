@@ -8,6 +8,12 @@ Como atualizar: [docs/publicacao-com-traefik.md](docs/publicacao-com-traefik.md#
 
 ## [Não lançado]
 
+## [1.39.2] - 2026-11-27
+
+### Corrigido
+- Folha → Assinaturas: recibos de 13º que vêm com o título comum ("Recibo de Pagamento de Salário") agora são reconhecidos pelas linhas do recibo e viram documento próprio ("13º Salário – 1ª parcela" / "2ª parcela"). Antes, a 1ª parcela era tratada como o holerite de novembro e a 2ª como o de dezembro, e um substituía o outro na assinatura.
+- Importar holerites recusa o PDF do 13º ou de férias, com aviso para usar Assinaturas: ele trocaria as rubricas do holerite do mês. Se o contador enviar o 13º como "Holerites", o NoPaper passa o documento para o tipo 13º sozinho.
+
 ## [1.39.1] - 2026-11-27
 
 ### Alterado

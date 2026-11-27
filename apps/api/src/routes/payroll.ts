@@ -17,7 +17,7 @@ import { audit } from '../lib/audit.js';
 import { assertCategoryUsable, assertFolder, attachmentsFor, serialize } from '../services/bills.js';
 import {
   assertCompany, assertEntryEditable, deleteEntries, ensurePayrollDefaults, getPayrollSettings, loadEmployee, loadEntry,
-  loadPeriod, paidBillsCount, recomputeCosts, restrictPayrollCategory, rewriteOpenEntries, rubricsOf, patchPayrollSettings, syncEntries, writeEntry,
+  loadPeriod, paidBillsCount, recomputeCosts, restrictPayrollCategory, rewriteOpenEntries, rubricsOf, patchPayrollSettings, syncEntries, writeEntry, assertMonthlySlips,
 } from '../services/payroll.js';
 import { checkPayslipsSpace } from '../services/spaceCheck.js';
 
@@ -150,6 +150,7 @@ export default async function payrollRoutes(app: FastifyInstance) {
     try { cells = await pdfToCells(buf, 200); } catch { throw badRequest('Não consegui ler este PDF. Peça o arquivo de novo ao contador e tente outra vez.'); }
     const report = parsePayslips(cells);
     if (!report.slips.length) throw badRequest('Não achei holerites neste PDF. Ele precisa ser o PDF original do contador ("Recibo de Pagamento de Salário"), não uma foto ou digitalização.', 'payslips_unknown');
+    assertMonthlySlips(report);
     return { fileName: file.filename.slice(0, 200), report, spaceCheck: await checkPayslipsSpace(req, report) };
   });
 

@@ -219,6 +219,7 @@ export function parsePayslips(rows: PdfCell[][]): PayslipReport {
   const seen = new Map<string, string>();
   for (const s of all) {
     if (!s.code || !s.name) continue;
+    s.title = payslipTitleFromItems(s.title, s.items);
     const sig = JSON.stringify([s.title, s.items.map((i) => [i.key, i.kind, i.amount]), s.net]);
     if (seen.has(s.code)) {
       if (seen.get(s.code) !== sig) out.warnings.push(`${titleCaseName(s.name)} (matrícula ${s.code}) tem mais de um recibo diferente neste PDF — só o primeiro foi lido.`);
@@ -359,5 +360,22 @@ export function payslipDocKey(title: string | null | undefined): string {
   if (!t || /^(salario|pro labore|prolabore|mensal|salario mensal|folha|folha mensal)$/.test(t)) return '';
   return t.replace(/ /g, '-').slice(0, 40);
 }
+const is13 = (name: string) => /(^|[^0-9])13\s*[oOº°]?\s*\.?\s*(SAL|S\/|PARC|REF|AD)|DECIMO\s+TERCEIRO/.test(
+  name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase());
+const isFirstParcel = (name: string) => /\b1\s*[ªaAoOº°]?\s*\.?\s*PARC/i.test(name.normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+/**
+ * Recibo com título genérico ("Recibo de Pagamento de Salário") em que todos os proventos são de 13º:
+ * é o recibo do 13º, não o holerite do mês. Sem isso, a 1ª parcela (competência de novembro) e a 2ª
+ * (dezembro) colidiriam com o holerite do mês na assinatura e trocariam as rubricas na importação da folha.
+ */
+export function payslipTitleFromItems(title: string, items: Array<{ name: string; kind: 'earning' | 'deduction' }>): string {
+  if (payslipDocKey(title)) return title;
+  const earnings = items.filter((i) => i.kind === 'earning');
+  if (!earnings.length || !earnings.every((i) => is13(i.name))) return title;
+  if (earnings.some((i) => isFirstParcel(i.name))) return '13º Salário – 1ª parcela';
+  if (items.some((i) => i.kind === 'deduction' && is13(i.name) && isFirstParcel(i.name))) return '13º Salário – 2ª parcela';
+  return '13º Salário';
+}
+
 /** Nome do tipo de recibo para mostrar ("13º Salário", "Férias"); null no holerite do mês. */
 export const payslipDocLabel = (title: string | null | undefined): string | null => (payslipDocKey(title) ? (title ?? '').trim().slice(0, 60) : null);

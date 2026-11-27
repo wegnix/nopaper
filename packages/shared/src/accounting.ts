@@ -105,6 +105,8 @@ export const accountingHandleSchema = z.object({
 export interface AccountingDetected {
   amount?: string | null; dueDate?: string | null; barcode?: string | null; pix?: boolean;
   slips?: number; slipsRef?: string | null; company?: string | null;
+  /** Recibos que não são o holerite do mês ("13º Salário – 1ª parcela", "Férias"…), quando todos são do mesmo tipo. */
+  slipsLabel?: string | null;
   /** Relatório de férias: quantos períodos e a data base. */
   vacations?: number; vacationsBase?: string | null;
 }

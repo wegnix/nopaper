@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isProLabore, parsePayslips, payrollPayslipApplySchema, payslipEmployeeFor, payslipItemKey, payslipOk, payslipRubricFor, payslipRubricName, type PdfCell, payslipDocKey, payslipDocLabel } from './payslips.js';
+import { isProLabore, parsePayslips, payrollPayslipApplySchema, payslipEmployeeFor, payslipItemKey, payslipOk, payslipRubricFor, payslipRubricName, type PdfCell, payslipDocKey, payslipDocLabel, payslipTitleFromItems } from './payslips.js';
 import { payrollTotals } from './payroll.js';
 
 // células como o pdfToCells devolve (x = começo, w = largura); dados fictícios
@@ -176,4 +176,21 @@ test('tipo de recibo: o holerite do mês é a chave vazia; 13º, férias e adian
   assert.notEqual(payslipDocKey('Adiantamento Salarial'), payslipDocKey('13º Salário'));
   assert.equal(payslipDocLabel('Salário'), null);
   assert.equal(payslipDocLabel('13º Salário'), '13º Salário');
+});
+
+test('13º com título genérico ("Recibo de Pagamento de Salário") é reconhecido pelas rubricas', () => {
+  const e = (name: string) => ({ name, kind: 'earning' as const });
+  const d = (name: string) => ({ name, kind: 'deduction' as const });
+  assert.equal(payslipTitleFromItems('Salário', [e('13.SALAR. 1.PARC.')]), '13º Salário – 1ª parcela');
+  assert.equal(payslipTitleFromItems('Salário', [e('13.SALAR. 1.PARC.'), e('13o. S/ REFLEXO DE H.E.+ADICIONAIS')]), '13º Salário – 1ª parcela');
+  assert.equal(payslipTitleFromItems('Salário', [e('13o. SALARIO'), d('13.SALAR.1.PARC.'), d('I.N.S.S.')]), '13º Salário – 2ª parcela');
+  assert.equal(payslipTitleFromItems('Salário', [e('13º SALÁRIO INTEGRAL'), d('INSS')]), '13º Salário');
+  assert.equal(payslipTitleFromItems('Salário', [e('DÉCIMO TERCEIRO SALÁRIO')]), '13º Salário');
+  // holerite normal (ou com 13º junto do salário) continua sendo o do mês
+  assert.equal(payslipTitleFromItems('Salário', [e('SALARIO'), e('13o. SALARIO'), d('INSS')]), 'Salário');
+  assert.equal(payslipTitleFromItems('Salário', [e('HORAS EXTRAS 130%')]), 'Salário');
+  assert.equal(payslipTitleFromItems('Salário', [e('COMISSAO'), e('DSR')]), 'Salário');
+  assert.equal(payslipTitleFromItems('Férias', [e('13.SALAR. 1.PARC.')]), 'Férias');
+  assert.equal(payslipDocKey(payslipTitleFromItems('Salário', [e('13.SALAR. 1.PARC.')])), '13-salario-1-parcela');
+  assert.notEqual(payslipDocKey('13º Salário – 1ª parcela'), payslipDocKey('13º Salário – 2ª parcela'));
 });
